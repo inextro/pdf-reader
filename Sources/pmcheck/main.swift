@@ -181,5 +181,32 @@ let expected = PDFText.cleaned(tp.selection(for: NSRange(location: 30, length: 1
 let got = PDFText.text(of: marked.annotation, on: tp)
 check(got.contains(String(expected.dropFirst(3).dropLast(3))), "형광펜이 덮은 여러 줄 글자 뽑기 (\(got.count)자)")
 
+// 단어 단위 맞춤: 단어 중간이면 넓히고, 문장부호(오타 "results.In")에서는 멈추고, 앞뒤 공백은 뺀다
+func makeTextPDF(_ text: String, at url: URL) -> PDFDocument {
+    var box = CGRect(x: 0, y: 0, width: 612, height: 792)
+    let ctx = CGContext(url as CFURL, mediaBox: &box, nil)!
+    ctx.beginPDFPage(nil)
+    let attr = NSAttributedString(string: text, attributes: [.font: NSFont(name: "Helvetica", size: 14)!])
+    let frame = CTFramesetterCreateFrame(CTFramesetterCreateWithAttributedString(attr), CFRange(location: 0, length: 0),
+                                         CGPath(rect: box.insetBy(dx: 72, dy: 72), transform: nil), nil)
+    CTFrameDraw(frame, ctx)
+    ctx.endPDFPage()
+    ctx.closePDF()
+    return PDFDocument(url: url)!
+}
+// 페이지는 문서를 약하게 참조하므로 문서를 변수로 붙잡아 둔다.
+let wordsDoc = makeTextPDF("The quick brown fox saw results.In this case don't stop.", at: outDir.appendingPathComponent("words.pdf"))
+let wp = wordsDoc.page(at: 0)!
+let wtext = wp.string! as NSString
+func snapped(_ fragment: String, offset: Int = 0, length: Int) -> String {
+    let at = wtext.range(of: fragment).location + offset
+    return Highlights.snappedToWords(wp.selection(for: NSRange(location: at, length: length))!).string ?? ""
+}
+check(snapped("quick", offset: 2, length: 7) == "quick brown", "단어 중간 → 단어 끝까지 (\(snapped("quick", offset: 2, length: 7)))")
+check(snapped("results", offset: 2, length: 3) == "results", "오타 results.In → 마침표 앞에서 멈춤 (\(snapped("results", offset: 2, length: 3)))")
+check(snapped(" quick ", length: 7) == "quick", "앞뒤 공백 빼기 (\(snapped(" quick ", length: 7)))")
+check(snapped("don't", offset: 1, length: 2) == "don't", "아포스트로피는 단어 안 (\(snapped("don't", offset: 1, length: 2)))")
+check(snapped("stop.", length: 5) == "stop.", "직접 포함한 문장부호는 유지 (\(snapped("stop.", length: 5)))")
+
 print(failures == 0 ? "ALL PASS" : "\(failures) FAILED", "→", outDir.path)
 exit(failures == 0 ? 0 : 1)

@@ -36,6 +36,41 @@ public enum Highlights {
         }
     }
 
+    /// 선택 양 끝이 단어 중간이면 단어 끝까지 넓히고, 앞뒤 공백은 뺀다.
+    /// 단어는 글자·숫자(와 아포스트로피)가 이어진 덩어리라서 문장부호에서는 넓히지 않는다.
+    /// 그래서 "results.In"처럼 마침표 뒤 공백이 빠진 오타가 있어도 "results"까지만 잡힌다.
+    public static func snappedToWords(_ selection: PDFSelection) -> PDFSelection {
+        guard let document = selection.pages.first?.document,
+              let first = selection.pages.first, let last = selection.pages.last,
+              let firstRange = textRanges(of: selection, on: first).first,
+              let lastRange = textRanges(of: selection, on: last).last,
+              let firstText = first.string as NSString?, let lastText = last.string as NSString? else { return selection }
+        var start = firstRange.location
+        var end = lastRange.location + lastRange.length   // 끝은 포함하지 않는 위치
+        let sameRun = first === last
+        // 앞뒤 공백 빼기
+        while start < firstText.length, isSpace(firstText.character(at: start)), !(sameRun && start >= end) { start += 1 }
+        while end > 0, isSpace(lastText.character(at: end - 1)), !(sameRun && end <= start) { end -= 1 }
+        guard !(sameRun && start >= end) else { return selection }
+        // 단어 중간이면 넓히기
+        while start > 0, isWord(firstText.character(at: start - 1)), isWord(firstText.character(at: start)) { start -= 1 }
+        while end < lastText.length, isWord(lastText.character(at: end - 1)), isWord(lastText.character(at: end)) { end += 1 }
+        return document.selection(from: first, atCharacterIndex: start, to: last, atCharacterIndex: end - 1) ?? selection
+    }
+
+    static func textRanges(of selection: PDFSelection, on page: PDFPage) -> [NSRange] {
+        (0..<selection.numberOfTextRanges(on: page)).map { selection.range(at: $0, on: page) }.filter { $0.length > 0 }
+    }
+
+    static func isWord(_ c: unichar) -> Bool {
+        guard let scalar = Unicode.Scalar(c) else { return true }   // 서로게이트 쌍의 반쪽은 글자로 본다
+        return CharacterSet.alphanumerics.contains(scalar) || c == 0x27 || c == 0x2019   // ' ’
+    }
+
+    static func isSpace(_ c: unichar) -> Bool {
+        Unicode.Scalar(c).map { CharacterSet.whitespacesAndNewlines.contains($0) } ?? false
+    }
+
     /// 줄 사각형들(페이지 좌표)로 /Highlight 주석 하나를 만든다.
     static func annotation(rects: [CGRect], color: NSColor, author: String?) -> PDFAnnotation {
         let bounds = rects.dropFirst().reduce(rects[0]) { $0.union($1) }

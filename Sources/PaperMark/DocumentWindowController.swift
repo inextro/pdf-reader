@@ -272,7 +272,8 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
     }
 
     private func highlightCurrentSelection() {
-        guard let selection = pdfView.currentSelection,
+        // 드래그는 글자 단위라 양 끝을 단어 경계로 맞춘다(문장부호에서는 넓히지 않음).
+        guard let selection = pdfView.currentSelection.map(Highlights.snappedToWords),
               !(selection.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         let color = ColorStore.shared.currentColor, author = NSFullUserName()
         let highlights = Highlights.make(from: selection, color: color, author: author)
@@ -319,9 +320,11 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
     }
 
     @objc func translateSelection(_ sender: Any?) {
-        guard let selection = pdfView.currentSelection, let page = selection.pages.first else { return }
+        guard let selection = pdfView.currentSelection.map(Highlights.snappedToWords),
+              let page = selection.pages.first else { return }
+        pdfView.setCurrentSelection(selection, animate: false)
         let rect = pdfView.convert(selection.bounds(for: page), from: page)
-        Translator.present(selectedText, at: rect, in: pdfView)
+        Translator.present(PDFText.cleaned(selection.string ?? ""), at: rect, in: pdfView)
     }
 
     @objc private func translateHighlight(_ sender: NSMenuItem) {
