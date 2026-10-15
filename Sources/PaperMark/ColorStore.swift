@@ -51,6 +51,16 @@ final class ColorStore {
         if !presets.contains(hex) { presets.append(hex) }
     }
 
+    /// 프리셋 칸의 색을 바꾸고 현재 색도 그 색으로 한다. 다른 칸과 같은 색이 되면 바꾸지 않는다.
+    func replacePreset(at index: Int, with hex: String) {
+        var list = presets
+        guard list.indices.contains(index), list[index] != hex, !list.contains(hex) else { return }
+        list[index] = hex
+        defaults.set(list, forKey: "presets")
+        defaults.set(hex, forKey: "currentColor")
+        notify()
+    }
+
     func removePreset(_ hex: String) {
         guard presets.count > 1 else { return }
         presets.removeAll { $0 == hex }
