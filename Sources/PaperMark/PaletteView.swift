@@ -13,6 +13,7 @@ final class PaletteView: NSStackView {
     private var editing: Editing?
     /// 색상 패널은 앱에 하나라서, 마지막으로 패널을 연 팔레트(창)만 패널 값을 받는다.
     private static weak var panelOwner: PaletteView?
+    private var menuMonitor: Any?
 
     init() {
         super.init(frame: .zero)
@@ -35,6 +36,23 @@ final class PaletteView: NSStackView {
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    // 툴바는 안에 든 뷰에 우클릭을 넘기지 않는다. 그래서 창에 들어오는 우클릭(Control 클릭 포함)을
+    // 먼저 보고, 색 동그라미 위면 그 자리에서 메뉴를 띄운다.
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let menuMonitor { NSEvent.removeMonitor(menuMonitor) }
+        menuMonitor = nil
+        guard window != nil else { return }
+        menuMonitor = NSEvent.addLocalMonitorForEvents(matching: [.rightMouseDown, .leftMouseDown]) { [weak self] event in
+            guard let self, let window = self.window, event.window === window else { return event }
+            if event.type == .leftMouseDown, !event.modifierFlags.contains(.control) { return event }
+            guard let swatch = self.swatches.arrangedSubviews.lazy.compactMap({ $0 as? SwatchView })
+                .first(where: { $0.bounds.contains($0.convert(event.locationInWindow, from: nil)) }) else { return event }
+            swatch.showMenu(event)
+            return nil
+        }
+    }
 
     @objc private func refresh() {
         let store = ColorStore.shared
@@ -145,7 +163,7 @@ private final class SwatchView: NSView {
         onClick(index)
     }
 
-    override func menu(for event: NSEvent) -> NSMenu? {
+    private func makeMenu() -> NSMenu? {
         guard ColorStore.shared.presets.count > 1 else { return nil }
         let menu = NSMenu()
         let item = menu.addItem(withTitle: "Remove from Presets", action: #selector(removePreset(_:)), keyEquivalent: "")
@@ -153,7 +171,14 @@ private final class SwatchView: NSView {
         return menu
     }
 
+    /// 우클릭 메뉴. PaletteView의 이벤트 모니터가 부른다.
+    func showMenu(_ event: NSEvent) {
+        guard let menu = makeMenu() else { NSSound.beep(); return }
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+
     @objc private func removePreset(_ sender: Any?) {
         ColorStore.shared.removePreset(hex)
     }
 }
+

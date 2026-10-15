@@ -135,6 +135,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         add(highlightMenu, "Highlight Selection", #selector(DocumentWindowController.highlightSelection(_:)), .highlightSelection)
         add(highlightMenu, "Highlight Mode", #selector(DocumentWindowController.toggleHighlightMode(_:)), .highlightMode)
         add(highlightMenu, "Eraser Mode", #selector(DocumentWindowController.toggleEraserMode(_:)), .eraserMode)
+        add(highlightMenu, "Remove Current Color from Presets", #selector(removeCurrentColor(_:)), .removeCurrentColor)
+        commandItems[.removeCurrentColor]?.target = self
 
         let view = submenu(of: main, title: "View")
         add(view, "Show Sidebar", #selector(DocumentWindowController.toggleSidebar(_:)), .toggleSidebar)
@@ -185,6 +187,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func openSettings(_ sender: Any?) {
         SettingsWindowController.shared.showWindow(sender)
         SettingsWindowController.shared.window?.makeKeyAndOrderFront(sender)
+    }
+
+    @objc private func removeCurrentColor(_ sender: Any?) {
+        ColorStore.shared.removePreset(ColorStore.shared.currentHex)
     }
 
     @objc private func selectPresetColor(_ sender: NSMenuItem) {

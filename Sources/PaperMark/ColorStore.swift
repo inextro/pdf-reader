@@ -61,9 +61,12 @@ final class ColorStore {
         notify()
     }
 
+    /// 프리셋 칸을 지운다. 지금 쓰는 색을 지우면 그 자리의 다음 칸(마지막이면 앞 칸) 색으로 넘어간다.
     func removePreset(_ hex: String) {
-        guard presets.count > 1 else { return }
-        presets.removeAll { $0 == hex }
+        guard presets.count > 1, let index = presets.firstIndex(of: hex) else { return }
+        let wasCurrent = hex == currentHex
+        presets.remove(at: index)
+        if wasCurrent { currentHex = presets[min(index, presets.count - 1)] }
     }
 
     private func notify() {
