@@ -7,7 +7,18 @@ final class ColorStore {
     static let didChange = Notification.Name("PaperMarkColorStoreDidChange")
 
     private let defaults = UserDefaults.standard
-    private let builtInPresets = ["#FFE45C", "#A8E6A1", "#9AD0F5", "#F7A8C8", "#FFC27A"]
+    // 아이패드 PDF Expert에서 쓰는 형광펜 색과 같게 맞춘다(PDF Expert 주석의 /C 값).
+    private let builtInPresets = ["#F0CCDE", "#CEF3FE", "#FFFBC5", "#C1FFD9", "#EBC4F7", "#FFC677"]
+    private let paletteVersion = 2
+
+    private init() {
+        // 팔레트를 바꾼 버전에서는 예전 기본 프리셋과 현재 색을 한 번 새 팔레트로 되돌린다.
+        if defaults.integer(forKey: "paletteVersion") < paletteVersion {
+            defaults.removeObject(forKey: "presets")
+            defaults.removeObject(forKey: "currentColor")
+            defaults.set(paletteVersion, forKey: "paletteVersion")
+        }
+    }
 
     var presets: [String] {
         get { defaults.stringArray(forKey: "presets") ?? builtInPresets }
