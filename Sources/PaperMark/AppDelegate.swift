@@ -24,12 +24,15 @@ final class PMDocumentController: NSDocumentController {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let highlightMenu = NSMenu(title: "Highlight")
     private var colorItems: [NSMenuItem] = []
+    private var commandItems: [Command: NSMenuItem] = [:]
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = makeMainMenu()
         NotificationCenter.default.addObserver(self, selector: #selector(rebuildColorItems),
                                                name: ColorStore.didChange, object: nil)
-        rebuildColorItems()
+        NotificationCenter.default.addObserver(self, selector: #selector(applyShortcuts),
+                                               name: ShortcutStore.didChange, object: nil)
+        applyShortcuts()
         // Dock에서 그냥 실행했을 때는 바로 열기 창을 띄운다(파일을 더블클릭해 실행한 경우 제외).
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             if NSDocumentController.shared.documents.isEmpty { NSDocumentController.shared.openDocument(nil) }
@@ -48,6 +51,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let app = submenu(of: main, title: "PaperMark")
         app.addItem(withTitle: "About PaperMark", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        app.addItem(.separator())
+        app.addItem(withTitle: "Settings…", action: #selector(openSettings(_:)), keyEquivalent: ",").target = self
         app.addItem(.separator())
         app.addItem(withTitle: "Hide PaperMark", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         app.addItem(withTitle: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
@@ -76,21 +81,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
         edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         edit.addItem(.separator())
-        edit.addItem(withTitle: "Find…", action: #selector(DocumentWindowController.focusSearch(_:)), keyEquivalent: "f")
-        edit.addItem(withTitle: "Find Next", action: #selector(DocumentWindowController.findNextResult(_:)), keyEquivalent: "g")
-        edit.addItem(withTitle: "Find Previous", action: #selector(DocumentWindowController.findPreviousResult(_:)), keyEquivalent: "G")
+        add(edit, "Find…", #selector(DocumentWindowController.focusSearch(_:)), .find)
+        add(edit, "Find Next", #selector(DocumentWindowController.findNextResult(_:)), .findNext)
+        add(edit, "Find Previous", #selector(DocumentWindowController.findPreviousResult(_:)), .findPrevious)
 
         main.addItem(withTitle: "Highlight", action: nil, keyEquivalent: "").submenu = highlightMenu
-        highlightMenu.addItem(withTitle: "Highlight Selection", action: #selector(DocumentWindowController.highlightSelection(_:)), keyEquivalent: "d")
-        highlightMenu.addItem(withTitle: "Highlight Mode", action: #selector(DocumentWindowController.toggleHighlightMode(_:)), keyEquivalent: "D")
+        add(highlightMenu, "Highlight Selection", #selector(DocumentWindowController.highlightSelection(_:)), .highlightSelection)
+        add(highlightMenu, "Highlight Mode", #selector(DocumentWindowController.toggleHighlightMode(_:)), .highlightMode)
+        add(highlightMenu, "Eraser Mode", #selector(DocumentWindowController.toggleEraserMode(_:)), .eraserMode)
 
         let view = submenu(of: main, title: "View")
-        view.addItem(withTitle: "Show Sidebar", action: #selector(DocumentWindowController.toggleSidebar(_:)), keyEquivalent: "s")
-            .keyEquivalentModifierMask = [.command, .control]
+        add(view, "Show Sidebar", #selector(DocumentWindowController.toggleSidebar(_:)), .toggleSidebar)
         view.addItem(.separator())
-        view.addItem(withTitle: "Zoom In", action: #selector(DocumentWindowController.zoomInPDF(_:)), keyEquivalent: "=")
-        view.addItem(withTitle: "Zoom Out", action: #selector(DocumentWindowController.zoomOutPDF(_:)), keyEquivalent: "-")
-        view.addItem(withTitle: "Zoom to Fit", action: #selector(DocumentWindowController.zoomToFit(_:)), keyEquivalent: "0")
+        add(view, "Zoom In", #selector(DocumentWindowController.zoomInPDF(_:)), .zoomIn)
+        add(view, "Zoom Out", #selector(DocumentWindowController.zoomOutPDF(_:)), .zoomOut)
+        add(view, "Zoom to Fit", #selector(DocumentWindowController.zoomToFit(_:)), .zoomToFit)
 
         let window = submenu(of: main, title: "Window")
         window.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
@@ -102,7 +107,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return main
     }
 
-    /// 프리셋 색마다 ⌘1~⌘9 메뉴 항목을 만든다. 프리셋이나 현재 색이 바뀌면 다시 만든다.
+    /// 프리셋 색마다 Color 1~9 메뉴 항목을 만든다. 프리셋이나 현재 색이 바뀌면 다시 만든다.
     @objc private func rebuildColorItems() {
         colorItems.forEach(highlightMenu.removeItem)
         colorItems = [.separator()]
@@ -110,7 +115,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for (i, hex) in store.presets.enumerated() {
             guard let color = NSColor(hex: hex) else { continue }
             let item = NSMenuItem(title: "Color \(i + 1)  \(hex)", action: #selector(selectPresetColor(_:)),
-                                  keyEquivalent: i < 9 ? "\(i + 1)" : "")
+                                  keyEquivalent: "")
+            if let command = Command.color(i) { ShortcutStore.shared.apply(command, to: item) }
             item.target = self
             item.tag = i
             item.image = swatchImage(color)
@@ -118,6 +124,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             colorItems.append(item)
         }
         colorItems.forEach(highlightMenu.addItem)
+    }
+
+    /// 단축키를 바꿀 수 있는 메뉴 항목을 만든다. 키는 applyShortcuts가 넣는다.
+    private func add(_ menu: NSMenu, _ title: String, _ action: Selector, _ command: Command) {
+        commandItems[command] = menu.addItem(withTitle: title, action: action, keyEquivalent: "")
+    }
+
+    @objc private func applyShortcuts() {
+        for (command, item) in commandItems { ShortcutStore.shared.apply(command, to: item) }
+        rebuildColorItems()
+    }
+
+    @objc private func openSettings(_ sender: Any?) {
+        SettingsWindowController.shared.showWindow(sender)
+        SettingsWindowController.shared.window?.makeKeyAndOrderFront(sender)
     }
 
     @objc private func selectPresetColor(_ sender: NSMenuItem) {

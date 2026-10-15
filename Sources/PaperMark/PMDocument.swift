@@ -53,6 +53,14 @@ final class PMDocument: NSDocument {
         scheduleSave()
     }
 
+    /// 지우개처럼 이미 페이지에서 뗀 주석들을 실행 취소 한 번으로 묶어 기록한다.
+    func didRemove(_ highlights: [PlacedHighlight], actionName: String) {
+        guard !highlights.isEmpty else { return }
+        undoManager?.registerUndo(withTarget: self) { $0.replace([], with: highlights, actionName: actionName) }
+        undoManager?.setActionName(actionName)
+        scheduleSave()
+    }
+
     func recolor(_ highlight: PlacedHighlight, to color: NSColor) {
         let old = highlight.annotation.color
         highlight.annotation.color = color

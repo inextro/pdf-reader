@@ -4,6 +4,7 @@ import PaperMarkCore
 
 private extension NSToolbarItem.Identifier {
     static let highlightMode = NSToolbarItem.Identifier("highlightMode")
+    static let eraser = NSToolbarItem.Identifier("eraser")
     static let palette = NSToolbarItem.Identifier("palette")
     static let search = NSToolbarItem.Identifier("search")
 }
@@ -25,6 +26,7 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
     private var splitController: NSSplitViewController!
     private let palette = PaletteView()
     private let modeButton = NSButton()
+    private let eraserButton = NSButton()
     private var searchItem: NSSearchToolbarItem?
 
     private var results: [PDFSelection] = []
@@ -35,6 +37,10 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
     private var mouseDownInPDF = false
     private var selectionChangedDuringDrag = false
     private var eventMonitor: Any?
+    // 지우개로 한 번 문지르는 동안 지운 주석들(마우스를 떼면 실행 취소 하나로 기록).
+    private var erasedDuringDrag: [PlacedHighlight]?
+    // 스페이스바를 누르고 있어서 켜진 지우개(떼면 끈다).
+    private var spaceHeld = false
 
     private var pmDocument: PMDocument? { document as? PMDocument }
 
@@ -66,9 +72,13 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
         modeButton.setButtonType(.pushOnPushOff)
         modeButton.bezelStyle = .toolbar
         modeButton.image = NSImage(systemSymbolName: "highlighter", accessibilityDescription: "Highlight Mode")
-        modeButton.toolTip = "Highlight Mode: when on, dragging over text highlights it immediately (⇧⌘D)"
         modeButton.target = self
         modeButton.action = #selector(toggleHighlightMode(_:))
+        eraserButton.setButtonType(.pushOnPushOff)
+        eraserButton.bezelStyle = .toolbar
+        eraserButton.image = NSImage(systemSymbolName: "eraser", accessibilityDescription: "Eraser Mode")
+        eraserButton.target = self
+        eraserButton.action = #selector(toggleEraserMode(_:))
 
         let toolbar = NSToolbar(identifier: "PaperMarkToolbar")
         toolbar.delegate = self
@@ -77,6 +87,8 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
 
         NotificationCenter.default.addObserver(self, selector: #selector(colorStoreChanged),
                                                name: ColorStore.didChange, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(colorStoreChanged),
+                                               name: ShortcutStore.didChange, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(pdfSelectionChanged),
                                                name: .PDFViewSelectionChanged, object: pdfView)
         colorStoreChanged()
@@ -129,9 +141,15 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
     // MARK: 형광펜
 
     private func installMouseMonitor() {
-        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp]) { [weak self] event in
+        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp, .keyDown, .keyUp]) { [weak self] event in
             guard let self, event.window === self.window else { return event }
+            if event.type == .keyDown || event.type == .keyUp { return self.handleKey(event) ? nil : event }
             let inPDF = self.pdfView.bounds.contains(self.pdfView.convert(event.locationInWindow, from: nil))
+            // 지우개 모드: PDF 안의 클릭·드래그는 PDFView에 넘기지 않고(텍스트 선택 안 함) 지나간 주석을 지운다.
+            if ColorStore.shared.eraserMode || self.erasedDuringDrag != nil {
+                return self.handleEraser(event, inPDF: inPDF) ? nil : event
+            }
+            if event.type == .leftMouseDragged { return event }
             if event.type == .leftMouseDown {
                 self.mouseDownInPDF = inPDF
                 self.selectionChangedDuringDrag = false
@@ -142,6 +160,81 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
             }
             return event
         }
+    }
+
+    /// 스페이스바를 누르고 있는 동안만 지우개 모드(떼면 꺼짐). 페이지를 내리는 기본 동작 대신이다.
+    /// 지우개가 이미 버튼이나 ⇧⌘E로 켜져 있으면 스페이스바는 아무것도 바꾸지 않는다. Esc는 지우개를 끈다.
+    /// 검색창 등 글자 입력 중일 때는 건드리지 않는다.
+    private func handleKey(_ event: NSEvent) -> Bool {
+        if event.type == .keyUp {
+            guard event.keyCode == 49, spaceHeld else { return false }
+            releaseSpace()
+            return true
+        }
+        guard !(window?.firstResponder is NSText),
+              event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty else { return false }
+        switch event.keyCode {
+        case 49:    // Space
+            if !event.isARepeat, !ColorStore.shared.eraserMode {
+                spaceHeld = true
+                ColorStore.shared.eraserMode = true
+                pdfView.clearSelection()
+            }
+            return true
+        case 53 where ColorStore.shared.eraserMode:    // Esc
+            spaceHeld = false
+            ColorStore.shared.eraserMode = false
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func releaseSpace() {
+        guard spaceHeld else { return }
+        spaceHeld = false
+        ColorStore.shared.eraserMode = false
+    }
+
+    // 스페이스바를 누른 채 다른 창으로 가면 keyUp이 오지 않으므로 여기서 끈다.
+    func windowDidResignKey(_ notification: Notification) {
+        releaseSpace()
+    }
+
+    /// 지우개 이벤트를 처리했으면 true(PDFView에 넘기지 않음).
+    private func handleEraser(_ event: NSEvent, inPDF: Bool) -> Bool {
+        switch event.type {
+        case .leftMouseDown:
+            // 스크롤 막대나 페이지 밖 여백은 평소처럼 동작하게 둔다.
+            let point = pdfView.convert(event.locationInWindow, from: nil)
+            guard inPDF, !(window?.contentView?.hitTest(event.locationInWindow) is NSScroller),
+                  pdfView.page(for: point, nearest: false) != nil else { return false }
+            erasedDuringDrag = []
+            // PDFView에 클릭을 넘기지 않으므로 키 입력(스페이스바, Esc)을 받을 수 있게 직접 포커스를 준다.
+            window?.makeFirstResponder(pdfView)
+            erase(at: event)
+            return true
+        case .leftMouseDragged:
+            guard erasedDuringDrag != nil else { return false }
+            erase(at: event)
+            return true
+        case .leftMouseUp:
+            guard let erased = erasedDuringDrag else { return false }
+            erasedDuringDrag = nil
+            pmDocument?.didRemove(erased, actionName: "Erase")
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func erase(at event: NSEvent) {
+        let point = pdfView.convert(event.locationInWindow, from: nil)
+        guard let page = pdfView.page(for: point, nearest: false),
+              let annotation = Markups.markup(on: page, at: pdfView.convert(point, to: page)) else { return }
+        let removed = Markups.removalSet(for: annotation, on: page)
+        for h in removed { page.removeAnnotation(h.annotation) }
+        erasedDuringDrag?.append(contentsOf: removed)
     }
 
     @objc private func pdfSelectionChanged(_ note: Notification) {
@@ -173,9 +266,26 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
         ColorStore.shared.highlightMode.toggle()
     }
 
+    @objc func toggleEraserMode(_ sender: Any?) {
+        spaceHeld = false
+        ColorStore.shared.eraserMode.toggle()
+        if ColorStore.shared.eraserMode { pdfView.clearSelection() }
+    }
+
     @objc private func colorStoreChanged() {
-        modeButton.state = ColorStore.shared.highlightMode ? .on : .off
-        modeButton.contentTintColor = ColorStore.shared.highlightMode ? ColorStore.shared.currentColor : nil
+        let store = ColorStore.shared
+        // 지우개가 켜져 있으면 칠하지 않으므로 형광펜 버튼은 꺼진 것처럼 보이게 한다.
+        let highlighting = store.highlightMode && !store.eraserMode
+        modeButton.state = highlighting ? .on : .off
+        modeButton.contentTintColor = highlighting ? store.currentColor : nil
+        eraserButton.state = store.eraserMode ? .on : .off
+        eraserButton.contentTintColor = store.eraserMode ? .systemRed : nil
+        func key(_ command: Command) -> String {
+            ShortcutStore.shared.shortcut(for: command).map { " (\($0.display))" } ?? ""
+        }
+        modeButton.toolTip = "Highlight Mode: when on, dragging over text highlights it immediately" + key(.highlightMode)
+        eraserButton.toolTip = "Eraser Mode: click or rub over an annotation to remove it. Hold Space for a quick erase"
+            + key(.eraserMode)
     }
 
     private func menuItems(for highlight: PlacedHighlight) -> [NSMenuItem] {
@@ -280,6 +390,9 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
         case #selector(toggleHighlightMode(_:)):
             item.state = ColorStore.shared.highlightMode ? .on : .off
             return true
+        case #selector(toggleEraserMode(_:)):
+            item.state = ColorStore.shared.eraserMode ? .on : .off
+            return true
         case #selector(highlightSelection(_:)):
             return pdfView.currentSelection != nil
         case #selector(toggleSidebar(_:)):
@@ -301,7 +414,7 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
     // MARK: 툴바
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.toggleSidebar, .sidebarTrackingSeparator, .highlightMode, .palette, .flexibleSpace, .search]
+        [.toggleSidebar, .sidebarTrackingSeparator, .highlightMode, .eraser, .palette, .flexibleSpace, .search]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -315,6 +428,11 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
             let item = NSToolbarItem(itemIdentifier: identifier)
             item.label = "Highlight Mode"
             item.view = modeButton
+            return item
+        case .eraser:
+            let item = NSToolbarItem(itemIdentifier: identifier)
+            item.label = "Eraser"
+            item.view = eraserButton
             return item
         case .palette:
             let item = NSToolbarItem(itemIdentifier: identifier)

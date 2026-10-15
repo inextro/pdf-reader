@@ -28,6 +28,7 @@ final class PaletteView: NSStackView {
         addArrangedSubview(addButton)
 
         NotificationCenter.default.addObserver(self, selector: #selector(refresh), name: ColorStore.didChange, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(refresh), name: ShortcutStore.didChange, object: nil)
         refresh()
     }
 
@@ -60,7 +61,7 @@ private final class SwatchView: NSView {
         self.hex = hex
         self.selected = selected
         super.init(frame: NSRect(x: 0, y: 0, width: 22, height: 22))
-        let shortcut = index < 9 ? " ⌘\(index + 1)" : ""
+        let shortcut = Command.color(index).flatMap(ShortcutStore.shared.shortcut(for:)).map { " \($0.display)" } ?? ""
         toolTip = "\(hex)\(shortcut) (right-click to remove from presets)"
     }
 

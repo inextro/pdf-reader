@@ -42,6 +42,11 @@ final class ColorStore {
         set { defaults.set(newValue, forKey: "highlightMode"); notify() }
     }
 
+    /// 켜져 있으면 클릭하거나 문지른 주석을 통째로 지운다. 앱을 다시 열면 꺼진 상태로 시작한다.
+    var eraserMode = false {
+        didSet { notify() }
+    }
+
     func addPreset(_ hex: String) {
         if !presets.contains(hex) { presets.append(hex) }
     }

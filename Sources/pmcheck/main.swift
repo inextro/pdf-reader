@@ -156,5 +156,19 @@ check(found(CGPoint(x: 60, y: 50)) == nil, "링크는 사용자 주석이 아님
 // PDFKit은 저장할 때 팝업을 쓰지 않으므로 메모리의 페이지로 확인한다(파일에서 읽으면 팝업이 연결된다).
 check(Markups.removalSet(for: note, on: kp).count == 2, "메모를 지우면 팝업도 함께 지움")
 
+// 단축키 정규화와 표시
+let shiftD = Shortcut.normalized(characters: "D", modifiers: [.command, .shift])!
+check(shiftD.key == "d" && shiftD.modifiers == [.command, .shift] && shiftD.display == "⇧⌘D", "⇧⌘D → d + ⇧⌘ (\(shiftD.display))")
+let plus = Shortcut.normalized(characters: "+", modifiers: [.command, .shift])!
+check(plus.key == "+" && plus.modifiers == .command, "⇧⌘= → ⌘+ (\(plus.display))")
+check(Shortcut.normalized(characters: "\u{7F}", modifiers: .command)!.display == "⌘⌫", "Delete → ⌘⌫")
+check(Shortcut.normalized(characters: "e", modifiers: [.shift])?.isValid == false, "⇧E 단독은 안 됨")
+let f5 = Shortcut.normalized(characters: "\u{F708}", modifiers: [.function])!
+check(f5.isValid && f5.display == "F5", "F5 단독 허용 (\(f5.display))")
+let ctrlOptUp = Shortcut.normalized(characters: "\u{F700}", modifiers: [.control, .option, .shift])!
+check(ctrlOptUp.display == "⌃⌥⇧↑", "기능 키는 Shift 유지 (\(ctrlOptUp.display))")
+let roundTrip = try JSONDecoder().decode(Shortcut.self, from: JSONEncoder().encode(shiftD))
+check(roundTrip == shiftD, "저장 후 복원")
+
 print(failures == 0 ? "ALL PASS" : "\(failures) FAILED", "→", outDir.path)
 exit(failures == 0 ? 0 : 1)
