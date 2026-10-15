@@ -138,9 +138,11 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
     }
 
     private func menuItems(for highlight: PlacedHighlight) -> [NSMenuItem] {
-        let remove = NSMenuItem(title: "Remove Highlight", action: #selector(removeHighlight(_:)), keyEquivalent: "")
+        let name = Markups.displayName(of: highlight.annotation)
+        let remove = NSMenuItem(title: "Remove \(name)", action: #selector(removeHighlight(_:)), keyEquivalent: "")
         remove.target = self
         remove.representedObject = HighlightAction(highlight)
+        guard Markups.isRecolorable(highlight.annotation) else { return [remove] }
 
         let recolor = NSMenuItem(title: "Change Color", action: nil, keyEquivalent: "")
         let colors = NSMenu()
@@ -160,7 +162,9 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
 
     @objc private func removeHighlight(_ sender: NSMenuItem) {
         guard let action = sender.representedObject as? HighlightAction else { return }
-        pmDocument?.remove([action.highlight])
+        let h = action.highlight
+        pmDocument?.replace(Markups.removalSet(for: h.annotation, on: h.page), with: [],
+                            actionName: "Remove \(Markups.displayName(of: h.annotation))")
     }
 
     @objc private func recolorHighlight(_ sender: NSMenuItem) {

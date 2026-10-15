@@ -2,7 +2,7 @@ import AppKit
 import PDFKit
 import PaperMarkCore
 
-/// 형광펜 위에서 우클릭하면 지우기·색 바꾸기 메뉴를 앞에 붙이는 PDFView.
+/// 형광펜 등 사용자 주석 위에서 우클릭하면 지우기·색 바꾸기 메뉴를 앞에 붙이는 PDFView.
 final class ReaderPDFView: PDFView {
     var highlightMenuItems: ((PlacedHighlight) -> [NSMenuItem])?
 
@@ -19,7 +19,7 @@ final class ReaderPDFView: PDFView {
     private func highlight(at event: NSEvent) -> PlacedHighlight? {
         let point = convert(event.locationInWindow, from: nil)
         guard let page = page(for: point, nearest: false),
-              let annotation = Highlights.highlight(on: page, at: convert(point, to: page)) else { return nil }
+              let annotation = Markups.markup(on: page, at: convert(point, to: page)) else { return nil }
         return PlacedHighlight(page: page, annotation: annotation)
     }
 }

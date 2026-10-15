@@ -117,5 +117,44 @@ check(!layered, "합친 주석 안에서 겹치는 사각형 없음")
 let apart = place(Highlights.make(from: mp.selection(for: NSRange(location: 900, length: 40))!, color: yellow))
 check(apart.removed.isEmpty && mp.annotations.filter(Highlights.isHighlight).count == 2, "떨어진 형광펜은 합치지 않음")
 
+// 형광펜 말고 다른 주석: 밑줄은 줄 사각형, 펜은 실제 선 근처, 메모는 bounds로 판정. 링크는 제외
+let markDoc = PDFDocument(url: sourceURL)!
+let kp = markDoc.page(at: 0)!
+let underline = PDFAnnotation(bounds: .zero, forType: .underline, withProperties: nil)
+let lineRect = Highlights.rects(of: Highlights.make(from: kp.selection(for: NSRange(location: 30, length: 20))!,
+                                                    color: yellow)[0].annotation)[0]
+underline.bounds = lineRect
+underline.quadrilateralPoints = [NSPoint(x: 0, y: lineRect.height), NSPoint(x: lineRect.width, y: lineRect.height),
+                                 NSPoint(x: 0, y: 0), NSPoint(x: lineRect.width, y: 0)].map { NSValue(point: $0) }
+underline.color = .red
+kp.addAnnotation(underline)
+// 펜: (100,300)에서 (300,500)으로 가는 대각선. bounds 안이지만 선에서 먼 (280,320)은 안 맞아야 한다.
+let inkBounds = CGRect(x: 90, y: 290, width: 220, height: 220)
+let ink = PDFAnnotation(bounds: inkBounds, forType: .ink, withProperties: nil)
+let stroke = NSBezierPath()
+stroke.move(to: NSPoint(x: 10, y: 10)); stroke.line(to: NSPoint(x: 210, y: 210))
+ink.add(stroke)
+ink.color = .blue
+kp.addAnnotation(ink)
+let note = PDFAnnotation(bounds: CGRect(x: 500, y: 700, width: 20, height: 20), forType: .text, withProperties: nil)
+note.contents = "memo"
+let popup = PDFAnnotation(bounds: CGRect(x: 520, y: 600, width: 150, height: 100), forType: .popup, withProperties: nil)
+note.popup = popup
+kp.addAnnotation(note); kp.addAnnotation(popup)
+let link = PDFAnnotation(bounds: CGRect(x: 40, y: 40, width: 60, height: 20), forType: .link, withProperties: nil)
+kp.addAnnotation(link)
+let markURL = outDir.appendingPathComponent("markups.pdf")
+try markDoc.dataRepresentation()!.write(to: markURL)
+
+let mk = PDFDocument(url: markURL)!.page(at: 0)!
+func found(_ p: CGPoint) -> String? { Markups.markup(on: mk, at: p).map(Markups.displayName(of:)) }
+check(found(CGPoint(x: lineRect.midX, y: lineRect.midY)) == "Underline", "밑줄 위 → Underline")
+check(found(CGPoint(x: 200, y: 400)) == "Drawing", "펜 선 위 → Drawing")
+check(found(CGPoint(x: 280, y: 320)) == nil, "펜 bounds 안이지만 선에서 먼 곳 → 없음")
+check(found(CGPoint(x: 510, y: 710)) == "Note", "메모 아이콘 위 → Note")
+check(found(CGPoint(x: 60, y: 50)) == nil, "링크는 사용자 주석이 아님")
+// PDFKit은 저장할 때 팝업을 쓰지 않으므로 메모리의 페이지로 확인한다(파일에서 읽으면 팝업이 연결된다).
+check(Markups.removalSet(for: note, on: kp).count == 2, "메모를 지우면 팝업도 함께 지움")
+
 print(failures == 0 ? "ALL PASS" : "\(failures) FAILED", "→", outDir.path)
 exit(failures == 0 ? 0 : 1)

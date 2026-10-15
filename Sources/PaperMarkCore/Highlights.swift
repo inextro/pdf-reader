@@ -121,3 +121,69 @@ public enum Highlights {
         page.annotations.last { isHighlight($0) && hit($0, at: point) }
     }
 }
+
+/// 형광펜 말고도 PDF Expert 등에서 만든 사용자 주석(밑줄, 취소선, 펜, 메모, 도형 등)을 다룬다.
+public enum Markups {
+    /// 줄 단위 QuadPoints로 칠하는 텍스트 주석.
+    static let textMarkupTypes: Set<String> = ["Highlight", "Underline", "StrikeOut", "Squiggly"]
+    /// 사용자가 만든 주석이 아닌 것(링크, 폼 필드, 메모의 팝업 창).
+    static let systemTypes: Set<String> = ["Link", "Widget", "Popup"]
+
+    public static func type(of annotation: PDFAnnotation) -> String {
+        (annotation.type ?? "").trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    }
+
+    public static func isUserMarkup(_ annotation: PDFAnnotation) -> Bool {
+        !systemTypes.contains(type(of: annotation))
+    }
+
+    /// 색을 바꿀 수 있는 주석. 텍스트 상자는 /C가 배경색이라 제외한다.
+    public static func isRecolorable(_ annotation: PDFAnnotation) -> Bool {
+        isUserMarkup(annotation) && !["FreeText", "Stamp"].contains(type(of: annotation))
+    }
+
+    /// 우클릭 메뉴에 쓸 이름.
+    public static func displayName(of annotation: PDFAnnotation) -> String {
+        switch type(of: annotation) {
+        case "Highlight": "Highlight"
+        case "Underline": "Underline"
+        case "StrikeOut": "Strikethrough"
+        case "Squiggly": "Squiggly Underline"
+        case "Ink": "Drawing"
+        case "Text": "Note"
+        case "FreeText": "Text Box"
+        case "Square", "Circle", "Line", "Polygon", "PolyLine": "Shape"
+        default: "Annotation"
+        }
+    }
+
+    /// 점이 주석 위에 있는지(페이지 좌표). 텍스트 주석은 줄 사각형, 펜은 실제 선 근처, 나머지는 bounds.
+    public static func hit(_ annotation: PDFAnnotation, at point: CGPoint) -> Bool {
+        let kind = type(of: annotation)
+        if textMarkupTypes.contains(kind) { return Highlights.hit(annotation, at: point) }
+        if kind == "Ink", let paths = annotation.paths, !paths.isEmpty {
+            // 펜 경로는 주석 bounds 원점 기준 좌표다. 선 두께에 여유를 더해 판정한다.
+            let local = CGPoint(x: point.x - annotation.bounds.minX, y: point.y - annotation.bounds.minY)
+            let width = max(annotation.border?.lineWidth ?? 1, 1) + 6
+            return paths.contains {
+                $0.cgPath.copy(strokingWithWidth: width, lineCap: .round, lineJoin: .round, miterLimit: 10)
+                    .contains(local)
+            }
+        }
+        return annotation.bounds.insetBy(dx: -1, dy: -1).contains(point)
+    }
+
+    /// 점 위에 있는 사용자 주석 중 가장 위(나중에 붙은) 것.
+    public static func markup(on page: PDFPage, at point: CGPoint) -> PDFAnnotation? {
+        page.annotations.last { isUserMarkup($0) && hit($0, at: point) }
+    }
+
+    /// 지울 때 함께 지울 주석들: 주석 자신과, 같은 페이지에 붙은 메모 팝업 창.
+    public static func removalSet(for annotation: PDFAnnotation, on page: PDFPage) -> [PlacedHighlight] {
+        var result = [PlacedHighlight(page: page, annotation: annotation)]
+        if let popup = annotation.popup, page.annotations.contains(where: { $0 === popup }) {
+            result.append(PlacedHighlight(page: page, annotation: popup))
+        }
+        return result
+    }
+}
