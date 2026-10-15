@@ -51,7 +51,7 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
                               styleMask: [.titled, .closable, .miniaturizable, .resizable],
                               backing: .buffered, defer: false)
         window.minSize = NSSize(width: 520, height: 400)
-        window.toolbarStyle = .unified
+        window.toolbarStyle = .expanded   // 제목 표시줄(파일 이름) 아래에 툴바를 따로 둔다
         super.init(window: window)
         window.delegate = self
         // 저장된 창 크기가 없으면(첫 실행) 화면의 쓸 수 있는 영역 높이에 맞춰 연다.
