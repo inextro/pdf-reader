@@ -14,6 +14,7 @@ final class PMDocument: NSDocument {
 
     override func makeWindowControllers() {
         addWindowController(DocumentWindowController(document: self))
+        if let fileURL { Session.didOpen(fileURL) }
     }
 
     override func read(from data: Data, ofType typeName: String) throws {

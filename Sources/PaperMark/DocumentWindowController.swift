@@ -41,6 +41,8 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
     private var erasedDuringDrag: [PlacedHighlight]?
     // 스페이스바를 누르고 있어서 켜진 지우개(떼면 끈다).
     private var spaceHeld = false
+    // 다시 열 때 갈 마지막 페이지. 이동하기 전까지는 페이지 변경을 기록하지 않는다(처음 그릴 때 0쪽으로 덮어쓰지 않게).
+    private var pageToRestore: Int?
 
     private var pmDocument: PMDocument? { document as? PMDocument }
 
@@ -64,6 +66,7 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
         pdfView.displayMode = .singlePageContinuous
         pdfView.displaysPageBreaks = true
         pdfView.document = document.pdf
+        pageToRestore = document.fileURL.flatMap(Session.lastPage(of:))
         pdfView.highlightMenuItems = { [weak self] in self?.menuItems(for: $0) ?? [] }
         // contentViewController로 넣으면 창이 내용의 fitting size(최소 크기)로 줄어들어서 뷰만 붙인다.
         splitController = makeSplitViewController()
@@ -89,6 +92,8 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
                                                name: ColorStore.didChange, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(colorStoreChanged),
                                                name: ShortcutStore.didChange, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(pageChanged),
+                                               name: .PDFViewPageChanged, object: pdfView)
         NotificationCenter.default.addObserver(self, selector: #selector(pdfSelectionChanged),
                                                name: .PDFViewSelectionChanged, object: pdfView)
         colorStoreChanged()
@@ -403,6 +408,29 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
         default:
             return true
         }
+    }
+
+    // 사용자가 창을 닫을 때만 불린다(앱을 끄면서 닫히는 창은 아님). 다음 실행 때 다시 열 목록에서 뺀다.
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        if let url = pmDocument?.fileURL { Session.didCloseByUser(url) }
+        return true
+    }
+
+    override func showWindow(_ sender: Any?) {
+        super.showWindow(sender)
+        // 창 크기가 정해진 다음에 마지막으로 보던 페이지로 간다.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let index = self.pageToRestore else { return }
+            self.pageToRestore = nil
+            if let page = self.pdfView.document?.page(at: index) { self.pdfView.go(to: page) }
+        }
+    }
+
+    // 앱을 끌 때는 창이 닫히지 않을 수 있어서 페이지가 바뀔 때마다 기록한다.
+    @objc private func pageChanged(_ note: Notification) {
+        guard pageToRestore == nil, let url = pmDocument?.fileURL, let page = pdfView.currentPage,
+              let index = pdfView.document?.index(for: page) else { return }
+        Session.setLastPage(index, of: url)
     }
 
     func windowWillClose(_ notification: Notification) {

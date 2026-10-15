@@ -21,6 +21,35 @@ final class PMDocumentController: NSDocumentController {
     }
 }
 
+/// 앱을 다시 열 때 이어 볼 파일과 파일마다 마지막으로 보던 페이지.
+/// 창을 직접 닫으면(⌘W, 닫기 버튼) 목록에서 빼고, 앱을 끄면서 닫히는 창은 남긴다.
+enum Session {
+    private static let filesKey = "openFiles", pagesKey = "lastPages"
+    private static var defaults: UserDefaults { .standard }
+
+    static var files: [URL] { (defaults.stringArray(forKey: filesKey) ?? []).map { URL(fileURLWithPath: $0) } }
+
+    static func didOpen(_ url: URL) {
+        var paths = defaults.stringArray(forKey: filesKey) ?? []
+        if !paths.contains(url.path) { paths.append(url.path) }
+        defaults.set(paths, forKey: filesKey)
+    }
+
+    static func didCloseByUser(_ url: URL) {
+        defaults.set((defaults.stringArray(forKey: filesKey) ?? []).filter { $0 != url.path }, forKey: filesKey)
+    }
+
+    static func lastPage(of url: URL) -> Int? {
+        (defaults.dictionary(forKey: pagesKey)?[url.path] as? Int)
+    }
+
+    static func setLastPage(_ page: Int, of url: URL) {
+        var pages = defaults.dictionary(forKey: pagesKey) ?? [:]
+        pages[url.path] = page
+        defaults.set(pages, forKey: pagesKey)
+    }
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let highlightMenu = NSMenu(title: "Highlight")
     private var colorItems: [NSMenuItem] = []
@@ -33,9 +62,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.addObserver(self, selector: #selector(applyShortcuts),
                                                name: ShortcutStore.didChange, object: nil)
         applyShortcuts()
-        // Dock에서 그냥 실행했을 때는 바로 열기 창을 띄운다(파일을 더블클릭해 실행한 경우 제외).
+        // Dock에서 그냥 실행했을 때는 직전 파일을 다시 연다(파일을 더블클릭해 실행한 경우 제외).
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            if NSDocumentController.shared.documents.isEmpty { NSDocumentController.shared.openDocument(nil) }
+            if NSDocumentController.shared.documents.isEmpty { self.reopenLastFiles() }
+        }
+    }
+
+    /// 앱을 끌 때 열려 있던 파일들을 다시 연다. 없으면 가장 최근 파일, 그것도 없으면 열기 창.
+    private func reopenLastFiles() {
+        let controller = NSDocumentController.shared
+        let exists = { (url: URL) in FileManager.default.fileExists(atPath: url.path) }
+        var urls = Session.files.filter(exists)
+        if urls.isEmpty, let recent = controller.recentDocumentURLs.first(where: exists) { urls = [recent] }
+        guard !urls.isEmpty else { controller.openDocument(nil); return }
+        var pending = urls.count, opened = 0
+        for url in urls {
+            controller.openDocument(withContentsOf: url, display: true) { document, _, _ in
+                pending -= 1
+                if document != nil { opened += 1 }
+                if pending == 0, opened == 0 { controller.openDocument(nil) }
+            }
         }
     }
 
