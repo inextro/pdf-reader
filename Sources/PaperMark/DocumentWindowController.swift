@@ -116,9 +116,11 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
     private func highlightCurrentSelection() {
         guard let selection = pdfView.currentSelection,
               !(selection.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        let highlights = Highlights.make(from: selection, color: ColorStore.shared.currentColor, author: NSFullUserName())
+        let color = ColorStore.shared.currentColor, author = NSFullUserName()
+        let highlights = Highlights.make(from: selection, color: color, author: author)
         guard !highlights.isEmpty else { return }
-        pmDocument?.add(highlights)
+        let merged = Highlights.merge(highlights, color: color, author: author)
+        pmDocument?.replace(merged.removed, with: merged.added, actionName: "Highlight")
         pdfView.clearSelection()
     }
 

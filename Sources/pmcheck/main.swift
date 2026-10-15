@@ -93,5 +93,29 @@ let removedURL = outDir.appendingPathComponent("removed.pdf")
 try removeDoc.dataRepresentation()!.write(to: removedURL)
 check(PDFDocument(url: removedURL)!.page(at: 0)!.annotations.filter(Highlights.isHighlight).isEmpty, "지운 뒤 저장하면 1쪽 형광펜 없음")
 
+// 겹친 형광펜 합치기: 겹치면 주석 하나(새 색, 한 겹)로, 떨어져 있으면 그대로
+let mergeDoc = PDFDocument(url: sourceURL)!
+let mp = mergeDoc.page(at: 0)!
+let green = NSColor(hex: "#A8E6A1")!
+func place(_ hs: [PlacedHighlight]) -> (added: [PlacedHighlight], removed: [PlacedHighlight]) {
+    let m = Highlights.merge(hs, color: hs[0].annotation.color)
+    for h in m.removed { h.page.removeAnnotation(h.annotation) }
+    for h in m.added { h.page.addAnnotation(h.annotation) }
+    return m
+}
+_ = place(Highlights.make(from: mp.selection(for: NSRange(location: 30, length: 120))!, color: yellow))
+let overlap = place(Highlights.make(from: mp.selection(for: NSRange(location: 100, length: 150))!, color: green))
+let onPage = mp.annotations.filter(Highlights.isHighlight)
+check(overlap.removed.count == 1 && onPage.count == 1, "겹친 형광펜 → 주석 1개로 합침 (got \(onPage.count))")
+check(onPage.first?.color.hexString == "#A8E6A1", "합친 형광펜은 새 색")
+let unionLines = mp.selection(for: NSRange(location: 30, length: 220))!.selectionsByLine().count
+let mergedRects = onPage.first.map(Highlights.rects(of:)) ?? []
+check(mergedRects.count == unionLines, "줄마다 사각형 하나 (\(mergedRects.count) / \(unionLines)줄)")
+let layered = mergedRects.enumerated().contains { i, a in
+    mergedRects.enumerated().contains { j, b in i < j && a.intersection(b).width * a.intersection(b).height > 1 } }
+check(!layered, "합친 주석 안에서 겹치는 사각형 없음")
+let apart = place(Highlights.make(from: mp.selection(for: NSRange(location: 900, length: 40))!, color: yellow))
+check(apart.removed.isEmpty && mp.annotations.filter(Highlights.isHighlight).count == 2, "떨어진 형광펜은 합치지 않음")
+
 print(failures == 0 ? "ALL PASS" : "\(failures) FAILED", "→", outDir.path)
 exit(failures == 0 ? 0 : 1)

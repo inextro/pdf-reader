@@ -37,16 +37,19 @@ final class PMDocument: NSDocument {
     // MARK: 형광펜 편집 (모두 실행 취소 가능)
 
     func add(_ highlights: [PlacedHighlight]) {
-        for h in highlights { h.page.addAnnotation(h.annotation) }
-        undoManager?.registerUndo(withTarget: self) { $0.remove(highlights) }
-        undoManager?.setActionName("Highlight")
-        scheduleSave()
+        replace([], with: highlights, actionName: "Highlight")
     }
 
     func remove(_ highlights: [PlacedHighlight]) {
-        for h in highlights { h.page.removeAnnotation(h.annotation) }
-        undoManager?.registerUndo(withTarget: self) { $0.add(highlights) }
-        undoManager?.setActionName("Remove Highlight")
+        replace(highlights, with: [], actionName: "Remove Highlight")
+    }
+
+    /// 지우기와 추가를 실행 취소 한 번으로 묶는다(겹친 형광펜 합치기).
+    func replace(_ old: [PlacedHighlight], with new: [PlacedHighlight], actionName: String) {
+        for h in old { h.page.removeAnnotation(h.annotation) }
+        for h in new { h.page.addAnnotation(h.annotation) }
+        undoManager?.registerUndo(withTarget: self) { $0.replace(new, with: old, actionName: actionName) }
+        undoManager?.setActionName(actionName)
         scheduleSave()
     }
 

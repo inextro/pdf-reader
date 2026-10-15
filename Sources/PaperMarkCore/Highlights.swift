@@ -31,20 +31,72 @@ public enum Highlights {
             }
         }
         return pages.map { page in
-            let rects = rectsByPage[ObjectIdentifier(page)]!
-            let bounds = rects.dropFirst().reduce(rects[0]) { $0.union($1) }
-            let annotation = PDFAnnotation(bounds: bounds, forType: .highlight, withProperties: nil)
-            annotation.color = color
-            // PDFKit의 quadrilateralPoints는 주석 bounds 원점 기준 좌표다.
-            annotation.quadrilateralPoints = rects.flatMap { r -> [NSValue] in
-                [NSPoint(x: r.minX, y: r.maxY), NSPoint(x: r.maxX, y: r.maxY),
-                 NSPoint(x: r.minX, y: r.minY), NSPoint(x: r.maxX, y: r.minY)]
-                    .map { NSValue(point: NSPoint(x: $0.x - bounds.minX, y: $0.y - bounds.minY)) }
-            }
-            if let author { annotation.userName = author }
-            annotation.modificationDate = Date()
-            return PlacedHighlight(page: page, annotation: annotation)
+            PlacedHighlight(page: page, annotation: annotation(rects: rectsByPage[ObjectIdentifier(page)]!,
+                                                                color: color, author: author))
         }
+    }
+
+    /// 줄 사각형들(페이지 좌표)로 /Highlight 주석 하나를 만든다.
+    static func annotation(rects: [CGRect], color: NSColor, author: String?) -> PDFAnnotation {
+        let bounds = rects.dropFirst().reduce(rects[0]) { $0.union($1) }
+        let annotation = PDFAnnotation(bounds: bounds, forType: .highlight, withProperties: nil)
+        annotation.color = color
+        // PDFKit의 quadrilateralPoints는 주석 bounds 원점 기준 좌표다.
+        annotation.quadrilateralPoints = rects.flatMap { r -> [NSValue] in
+            [NSPoint(x: r.minX, y: r.maxY), NSPoint(x: r.maxX, y: r.maxY),
+             NSPoint(x: r.minX, y: r.minY), NSPoint(x: r.maxX, y: r.minY)]
+                .map { NSValue(point: NSPoint(x: $0.x - bounds.minX, y: $0.y - bounds.minY)) }
+        }
+        if let author { annotation.userName = author }
+        annotation.modificationDate = Date()
+        return annotation
+    }
+
+    /// 새 형광펜을 이미 있는 형광펜과 합친다. 겹치거나 같은 줄에서 맞닿는 기존 형광펜은
+    /// 지우고, 새 형광펜과 합친 주석 하나(새 색)로 바꾼다. 그래서 겹친 곳도 한 겹으로 칠해진다.
+    public static func merge(_ new: [PlacedHighlight], color: NSColor, author: String? = nil)
+        -> (added: [PlacedHighlight], removed: [PlacedHighlight]) {
+        var added: [PlacedHighlight] = [], removed: [PlacedHighlight] = []
+        for h in new {
+            var area = rects(of: h.annotation)
+            var others = h.page.annotations.filter(isHighlight)
+            var absorbed: [PDFAnnotation] = []
+            // 합친 영역이 커지면 다른 형광펜과 새로 닿을 수 있어 더 없을 때까지 반복한다.
+            while let i = others.firstIndex(where: { other in
+                rects(of: other).contains { o in area.contains { touches(o, $0) } }
+            }) {
+                let other = others.remove(at: i)
+                absorbed.append(other)
+                area += rects(of: other)
+            }
+            guard !absorbed.isEmpty else { added.append(h); continue }
+            let merged = annotation(rects: joinLines(area), color: color, author: author)
+            let notes = absorbed.compactMap(\.contents).filter { !$0.isEmpty }
+            if !notes.isEmpty { merged.contents = notes.joined(separator: "\n") }
+            removed += absorbed.map { PlacedHighlight(page: h.page, annotation: $0) }
+            added.append(PlacedHighlight(page: h.page, annotation: merged))
+        }
+        return (added, removed)
+    }
+
+    /// 같은 줄(세로로 절반 이상 겹침)에 있고 가로로 겹치거나 1pt 안으로 붙어 있으면 맞닿은 것으로 본다.
+    static func touches(_ a: CGRect, _ b: CGRect) -> Bool {
+        let vertical = min(a.maxY, b.maxY) - max(a.minY, b.minY)
+        guard vertical >= 0.5 * min(a.height, b.height) else { return false }
+        return a.minX <= b.maxX + 1 && b.minX <= a.maxX + 1
+    }
+
+    /// 맞닿은 사각형을 줄마다 하나로 합치고 위에서 아래, 왼쪽에서 오른쪽 순서로 정렬한다.
+    static func joinLines(_ rects: [CGRect]) -> [CGRect] {
+        var lines: [CGRect] = []
+        for r in rects {
+            var current = r
+            while let i = lines.firstIndex(where: { touches($0, current) }) {
+                current = current.union(lines.remove(at: i))
+            }
+            lines.append(current)
+        }
+        return lines.sorted { abs($0.midY - $1.midY) > 1 ? $0.midY > $1.midY : $0.minX < $1.minX }
     }
 
     /// 주석이 실제로 칠한 사각형들(페이지 좌표). QuadPoints가 없으면 bounds 하나.
