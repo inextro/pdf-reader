@@ -21,6 +21,8 @@ private final class HighlightAction: NSObject {
 
 final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSWindowDelegate, NSMenuItemValidation {
     private let pdfView = ReaderPDFView()
+    private let thumbnails = PDFThumbnailView()
+    private var splitController: NSSplitViewController!
     private let palette = PaletteView()
     private let modeButton = NSButton()
     private var searchItem: NSSearchToolbarItem?
@@ -44,6 +46,12 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
         window.toolbarStyle = .unified
         super.init(window: window)
         window.delegate = self
+        // 저장된 창 크기가 없으면(첫 실행) 화면의 쓸 수 있는 영역 높이에 맞춰 연다.
+        if !window.setFrameUsingName("PaperMarkDocumentWindow"), let visible = NSScreen.main?.visibleFrame {
+            let size = NSSize(width: min(980, visible.width), height: visible.height)
+            window.setFrame(NSRect(origin: NSPoint(x: visible.midX - size.width / 2, y: visible.minY), size: size),
+                            display: false)
+        }
         window.setFrameAutosaveName("PaperMarkDocumentWindow")
 
         pdfView.autoScales = true
@@ -51,7 +59,9 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
         pdfView.displaysPageBreaks = true
         pdfView.document = document.pdf
         pdfView.highlightMenuItems = { [weak self] in self?.menuItems(for: $0) ?? [] }
-        window.contentView = pdfView
+        // contentViewController로 넣으면 창이 내용의 fitting size(최소 크기)로 줄어들어서 뷰만 붙인다.
+        splitController = makeSplitViewController()
+        window.contentView = splitController.view
 
         modeButton.setButtonType(.pushOnPushOff)
         modeButton.bezelStyle = .toolbar
@@ -74,6 +84,37 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    /// 왼쪽은 페이지 썸네일 사이드바(⌃⌘S로 접기), 오른쪽은 PDF.
+    private func makeSplitViewController() -> NSSplitViewController {
+        thumbnails.pdfView = pdfView
+        thumbnails.thumbnailSize = NSSize(width: 96, height: 124)
+        thumbnails.backgroundColor = .clear
+        let sidebarContent = NSViewController()
+        sidebarContent.view = thumbnails
+        let sidebar = NSSplitViewItem(sidebarWithViewController: sidebarContent)
+        sidebar.minimumThickness = 120
+        sidebar.maximumThickness = 260
+        sidebar.canCollapse = true
+
+        let mainContent = NSViewController()
+        mainContent.view = pdfView
+        let main = NSSplitViewItem(viewController: mainContent)
+        main.minimumThickness = 360
+
+        let split = NSSplitViewController()
+        split.addSplitViewItem(sidebar)
+        split.addSplitViewItem(main)
+        // 사이드바 폭과 접힘 상태를 기억한다.
+        split.splitView.autosaveName = "PaperMarkSidebar"
+        return split
+    }
+
+    @objc func toggleSidebar(_ sender: Any?) {
+        splitController.toggleSidebar(sender)
+    }
+
+    private var sidebarCollapsed: Bool { splitController.splitViewItems.first?.isCollapsed ?? true }
 
     /// 다른 기기에서 바뀐 파일을 다시 읽었을 때: 보던 쪽을 유지한다.
     func documentDidReload() {
@@ -241,6 +282,9 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
             return true
         case #selector(highlightSelection(_:)):
             return pdfView.currentSelection != nil
+        case #selector(toggleSidebar(_:)):
+            item.title = sidebarCollapsed ? "Show Sidebar" : "Hide Sidebar"
+            return true
         case #selector(findNextResult(_:)), #selector(findPreviousResult(_:)):
             return !results.isEmpty
         default:
@@ -257,7 +301,7 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
     // MARK: 툴바
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.highlightMode, .palette, .flexibleSpace, .search]
+        [.toggleSidebar, .sidebarTrackingSeparator, .highlightMode, .palette, .flexibleSpace, .search]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {

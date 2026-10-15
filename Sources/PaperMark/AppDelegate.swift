@@ -85,6 +85,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         highlightMenu.addItem(withTitle: "Highlight Mode", action: #selector(DocumentWindowController.toggleHighlightMode(_:)), keyEquivalent: "D")
 
         let view = submenu(of: main, title: "View")
+        view.addItem(withTitle: "Show Sidebar", action: #selector(DocumentWindowController.toggleSidebar(_:)), keyEquivalent: "s")
+            .keyEquivalentModifierMask = [.command, .control]
+        view.addItem(.separator())
         view.addItem(withTitle: "Zoom In", action: #selector(DocumentWindowController.zoomInPDF(_:)), keyEquivalent: "=")
         view.addItem(withTitle: "Zoom Out", action: #selector(DocumentWindowController.zoomOutPDF(_:)), keyEquivalent: "-")
         view.addItem(withTitle: "Zoom to Fit", action: #selector(DocumentWindowController.zoomToFit(_:)), keyEquivalent: "0")
