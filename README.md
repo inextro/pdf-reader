@@ -42,6 +42,10 @@ palette, then keep going on another device.
 
 ## Release notes
 
+### 0.3.1
+
+- Fix: Word snapping keeps brackets paired, so dragging `(word` highlights `(word)` instead of dropping the `)`.
+
 ### 0.3.0
 
 - New: Translate sentences, not just words. Hold `T` while dragging over text, press `⌘T` on a selection,
