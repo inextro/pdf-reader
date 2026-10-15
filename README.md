@@ -41,6 +41,12 @@ palette, then keep going on another device.
 
 ## Release notes
 
+### 0.3.0
+
+- New: Translate sentences, not just words. Hold `T` while dragging over text, press `⌘T` on a selection,
+  or right-click a highlight. Uses Apple's on-device Translation; hyphenated line breaks are joined first.
+- New: Drags snap to whole words and stop at punctuation, so a typo like `results.In` highlights just `results`.
+
 ### 0.2.0
 
 - New: Eraser. Hold `Space`, or toggle eraser mode with `⇧⌘E`, then click or rub over annotations to remove them.
