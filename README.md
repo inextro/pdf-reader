@@ -42,6 +42,7 @@
 ./scripts/build-app.sh            # build/PaperMark.app
 ./scripts/build-app.sh --install  # ~/Applications 에 설치
 swift run pmcheck <출력폴더>      # 형광펜 저장·재로딩 검증 (샘플 PDF 생성)
+swift scripts/make-icon.swift .   # 앱 아이콘 Resources/AppIcon.icns 다시 그리기
 ```
 
 PDF 파일의 "다음으로 열기"에서 PaperMark를 고를 수 있다.

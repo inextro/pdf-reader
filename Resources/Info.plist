@@ -8,6 +8,8 @@
 	<string>PaperMark</string>
 	<key>CFBundleDisplayName</key>
 	<string>PaperMark</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleExecutable</key>
 	<string>PaperMark</string>
 	<key>CFBundlePackageType</key>
