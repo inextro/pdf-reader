@@ -170,5 +170,16 @@ check(ctrlOptUp.display == "⌃⌥⇧↑", "기능 키는 Shift 유지 (\(ctrlOp
 let roundTrip = try JSONDecoder().decode(Shortcut.self, from: JSONEncoder().encode(shiftD))
 check(roundTrip == shiftD, "저장 후 복원")
 
+// 번역용 텍스트 다듬기: 줄 끝 하이픈 잇기, 줄바꿈·겹친 공백 정리
+check(PDFText.cleaned("recom-\nmender sys-\ntems\nlearn   from\n") == "recommender systems learn from",
+      "하이픈으로 끊긴 단어 잇기와 공백 정리")
+check(PDFText.cleaned("Top-\nK results") == "Top- K results", "다음 줄이 대문자면 하이픈을 지우지 않음")
+let textDoc = PDFDocument(url: sourceURL)!
+let tp = textDoc.page(at: 0)!
+let marked = Highlights.make(from: tp.selection(for: NSRange(location: 30, length: 180))!, color: yellow)[0]
+let expected = PDFText.cleaned(tp.selection(for: NSRange(location: 30, length: 180))!.string ?? "")
+let got = PDFText.text(of: marked.annotation, on: tp)
+check(got.contains(String(expected.dropFirst(3).dropLast(3))), "형광펜이 덮은 여러 줄 글자 뽑기 (\(got.count)자)")
+
 print(failures == 0 ? "ALL PASS" : "\(failures) FAILED", "→", outDir.path)
 exit(failures == 0 ? 0 : 1)

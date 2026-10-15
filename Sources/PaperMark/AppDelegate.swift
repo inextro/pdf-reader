@@ -135,6 +135,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         add(highlightMenu, "Highlight Selection", #selector(DocumentWindowController.highlightSelection(_:)), .highlightSelection)
         add(highlightMenu, "Highlight Mode", #selector(DocumentWindowController.toggleHighlightMode(_:)), .highlightMode)
         add(highlightMenu, "Eraser Mode", #selector(DocumentWindowController.toggleEraserMode(_:)), .eraserMode)
+        add(highlightMenu, "Translate Selection", #selector(DocumentWindowController.translateSelection(_:)), .translate)
         add(highlightMenu, "Remove Current Color from Presets", #selector(removeCurrentColor(_:)), .removeCurrentColor)
         commandItems[.removeCurrentColor]?.target = self
 

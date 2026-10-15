@@ -41,6 +41,9 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
     private var erasedDuringDrag: [PlacedHighlight]?
     // 스페이스바를 누르고 있어서 켜진 지우개(떼면 끈다).
     private var spaceHeld = false
+    // T를 누르고 있는 동안 드래그하면 칠하지 않고 놓는 즉시 번역한다.
+    private var translateHeld = false
+    private var translateDrag = false
     // 다시 열 때 갈 마지막 페이지. 이동하기 전까지는 페이지 변경을 기록하지 않는다(처음 그릴 때 0쪽으로 덮어쓰지 않게).
     private var pageToRestore: Int?
 
@@ -68,6 +71,7 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
         pdfView.document = document.pdf
         pageToRestore = document.fileURL.flatMap(Session.lastPage(of:))
         pdfView.highlightMenuItems = { [weak self] in self?.menuItems(for: $0) ?? [] }
+        pdfView.selectionMenuItems = { [weak self] in self?.selectionMenuItems() ?? [] }
         // contentViewController로 넣으면 창이 내용의 fitting size(최소 크기)로 줄어들어서 뷰만 붙인다.
         splitController = makeSplitViewController()
         window.contentView = splitController.view
@@ -158,6 +162,7 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
             if event.type == .leftMouseDown {
                 self.mouseDownInPDF = inPDF
                 self.selectionChangedDuringDrag = false
+                self.translateDrag = self.translateHeld
             } else if self.mouseDownInPDF {
                 self.mouseDownInPDF = false
                 // PDFView가 mouseUp을 처리해 선택을 확정한 다음에 칠한다.
@@ -169,9 +174,13 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
 
     /// 스페이스바를 누르고 있는 동안만 지우개 모드(떼면 꺼짐). 페이지를 내리는 기본 동작 대신이다.
     /// 지우개가 이미 버튼이나 ⇧⌘E로 켜져 있으면 스페이스바는 아무것도 바꾸지 않는다. Esc는 지우개를 끈다.
+    /// T를 누르고 있는 동안 드래그하면 번역한다(형광펜은 칠하지 않음).
     /// 검색창 등 글자 입력 중일 때는 건드리지 않는다.
     private func handleKey(_ event: NSEvent) -> Bool {
+        // 한글 입력 중에는 T 키가 "ㅅ"으로 들어오므로 글자가 아니라 키 위치(kVK_ANSI_T = 17)로 본다.
+        let isT = event.keyCode == 17
         if event.type == .keyUp {
+            if isT, translateHeld { translateHeld = false; return true }
             guard event.keyCode == 49, spaceHeld else { return false }
             releaseSpace()
             return true
@@ -185,6 +194,9 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
                 ColorStore.shared.eraserMode = true
                 pdfView.clearSelection()
             }
+            return true
+        case _ where isT:
+            if !event.isARepeat { translateHeld = true }
             return true
         case 53 where ColorStore.shared.eraserMode:    // Esc
             spaceHeld = false
@@ -204,6 +216,7 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
     // 스페이스바를 누른 채 다른 창으로 가면 keyUp이 오지 않으므로 여기서 끈다.
     func windowDidResignKey(_ notification: Notification) {
         releaseSpace()
+        translateHeld = false
     }
 
     /// 지우개 이벤트를 처리했으면 true(PDFView에 넘기지 않음).
@@ -247,6 +260,12 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
     }
 
     private func highlightAfterDrag() {
+        if translateDrag {
+            translateDrag = false
+            if selectionChangedDuringDrag { translateSelection(nil) }
+            selectionChangedDuringDrag = false
+            return
+        }
         guard selectionChangedDuringDrag, ColorStore.shared.highlightMode else { return }
         selectionChangedDuringDrag = false
         highlightCurrentSelection()
@@ -293,12 +312,47 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
             + key(.eraserMode)
     }
 
+    // MARK: 번역
+
+    private var selectedText: String {
+        PDFText.cleaned(pdfView.currentSelection?.string ?? "")
+    }
+
+    @objc func translateSelection(_ sender: Any?) {
+        guard let selection = pdfView.currentSelection, let page = selection.pages.first else { return }
+        let rect = pdfView.convert(selection.bounds(for: page), from: page)
+        Translator.present(selectedText, at: rect, in: pdfView)
+    }
+
+    @objc private func translateHighlight(_ sender: NSMenuItem) {
+        guard let h = (sender.representedObject as? HighlightAction)?.highlight else { return }
+        let rect = pdfView.convert(h.annotation.bounds, from: h.page)
+        Translator.present(PDFText.text(of: h.annotation, on: h.page), at: rect, in: pdfView)
+    }
+
+    private func selectionMenuItems() -> [NSMenuItem] {
+        let text = selectedText
+        guard Translator.isAvailable, !text.isEmpty else { return [] }
+        let preview = text.count > 24 ? String(text.prefix(24)) + "…" : text
+        let item = NSMenuItem(title: "Translate “\(preview)”", action: #selector(translateSelection(_:)), keyEquivalent: "")
+        item.target = self
+        return [item]
+    }
+
     private func menuItems(for highlight: PlacedHighlight) -> [NSMenuItem] {
         let name = Markups.displayName(of: highlight.annotation)
+        var items: [NSMenuItem] = []
+        if Translator.isAvailable, Markups.textMarkupTypes.contains(Markups.type(of: highlight.annotation)) {
+            let translate = NSMenuItem(title: "Translate \(name)", action: #selector(translateHighlight(_:)), keyEquivalent: "")
+            translate.target = self
+            translate.representedObject = HighlightAction(highlight)
+            items += [translate, .separator()]
+        }
         let remove = NSMenuItem(title: "Remove \(name)", action: #selector(removeHighlight(_:)), keyEquivalent: "")
         remove.target = self
         remove.representedObject = HighlightAction(highlight)
-        guard Markups.isRecolorable(highlight.annotation) else { return [remove] }
+        items.append(remove)
+        guard Markups.isRecolorable(highlight.annotation) else { return items }
 
         let recolor = NSMenuItem(title: "Change Color", action: nil, keyEquivalent: "")
         let colors = NSMenu()
@@ -313,7 +367,7 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
             colors.addItem(item)
         }
         recolor.submenu = colors
-        return [remove, recolor]
+        return items + [recolor]
     }
 
     @objc private func removeHighlight(_ sender: NSMenuItem) {
@@ -400,6 +454,8 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
             return true
         case #selector(highlightSelection(_:)):
             return pdfView.currentSelection != nil
+        case #selector(translateSelection(_:)):
+            return Translator.isAvailable && !selectedText.isEmpty
         case #selector(toggleSidebar(_:)):
             item.title = sidebarCollapsed ? "Show Sidebar" : "Hide Sidebar"
             return true

@@ -3,7 +3,7 @@ import PaperMarkCore
 
 /// 단축키를 바꿀 수 있는 명령들.
 enum Command: String, CaseIterable {
-    case highlightSelection, highlightMode, eraserMode, removeCurrentColor
+    case highlightSelection, highlightMode, eraserMode, removeCurrentColor, translate
     case color1, color2, color3, color4, color5, color6, color7, color8, color9
     case toggleSidebar, zoomIn, zoomOut, zoomToFit
     case find, findNext, findPrevious
@@ -16,6 +16,7 @@ enum Command: String, CaseIterable {
         case .highlightMode: "Highlight Mode"
         case .eraserMode: "Eraser Mode"
         case .removeCurrentColor: "Remove Current Color"
+        case .translate: "Translate Selection"
         case .toggleSidebar: "Show/Hide Sidebar"
         case .zoomIn: "Zoom In"
         case .zoomOut: "Zoom Out"
@@ -33,6 +34,7 @@ enum Command: String, CaseIterable {
         case .highlightMode: Shortcut(key: "d", modifiers: [.command, .shift])
         case .eraserMode: Shortcut(key: "e", modifiers: [.command, .shift])
         case .removeCurrentColor: nil
+        case .translate: Shortcut(key: "t", modifiers: .command)
         case .toggleSidebar: Shortcut(key: "s", modifiers: [.command, .control])
         case .zoomIn: Shortcut(key: "=", modifiers: .command)
         case .zoomOut: Shortcut(key: "-", modifiers: .command)

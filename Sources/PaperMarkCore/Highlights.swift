@@ -125,7 +125,7 @@ public enum Highlights {
 /// 형광펜 말고도 PDF Expert 등에서 만든 사용자 주석(밑줄, 취소선, 펜, 메모, 도형 등)을 다룬다.
 public enum Markups {
     /// 줄 단위 QuadPoints로 칠하는 텍스트 주석.
-    static let textMarkupTypes: Set<String> = ["Highlight", "Underline", "StrikeOut", "Squiggly"]
+    public static let textMarkupTypes: Set<String> = ["Highlight", "Underline", "StrikeOut", "Squiggly"]
     /// 사용자가 만든 주석이 아닌 것(링크, 폼 필드, 메모의 팝업 창).
     static let systemTypes: Set<String> = ["Link", "Widget", "Popup"]
 

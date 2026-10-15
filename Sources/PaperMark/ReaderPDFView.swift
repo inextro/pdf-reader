@@ -5,12 +5,13 @@ import PaperMarkCore
 /// 형광펜 등 사용자 주석 위에서 우클릭하면 지우기·색 바꾸기 메뉴를 앞에 붙이는 PDFView.
 final class ReaderPDFView: PDFView {
     var highlightMenuItems: ((PlacedHighlight) -> [NSMenuItem])?
+    /// 주석이 아닌 곳을 우클릭했을 때, 선택한 글자가 있으면 앞에 붙일 항목(번역 등).
+    var selectionMenuItems: (() -> [NSMenuItem])?
 
     override func menu(for event: NSEvent) -> NSMenu? {
         let menu = super.menu(for: event) ?? NSMenu()
-        guard let target = highlight(at: event), let items = highlightMenuItems?(target), !items.isEmpty else {
-            return menu
-        }
+        let items = highlight(at: event).flatMap { highlightMenuItems?($0) } ?? selectionMenuItems?() ?? []
+        guard !items.isEmpty else { return menu }
         if !menu.items.isEmpty { menu.insertItem(.separator(), at: 0) }
         for item in items.reversed() { menu.insertItem(item, at: 0) }
         return menu

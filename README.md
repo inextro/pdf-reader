@@ -28,6 +28,9 @@ palette, then keep going on another device.
 - **Eraser.** Hold `Space` (or toggle eraser mode) and click or rub over annotations to remove them.
 - **Works with annotations from other apps.** Remove or recolor highlights, underlines, strikethroughs,
   pen drawings, notes, and shapes made in PDF Expert or elsewhere (right-click on them).
+- **Translate sentences, not just words.** Hold `T` while dragging over text, press `⌘T` on a
+  selection, or right-click a highlight. Uses Apple's on-device Translation (macOS 14.4+), so it is
+  free, private, and adds nothing to the app size. Hyphenated line breaks are joined before translating.
 - **Search** with next/previous result navigation.
 - **Page thumbnail sidebar.**
 - **Customizable keyboard shortcuts** (`⌘,`).
@@ -82,7 +85,7 @@ To make it the default PDF app, select a PDF in Finder, press `⌘I`, choose Pap
 
 ## Keyboard shortcuts
 
-All shortcuts except `Space` and `Esc` can be changed in **Settings** (`⌘,`).
+All shortcuts except `Space`, `T`, and `Esc` can be changed in **Settings** (`⌘,`).
 
 | Action | Shortcut |
 |---|---|
@@ -91,6 +94,8 @@ All shortcuts except `Space` and `Esc` can be changed in **Settings** (`⌘,`).
 | Choose color 1–9 | `⌘1` – `⌘9` |
 | Erase while held | `Space` |
 | Toggle eraser mode / turn it off | `⇧⌘E` / `Esc` |
+| Translate while dragging | hold `T` |
+| Translate the selection | `⌘T` |
 | Find / next / previous result | `⌘F` / `⌘G` or `Return` / `⇧⌘G` or `⇧Return` |
 | Show or hide the sidebar | `⌃⌘S` |
 | Zoom in / out / fit | `⌘=` / `⌘-` / `⌘0` |
@@ -98,7 +103,7 @@ All shortcuts except `Space` and `Esc` can be changed in **Settings** (`⌘,`).
 
 Mouse:
 
-- **Right-click an annotation** to remove it or change its color.
+- **Right-click an annotation** to translate, remove, or recolor it. Right-click a selection to translate it.
 - **Click the selected color** in the toolbar to edit it in the color panel. `+` adds a new color,
   and right-clicking a color removes it.
 
