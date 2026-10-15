@@ -36,8 +36,8 @@ final class PaletteView: NSStackView {
     @objc private func refresh() {
         let store = ColorStore.shared
         swatches.arrangedSubviews.forEach { $0.removeFromSuperview() }
-        for hex in store.presets {
-            swatches.addArrangedSubview(SwatchView(hex: hex, selected: hex == store.currentHex))
+        for (i, hex) in store.presets.enumerated() {
+            swatches.addArrangedSubview(SwatchView(hex: hex, selected: hex == store.currentHex, index: i))
         }
         // 색상 패널과 값을 주고받다 무한 반복하지 않도록 다를 때만 바꾼다.
         if well.color.hexString != store.currentHex { well.color = store.currentColor }
@@ -56,11 +56,12 @@ private final class SwatchView: NSView {
     private let hex: String
     private let selected: Bool
 
-    init(hex: String, selected: Bool) {
+    init(hex: String, selected: Bool, index: Int) {
         self.hex = hex
         self.selected = selected
         super.init(frame: NSRect(x: 0, y: 0, width: 22, height: 22))
-        toolTip = "\(hex) (right-click to remove from presets)"
+        let shortcut = index < 9 ? " ⌘\(index + 1)" : ""
+        toolTip = "\(hex)\(shortcut) (right-click to remove from presets)"
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }

@@ -22,8 +22,14 @@ final class PMDocumentController: NSDocumentController {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private let highlightMenu = NSMenu(title: "Highlight")
+    private var colorItems: [NSMenuItem] = []
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = makeMainMenu()
+        NotificationCenter.default.addObserver(self, selector: #selector(rebuildColorItems),
+                                               name: ColorStore.didChange, object: nil)
+        rebuildColorItems()
         // Dock에서 그냥 실행했을 때는 바로 열기 창을 띄운다(파일을 더블클릭해 실행한 경우 제외).
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             if NSDocumentController.shared.documents.isEmpty { NSDocumentController.shared.openDocument(nil) }
@@ -74,9 +80,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         edit.addItem(withTitle: "Find Next", action: #selector(DocumentWindowController.findNextResult(_:)), keyEquivalent: "g")
         edit.addItem(withTitle: "Find Previous", action: #selector(DocumentWindowController.findPreviousResult(_:)), keyEquivalent: "G")
 
-        let marker2 = submenu(of: main, title: "Highlight")
-        marker2.addItem(withTitle: "Highlight Selection", action: #selector(DocumentWindowController.highlightSelection(_:)), keyEquivalent: "d")
-        marker2.addItem(withTitle: "Highlight Mode", action: #selector(DocumentWindowController.toggleHighlightMode(_:)), keyEquivalent: "D")
+        main.addItem(withTitle: "Highlight", action: nil, keyEquivalent: "").submenu = highlightMenu
+        highlightMenu.addItem(withTitle: "Highlight Selection", action: #selector(DocumentWindowController.highlightSelection(_:)), keyEquivalent: "d")
+        highlightMenu.addItem(withTitle: "Highlight Mode", action: #selector(DocumentWindowController.toggleHighlightMode(_:)), keyEquivalent: "D")
 
         let view = submenu(of: main, title: "View")
         view.addItem(withTitle: "Zoom In", action: #selector(DocumentWindowController.zoomInPDF(_:)), keyEquivalent: "=")
@@ -91,6 +97,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.windowsMenu = window
 
         return main
+    }
+
+    /// 프리셋 색마다 ⌘1~⌘9 메뉴 항목을 만든다. 프리셋이나 현재 색이 바뀌면 다시 만든다.
+    @objc private func rebuildColorItems() {
+        colorItems.forEach(highlightMenu.removeItem)
+        colorItems = [.separator()]
+        let store = ColorStore.shared
+        for (i, hex) in store.presets.enumerated() {
+            guard let color = NSColor(hex: hex) else { continue }
+            let item = NSMenuItem(title: "Color \(i + 1)  \(hex)", action: #selector(selectPresetColor(_:)),
+                                  keyEquivalent: i < 9 ? "\(i + 1)" : "")
+            item.target = self
+            item.tag = i
+            item.image = swatchImage(color)
+            item.state = hex == store.currentHex ? .on : .off
+            colorItems.append(item)
+        }
+        colorItems.forEach(highlightMenu.addItem)
+    }
+
+    @objc private func selectPresetColor(_ sender: NSMenuItem) {
+        let presets = ColorStore.shared.presets
+        guard presets.indices.contains(sender.tag) else { return }
+        ColorStore.shared.currentHex = presets[sender.tag]
     }
 
     private func submenu(of main: NSMenu, title: String) -> NSMenu {
