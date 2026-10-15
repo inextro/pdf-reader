@@ -1,49 +1,134 @@
 # PaperMark
 
-맥에서 논문 PDF를 읽으며 **마우스로 원하는 색의 형광펜**을 칠하는 작은 PDF 리더.
-아이패드는 PDF Expert를 그대로 쓰고, 맥에서 빠진 기능만 채운다.
+**A free, open-source PDF reader for macOS that lets you highlight in any color you like.**
 
-## 결정 사항
+PaperMark is a small, native Mac app for reading and marking up papers. Drag over text and it is
+highlighted in your current color. Your highlights are saved into the PDF itself as standard
+annotations, so they show up in PDF Expert on iPad and in other PDF readers too.
 
-- **네이티브 macOS 앱(Swift + PDFKit)**: 아이패드는 PDF Expert가 맡으니 맥만 지원하면 된다.
-  Xcode 없이 SwiftPM으로 빌드하고, 본인 맥 전용이라 개발자 계정이 필요 없다.
-- **Google Drive 연동 = Drive 데스크톱 폴더 직접 사용**: `~/Library/CloudStorage/GoogleDrive-…/My Drive`의
-  파일을 열고 그 자리에 저장한다. OAuth나 API 코드가 없다.
-- **형광펜 = PDF 표준 `/Highlight` 주석**: 파일 안에 저장되고(`QuadPoints`, `/C`, 외형 스트림 `/AP`)
-  PDF Expert와 미리보기에서 그대로 보인다. PDF Expert에서 칠한 형광펜도 이 앱에서 보이고 지울 수 있다.
-  선택 하나는 페이지마다 주석 하나(줄마다 사각형 하나)로 만든다.
-- **겹치는 형광펜은 합친다**: 새로 칠한 곳이 기존 형광펜과 겹치거나 같은 줄에서 맞닿으면 둘을 지우고
-  주석 하나로 다시 만든다. 겹친 곳이 진해지지 않고 한 겹으로 이어진다. 색은 새로 칠한 색을 따른다.
-- **색 팔레트 = PDF Expert와 같은 6색**: `#F0CCDE` `#CEF3FE` `#FFFBC5` `#C1FFD9` `#EBC4F7` `#FFC677`.
-  아이패드 PDF Expert로 칠한 주석의 `/C` 값에서 가져왔다. 두 앱 모두 불투명 색을 Multiply로 칠해 같은 색으로 보인다.
-- **UI는 영어**: 개발 언어(`CFBundleDevelopmentRegion`)를 `en`으로 두어 열기 창 같은 시스템 UI도 영어로 나온다.
-- **자동 저장**: 형광펜을 바꾸면 1.5초 뒤 원래 파일에 저장한다. 시스템 자동 저장(버전 보관)은
-  Drive 볼륨에서 동작이 확실하지 않아 쓰지 않는다.
-- **다른 기기에서 바뀐 파일**: 열어둔 상태에서 Drive가 새 버전을 받아오면, 아직 저장하지 않은 변경이
-  없을 때 다시 읽는다.
+## Why
 
-## 사용법
+Highlighting a PDF on a Mac should be simple, but the common options each come with a catch:
 
-| 동작 | 방법 |
+| App | The catch |
 |---|---|
-| 칠하기 | 형광펜 모드(툴바 형광펜 버튼, `⇧⌘D`)가 켜져 있으면 드래그하는 즉시 칠한다. 꺼져 있으면 선택 후 `⌘D` |
-| 색 고르기 | `⌘1`~`⌘9`로 프리셋 N번째 색. 또는 툴바 동그라미 클릭 |
-| 프리셋 색 바꾸기 | 선택된 동그라미를 한 번 더 누르면 색상 패널이 열리고, 고른 색으로 그 칸이 바뀐다. `+`는 패널에서 고른 색을 새 칸으로 추가. 동그라미 우클릭으로 칸 제거 |
-| 지우기, 색 바꾸기 | 주석 위에서 우클릭. 형광펜뿐 아니라 PDF Expert의 밑줄, 취소선, 펜, 메모, 도형도 된다(텍스트 상자는 지우기만) |
-| 지우개 | 스페이스바를 누르고 있는 동안, 또는 지우개 모드(툴바 지우개 버튼, `⇧⌘E`로 켜고 끔. Esc로 끔)에서 주석을 클릭하거나 문지르면 통째로 지운다. 한 번 문지른 것은 `⌘Z` 한 번으로 되돌린다 |
-| 실행 취소 | `⌘Z` / `⇧⌘Z` |
-| 검색 | `⌘F` 후 입력하고 Enter. 다시 Enter(또는 `⌘G`)는 다음 결과, `⇧Enter`(또는 `⇧⌘G`)는 이전 결과 |
-| 페이지 썸네일 | 왼쪽 사이드바. 툴바 사이드바 버튼이나 `⌃⌘S`로 열고 닫는다 |
-| 단축키 바꾸기 | `⌘,` 설정 창에서 칸을 누르고 새 키를 누른다. Delete는 비우기, Esc는 취소. 아래 단축키는 모두 기본값 |
-| 확대, 축소 | `⌘=` / `⌘-` / `⌘0`(창에 맞추기) |
+| **Preview** (built in) | Free, but you cannot customize highlight colors. You get a small fixed set and no color picker. |
+| **PDF Expert for Mac** | Annotation is a Premium feature (subscription or paid license) per its [pricing page](https://pdfexpert.com/pricing). The free version is mostly a viewer. |
 
-## 빌드
+PaperMark covers the part most readers need, for free: read, search, and highlight with your own
+palette, then keep going on another device.
+
+## Features
+
+- **Highlight with your own colors.** Pick from a preset palette with `⌘1`–`⌘9`, click the selected
+  color again to change it, or add new colors. The default palette matches PDF Expert's highlight colors.
+- **Highlight mode.** Turn it on and every drag highlights immediately. No toolbar trips.
+- **Clean overlaps.** Highlighting over an existing highlight merges them into one layer instead of
+  stacking darker and darker color.
+- **Eraser.** Hold `Space` (or toggle eraser mode) and click or rub over annotations to remove them.
+- **Works with annotations from other apps.** Remove or recolor highlights, underlines, strikethroughs,
+  pen drawings, notes, and shapes made in PDF Expert or elsewhere (right-click on them).
+- **Search** with next/previous result navigation.
+- **Page thumbnail sidebar.**
+- **Customizable keyboard shortcuts** (`⌘,`).
+- **Picks up where you left off.** Reopens the files you had open, at the page you were reading.
+- **Saves automatically** to the original file, and every change can be undone.
+
+## Release notes
+
+### 0.2.0
+
+- New: Eraser. Hold `Space`, or toggle eraser mode with `⇧⌘E`, then click or rub over annotations to remove them.
+- New: Settings window (`⌘,`) for changing keyboard shortcuts.
+- New: `⌘1`–`⌘9` switch between palette colors.
+- New: Click the selected color to edit it in the color panel. Right-click a color to remove it.
+- New: Page thumbnail sidebar (`⌃⌘S`).
+- New: Reopens the files you had open at the page you were reading.
+- New: Remove or recolor underlines, strikethroughs, pen drawings, notes, and shapes made in other apps.
+- New: App icon.
+- Changed: Overlapping highlights merge into one layer instead of stacking.
+- Changed: The default palette now matches PDF Expert's highlight colors.
+- Changed: English UI, with the toolbar on its own row below the title bar.
+- Changed: Universal build for Apple Silicon and Intel Macs.
+
+### 0.1.0
+
+- First release: drag to highlight in custom colors, search, zoom, undo, and automatic in-place saving
+  that syncs through cloud folders.
+
+## Works across devices
+
+PaperMark writes standard PDF `/Highlight` annotations (with `QuadPoints`, color, and an appearance
+stream) directly into the file. There is no sidecar database and no account.
+
+Put your PDFs in a synced folder (for example Google Drive for desktop, iCloud Drive, or Dropbox) and
+open them from there. PaperMark edits the file in place, the sync client uploads it, and the same
+highlights appear on your other devices. Round-tripping with **PDF Expert on iPad** through Google
+Drive has been tested in both directions. If a file changes on another device while it is open and
+you have no unsaved edits, PaperMark reloads it.
+
+## Install
+
+Requires macOS 14 (Sonoma) or later. Runs natively on Apple Silicon and Intel Macs.
+
+1. Download `PaperMark-<version>.zip` from the [latest release](https://github.com/inextro/pdf-reader/releases/latest).
+2. Unzip it and move `PaperMark.app` to your Applications folder.
+3. The app is not notarized by Apple, so macOS blocks it the first time. Open it once, then go to
+   **System Settings → Privacy & Security** and click **Open Anyway**.
+   Alternatively, run `xattr -dr com.apple.quarantine /Applications/PaperMark.app` in Terminal.
+
+To make it the default PDF app, select a PDF in Finder, press `⌘I`, choose PaperMark under
+**Open with**, and click **Change All…**.
+
+## Keyboard shortcuts
+
+All shortcuts except `Space` and `Esc` can be changed in **Settings** (`⌘,`).
+
+| Action | Shortcut |
+|---|---|
+| Highlight the selection (when highlight mode is off) | `⌘D` |
+| Toggle highlight mode | `⇧⌘D` |
+| Choose color 1–9 | `⌘1` – `⌘9` |
+| Erase while held | `Space` |
+| Toggle eraser mode / turn it off | `⇧⌘E` / `Esc` |
+| Find / next / previous result | `⌘F` / `⌘G` or `Return` / `⇧⌘G` or `⇧Return` |
+| Show or hide the sidebar | `⌃⌘S` |
+| Zoom in / out / fit | `⌘=` / `⌘-` / `⌘0` |
+| Undo / redo | `⌘Z` / `⇧⌘Z` |
+
+Mouse:
+
+- **Right-click an annotation** to remove it or change its color.
+- **Click the selected color** in the toolbar to edit it in the color panel. `+` adds a new color,
+  and right-clicking a color removes it.
+
+## Limitations
+
+- When PaperMark saves, PDFKit rewrites the whole file. Unusual PDFs may come out slightly different
+  (for example, metadata or structure that PDFKit does not preserve). Keep a copy of anything critical.
+- There is no annotation-level merge. If you edit the same file on two devices before the sync
+  finishes, the sync service decides which version wins (Google Drive keeps both as a conflict copy).
+- macOS only. On iPad, use any reader that supports standard PDF annotations.
+
+## Build from source
+
+Needs the Xcode Command Line Tools (`xcode-select --install`). Full Xcode is not required.
 
 ```sh
-./scripts/build-app.sh            # build/PaperMark.app
-./scripts/build-app.sh --install  # ~/Applications 에 설치
-swift run pmcheck <출력폴더>      # 형광펜 저장·재로딩 검증 (샘플 PDF 생성)
-swift scripts/make-icon.swift .   # 앱 아이콘 Resources/AppIcon.icns 다시 그리기
+./scripts/build-app.sh                  # build/PaperMark.app (universal)
+./scripts/build-app.sh --install        # also copy it to ~/Applications
+./scripts/build-app.sh --zip            # also create build/PaperMark-<version>.zip
+swift run pmcheck /tmp/pmcheck          # run the annotation round-trip checks
+swift scripts/make-icon.swift .         # redraw Resources/AppIcon.icns
 ```
 
-PDF 파일의 "다음으로 열기"에서 PaperMark를 고를 수 있다.
+The code is Swift and PDFKit, organized as:
+
+- `Sources/PaperMarkCore`: highlight geometry, merging, annotation hit testing, and shortcut parsing.
+  This target has no UI, so `pmcheck` can test it.
+- `Sources/PaperMark`: the app (document, window, toolbar, palette, settings).
+- `Sources/pmcheck`: a command-line check that creates PDFs, annotates them, saves, and reloads.
+
+## License
+
+[MIT](LICENSE)
