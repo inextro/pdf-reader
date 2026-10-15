@@ -195,7 +195,8 @@ func makeTextPDF(_ text: String, at url: URL) -> PDFDocument {
     return PDFDocument(url: url)!
 }
 // 페이지는 문서를 약하게 참조하므로 문서를 변수로 붙잡아 둔다.
-let wordsDoc = makeTextPDF("The quick brown fox saw results.In this case don't stop.", at: outDir.appendingPathComponent("words.pdf"))
+let wordsDoc = makeTextPDF("The quick brown fox saw results.In this case don't stop. See (word). Also [f(x)] here.",
+                          at: outDir.appendingPathComponent("words.pdf"))
 let wp = wordsDoc.page(at: 0)!
 let wtext = wp.string! as NSString
 func snapped(_ fragment: String, offset: Int = 0, length: Int) -> String {
@@ -207,6 +208,10 @@ check(snapped("results", offset: 2, length: 3) == "results", "오타 results.In 
 check(snapped(" quick ", length: 7) == "quick", "앞뒤 공백 빼기 (\(snapped(" quick ", length: 7)))")
 check(snapped("don't", offset: 1, length: 2) == "don't", "아포스트로피는 단어 안 (\(snapped("don't", offset: 1, length: 2)))")
 check(snapped("stop.", length: 5) == "stop.", "직접 포함한 문장부호는 유지 (\(snapped("stop.", length: 5)))")
+check(snapped("(word)", length: 3) == "(word)", "여는 괄호를 잡으면 닫는 괄호까지 (\(snapped("(word)", length: 3)))")
+check(snapped("(word)", offset: 2, length: 4) == "(word)", "닫는 괄호를 잡으면 여는 괄호까지 (\(snapped("(word)", offset: 2, length: 4)))")
+check(snapped("(word)", offset: 1, length: 3) == "word", "괄호 없이 단어만 잡으면 괄호는 빼기 (\(snapped("(word)", offset: 1, length: 3)))")
+check(snapped("[f(x)]", length: 4) == "[f(x)]", "중첩 괄호 (\(snapped("[f(x)]", length: 4)))")
 
 print(failures == 0 ? "ALL PASS" : "\(failures) FAILED", "→", outDir.path)
 exit(failures == 0 ? 0 : 1)

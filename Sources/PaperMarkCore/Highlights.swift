@@ -39,6 +39,7 @@ public enum Highlights {
     /// 선택 양 끝이 단어 중간이면 단어 끝까지 넓히고, 앞뒤 공백은 뺀다.
     /// 단어는 글자·숫자(와 아포스트로피)가 이어진 덩어리라서 문장부호에서는 넓히지 않는다.
     /// 그래서 "results.In"처럼 마침표 뒤 공백이 빠진 오타가 있어도 "results"까지만 잡힌다.
+    /// 괄호는 짝을 맞춘다. "(word"를 잡으면 바로 뒤의 ")"까지 넓힌다.
     public static func snappedToWords(_ selection: PDFSelection) -> PDFSelection {
         guard let document = selection.pages.first?.document,
               let first = selection.pages.first, let last = selection.pages.last,
@@ -55,7 +56,37 @@ public enum Highlights {
         // 단어 중간이면 넓히기
         while start > 0, isWord(firstText.character(at: start - 1)), isWord(firstText.character(at: start)) { start -= 1 }
         while end < lastText.length, isWord(lastText.character(at: end - 1)), isWord(lastText.character(at: end)) { end += 1 }
-        return document.selection(from: first, atCharacterIndex: start, to: last, atCharacterIndex: end - 1) ?? selection
+        guard let snapped = document.selection(from: first, atCharacterIndex: start, to: last, atCharacterIndex: end - 1)
+        else { return selection }
+        // 짝이 안 맞는 괄호가 있으면 바로 옆의 짝 괄호까지 넓힌다: "(word" → "(word)"
+        let (open, close) = unmatchedBrackets(in: snapped.string ?? "")
+        var (newStart, newEnd) = (start, end)
+        for opener in open.reversed() {
+            guard newEnd < lastText.length, lastText.character(at: newEnd) == brackets[opener] else { break }
+            newEnd += 1
+        }
+        for closer in close {
+            guard newStart > 0, brackets[firstText.character(at: newStart - 1)] == closer else { break }
+            newStart -= 1
+        }
+        guard (newStart, newEnd) != (start, end) else { return snapped }
+        return document.selection(from: first, atCharacterIndex: newStart, to: last, atCharacterIndex: newEnd - 1) ?? snapped
+    }
+
+    /// 여는 괄호 → 닫는 괄호
+    static let brackets: [unichar: unichar] = [0x28: 0x29, 0x5B: 0x5D, 0x7B: 0x7D, 0x201C: 0x201D]   // () [] {} “”
+
+    /// 짝이 없는 여는 괄호(바깥 → 안쪽 순)와 닫는 괄호(안쪽 → 바깥 순).
+    static func unmatchedBrackets(in text: String) -> (open: [unichar], close: [unichar]) {
+        var open: [unichar] = [], close: [unichar] = []
+        for c in text.utf16 {
+            if brackets[c] != nil {
+                open.append(c)
+            } else if brackets.values.contains(c) {
+                if let last = open.last, brackets[last] == c { open.removeLast() } else { close.append(c) }
+            }
+        }
+        return (open, close)
     }
 
     static func textRanges(of selection: PDFSelection, on page: PDFPage) -> [NSRange] {
