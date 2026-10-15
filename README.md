@@ -122,6 +122,10 @@ swift run pmcheck /tmp/pmcheck          # run the annotation round-trip checks
 swift scripts/make-icon.swift .         # redraw Resources/AppIcon.icns
 ```
 
+To publish a release, bump `CFBundleShortVersionString` in `Resources/Info.plist`, add a matching
+`### <version>` entry under Release notes, commit and push, then run `./scripts/release.sh`.
+Versions follow [Semantic Versioning](https://semver.org).
+
 The code is Swift and PDFKit, organized as:
 
 - `Sources/PaperMarkCore`: highlight geometry, merging, annotation hit testing, and shortcut parsing.
