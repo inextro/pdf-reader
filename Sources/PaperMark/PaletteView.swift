@@ -5,7 +5,7 @@ import PaperMarkCore
 final class PaletteView: NSStackView {
     private let swatches = NSStackView()
     private let well = NSColorWell(style: .minimal)
-    private let addButton = NSButton(image: NSImage(systemSymbolName: "plus", accessibilityDescription: "프리셋에 추가")!,
+    private let addButton = NSButton(image: NSImage(systemSymbolName: "plus", accessibilityDescription: "Add to Presets")!,
                                      target: nil, action: nil)
 
     init() {
@@ -17,11 +17,11 @@ final class PaletteView: NSStackView {
 
         well.target = self
         well.action = #selector(wellChanged(_:))
-        well.toolTip = "직접 색 고르기"
+        well.toolTip = "Pick a Custom Color"
         addButton.target = self
         addButton.action = #selector(addCurrentColor(_:))
         addButton.bezelStyle = .toolbar
-        addButton.toolTip = "지금 색을 프리셋에 추가"
+        addButton.toolTip = "Add the Current Color to Presets"
 
         addArrangedSubview(swatches)
         addArrangedSubview(well)
@@ -60,7 +60,7 @@ private final class SwatchView: NSView {
         self.hex = hex
         self.selected = selected
         super.init(frame: NSRect(x: 0, y: 0, width: 22, height: 22))
-        toolTip = "\(hex) (우클릭: 프리셋에서 제거)"
+        toolTip = "\(hex) (right-click to remove from presets)"
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
@@ -90,7 +90,7 @@ private final class SwatchView: NSView {
     override func menu(for event: NSEvent) -> NSMenu? {
         guard ColorStore.shared.presets.count > 1 else { return nil }
         let menu = NSMenu()
-        let item = menu.addItem(withTitle: "프리셋에서 제거", action: #selector(removePreset(_:)), keyEquivalent: "")
+        let item = menu.addItem(withTitle: "Remove from Presets", action: #selector(removePreset(_:)), keyEquivalent: "")
         item.target = self
         return menu
     }

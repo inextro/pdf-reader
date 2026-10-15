@@ -55,8 +55,8 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
 
         modeButton.setButtonType(.pushOnPushOff)
         modeButton.bezelStyle = .toolbar
-        modeButton.image = NSImage(systemSymbolName: "highlighter", accessibilityDescription: "형광펜 모드")
-        modeButton.toolTip = "형광펜 모드: 켜면 텍스트를 드래그하는 즉시 칠합니다 (⇧⌘D)"
+        modeButton.image = NSImage(systemSymbolName: "highlighter", accessibilityDescription: "Highlight Mode")
+        modeButton.toolTip = "Highlight Mode: when on, dragging over text highlights it immediately (⇧⌘D)"
         modeButton.target = self
         modeButton.action = #selector(toggleHighlightMode(_:))
 
@@ -136,11 +136,11 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
     }
 
     private func menuItems(for highlight: PlacedHighlight) -> [NSMenuItem] {
-        let remove = NSMenuItem(title: "형광펜 지우기", action: #selector(removeHighlight(_:)), keyEquivalent: "")
+        let remove = NSMenuItem(title: "Remove Highlight", action: #selector(removeHighlight(_:)), keyEquivalent: "")
         remove.target = self
         remove.representedObject = HighlightAction(highlight)
 
-        let recolor = NSMenuItem(title: "색 바꾸기", action: nil, keyEquivalent: "")
+        let recolor = NSMenuItem(title: "Change Color", action: nil, keyEquivalent: "")
         let colors = NSMenu()
         let currentHex = highlight.annotation.color.hexString
         for hex in ColorStore.shared.presets {
@@ -191,7 +191,7 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
 
     private func showCurrentResult() {
         guard !results.isEmpty else {
-            window?.subtitle = "“\(lastQuery)” 결과 없음"
+            window?.subtitle = "No results for “\(lastQuery)”"
             NSSound.beep()
             return
         }
@@ -263,17 +263,17 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
         switch identifier {
         case .highlightMode:
             let item = NSToolbarItem(itemIdentifier: identifier)
-            item.label = "형광펜 모드"
+            item.label = "Highlight Mode"
             item.view = modeButton
             return item
         case .palette:
             let item = NSToolbarItem(itemIdentifier: identifier)
-            item.label = "색"
+            item.label = "Color"
             item.view = palette
             return item
         case .search:
             let item = NSSearchToolbarItem(itemIdentifier: identifier)
-            item.searchField.placeholderString = "문서에서 찾기"
+            item.searchField.placeholderString = "Search in Document"
             item.searchField.sendsWholeSearchString = true
             item.searchField.target = self
             item.searchField.action = #selector(searchFieldAction(_:))

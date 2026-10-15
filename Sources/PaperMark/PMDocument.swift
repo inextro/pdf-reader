@@ -39,14 +39,14 @@ final class PMDocument: NSDocument {
     func add(_ highlights: [PlacedHighlight]) {
         for h in highlights { h.page.addAnnotation(h.annotation) }
         undoManager?.registerUndo(withTarget: self) { $0.remove(highlights) }
-        undoManager?.setActionName("형광펜")
+        undoManager?.setActionName("Highlight")
         scheduleSave()
     }
 
     func remove(_ highlights: [PlacedHighlight]) {
         for h in highlights { h.page.removeAnnotation(h.annotation) }
         undoManager?.registerUndo(withTarget: self) { $0.add(highlights) }
-        undoManager?.setActionName("형광펜 지우기")
+        undoManager?.setActionName("Remove Highlight")
         scheduleSave()
     }
 
@@ -54,7 +54,7 @@ final class PMDocument: NSDocument {
         let old = highlight.annotation.color
         highlight.annotation.color = color
         undoManager?.registerUndo(withTarget: self) { $0.recolor(highlight, to: old) }
-        undoManager?.setActionName("형광펜 색 바꾸기")
+        undoManager?.setActionName("Change Highlight Color")
         scheduleSave()
     }
 

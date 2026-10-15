@@ -17,7 +17,7 @@
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>CFBundleDevelopmentRegion</key>
-	<string>ko</string>
+	<string>en</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
 	<key>LSApplicationCategoryType</key>
@@ -30,7 +30,7 @@
 	<array>
 		<dict>
 			<key>CFBundleTypeName</key>
-			<string>PDF 문서</string>
+			<string>PDF Document</string>
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>LSHandlerRank</key>
