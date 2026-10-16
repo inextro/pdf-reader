@@ -24,6 +24,7 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
     private let pdfView = ReaderPDFView()
     private let thumbnails = PDFThumbnailView()
     private var splitController: NSSplitViewController!
+    private var sidebarContent: SidebarViewController!
     private let palette = PaletteView()
     private let modeButton = NSButton()
     private let eraserButton = NSButton()
@@ -73,8 +74,10 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
         pdfView.highlightMenuItems = { [weak self] in self?.menuItems(for: $0) ?? [] }
         pdfView.selectionMenuItems = { [weak self] in self?.selectionMenuItems() ?? [] }
         // contentViewController로 넣으면 창이 내용의 fitting size(최소 크기)로 줄어들어서 뷰만 붙인다.
-        splitController = makeSplitViewController()
+        splitController = makeSplitViewController(fileURL: document.fileURL)
         window.contentView = splitController.view
+        // 새 탭에서는 사이드바(파일 트리)가 접혀 있으면 안 된다.
+        if document.fileURL == nil { splitController.splitViewItems.first?.isCollapsed = false }
 
         modeButton.setButtonType(.pushOnPushOff)
         modeButton.bezelStyle = .toolbar
@@ -106,20 +109,22 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
-    /// 왼쪽은 페이지 썸네일 사이드바(⌃⌘S로 접기), 오른쪽은 PDF.
-    private func makeSplitViewController() -> NSSplitViewController {
+    /// 왼쪽은 사이드바(페이지 썸네일 또는 파일 트리, ⌃⌘S로 접기), 오른쪽은 PDF.
+    private func makeSplitViewController(fileURL: URL?) -> NSSplitViewController {
         thumbnails.pdfView = pdfView
         thumbnails.thumbnailSize = NSSize(width: 96, height: 124)
         thumbnails.backgroundColor = .clear
-        let sidebarContent = NSViewController()
-        sidebarContent.view = thumbnails
+        sidebarContent = SidebarViewController(thumbnails: thumbnails)
+        sidebarContent.files.documentURL = fileURL
+        sidebarContent.isStartPage = fileURL == nil
+        if fileURL == nil { sidebarContent.files.didOpen = { [weak self] in self?.closeStartPage() } }
         let sidebar = NSSplitViewItem(sidebarWithViewController: sidebarContent)
         sidebar.minimumThickness = 120
-        sidebar.maximumThickness = 260
+        sidebar.maximumThickness = 400
         sidebar.canCollapse = true
 
         let mainContent = NSViewController()
-        mainContent.view = pdfView
+        mainContent.view = fileURL == nil ? makeStartView() : pdfView
         let main = NSSplitViewItem(viewController: mainContent)
         main.minimumThickness = 360
 
@@ -129,6 +134,51 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
         // 사이드바 폭과 접힘 상태를 기억한다.
         split.splitView.autosaveName = "PaperMarkSidebar"
         return split
+    }
+
+    /// 탭 막대의 + 버튼으로 연 새 탭(PDF 없는 문서): 빈 화면 대신 안내와 열기 버튼을 두고 사이드바에 파일 트리를 연다.
+    /// 여기서 PDF를 열면 이 탭은 닫혀서 그 PDF로 바뀐 것처럼 보인다.
+    private func makeStartView() -> NSView {
+        let icon = NSImageView()
+        icon.image = NSImage(systemSymbolName: "doc.text.magnifyingglass", accessibilityDescription: nil)
+        icon.symbolConfiguration = .init(pointSize: 40, weight: .light)
+        icon.contentTintColor = .tertiaryLabelColor
+        let label = NSTextField(labelWithString: "Double-click a PDF in the sidebar to open it.")
+        label.textColor = .secondaryLabelColor
+        let button = NSButton(title: "Open…", target: self, action: #selector(openFromStartPage(_:)))
+        let stack = NSStackView(views: [icon, label, button])
+        stack.orientation = .vertical
+        stack.spacing = 12
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        let view = NSView()
+        view.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+        ])
+        return view
+    }
+
+    @objc private func openFromStartPage(_ sender: Any?) {
+        guard let window else { return }
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.pdf]
+        panel.allowsMultipleSelection = true
+        panel.directoryURL = NSDocumentController.shared.recentDocumentURLs.first?.deletingLastPathComponent()
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard response == .OK else { return }
+            for url in panel.urls {
+                NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { document, _, error in
+                    if let error { NSApp.presentError(error) }
+                    if document != nil { self?.closeStartPage() }
+                }
+            }
+        }
+    }
+
+    private func closeStartPage() {
+        guard let document = pmDocument, document.fileURL == nil else { return }
+        document.close()
     }
 
     @objc func toggleSidebar(_ sender: Any?) {
@@ -217,6 +267,11 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
     func windowDidResignKey(_ notification: Notification) {
         releaseSpace()
         translateHeld = false
+    }
+
+    // 창으로 돌아올 때 파일 트리를 다시 읽고(다른 곳에서 파일이 바뀌었을 수 있다) 이 창의 PDF를 보여 준다.
+    func windowDidBecomeKey(_ notification: Notification) {
+        if sidebarContent.showsFiles, !sidebarCollapsed { sidebarContent.files.reload(revealDocument: true) }
     }
 
     /// 지우개 이벤트를 처리했으면 true(PDFView에 넘기지 않음).

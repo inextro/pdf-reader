@@ -35,7 +35,9 @@ palette, then keep going on another device.
   selection, or right-click a highlight. Uses Apple's on-device Translation (macOS 14.4+), so it is
   free, private, and adds nothing to the app size. Hyphenated line breaks are joined before translating.
 - **Search** with next/previous result navigation.
-- **Page thumbnail sidebar.**
+- **Sidebar with page thumbnails or a file tree.** The Files tab shows the folders and PDFs around the
+  current file, like an IDE explorer. Move up a level or pick any root folder, and double-click to open.
+  The tab bar's `+` opens a new tab that starts on the file tree.
 - **Customizable keyboard shortcuts** (`⌘,`).
 - **Picks up where you left off.** Reopens the files you had open, at the page you were reading.
 - **Saves automatically** to the original file, and every change can be undone.

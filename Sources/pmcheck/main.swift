@@ -213,5 +213,21 @@ check(snapped("(word)", offset: 2, length: 4) == "(word)", "닫는 괄호를 잡
 check(snapped("(word)", offset: 1, length: 3) == "word", "괄호 없이 단어만 잡으면 괄호는 빼기 (\(snapped("(word)", offset: 1, length: 3)))")
 check(snapped("[f(x)]", length: 4) == "[f(x)]", "중첩 괄호 (\(snapped("[f(x)]", length: 4)))")
 
+// 파일 트리: 폴더와 PDF만, 숨김·패키지는 빼고, 폴더 먼저 Finder 순서(file2 < file10)
+let treeDir = outDir.appendingPathComponent("tree")
+try? FileManager.default.removeItem(at: treeDir)
+for folder in ["b-folder/sub", "A-folder", "Tool.app", ".hidden-folder"] {
+    try FileManager.default.createDirectory(at: treeDir.appendingPathComponent(folder), withIntermediateDirectories: true)
+}
+for file in ["paper10.pdf", "paper2.PDF", "notes.txt", ".hidden.pdf", "b-folder/sub/deep.pdf"] {
+    FileManager.default.createFile(atPath: treeDir.appendingPathComponent(file).path, contents: Data())
+}
+let listed = FileTree.children(of: treeDir).map(\.lastPathComponent)
+check(listed == ["A-folder", "b-folder", "paper2.PDF", "paper10.pdf"], "파일 트리 목록과 순서 (\(listed))")
+let deep = treeDir.appendingPathComponent("b-folder/sub/deep.pdf")
+let path = FileTree.folders(from: treeDir, to: deep)?.map(\.lastPathComponent)
+check(path == ["b-folder", "sub"], "현재 파일까지 펼칠 폴더 (\(path ?? []))")
+check(FileTree.folders(from: treeDir.appendingPathComponent("A-folder"), to: deep) == nil, "root 밖 파일은 nil")
+
 print(failures == 0 ? "ALL PASS" : "\(failures) FAILED", "→", outDir.path)
 exit(failures == 0 ? 0 : 1)

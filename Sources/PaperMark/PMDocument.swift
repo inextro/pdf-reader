@@ -12,6 +12,17 @@ final class PMDocument: NSDocument {
     // Drive(File Provider) 볼륨에서 버전 보관이 확실치 않아 시스템 자동 저장 대신 직접 저장한다.
     override class var autosavesInPlace: Bool { false }
 
+    // 탭 막대의 + 버튼으로 만든 PDF 없는 문서는 "Untitled" 대신 새 탭으로 부르고, 저장할 것도 없다.
+    override var displayName: String! {
+        get { fileURL == nil ? "New Tab" : super.displayName }
+        set { super.displayName = newValue }
+    }
+
+    override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+        if pdf == nil, item.action == #selector(save(_:)) { return false }
+        return super.validateUserInterfaceItem(item)
+    }
+
     override func makeWindowControllers() {
         addWindowController(DocumentWindowController(document: self))
         if let fileURL { Session.didOpen(fileURL) }
