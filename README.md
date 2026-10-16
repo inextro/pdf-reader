@@ -73,8 +73,8 @@ To make it the default PDF app, select a PDF in Finder, press `⌘I`, choose Pap
 ### Companion app: PDFRouter
 
 [PDFRouter](https://github.com/inextro/pdf-router) takes the default PDF app slot and opens each PDF
-in an app chosen by where the file lives: PDFs in your Zotero attachment folders go to PaperMark, and
-everything else goes to Preview. This is handy for launchers like Raycast or Alfred, which always use
+in an app chosen by where the file lives: PDFs in your Zotero attachment folders or in folders you
+choose go to PaperMark, and everything else goes to Preview. This is handy for launchers like Raycast or Alfred, which always use
 the system default app.
 
 ## Keyboard shortcuts
