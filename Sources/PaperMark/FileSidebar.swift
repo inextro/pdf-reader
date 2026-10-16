@@ -440,6 +440,16 @@ final class SidebarViewController: NSViewController {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
+    /// 사이드바는 창 꼭대기(신호등·툴바 뒤)까지 깔리므로, 탭은 툴바 아래부터 둔다.
+    /// 창의 contentLayoutGuide는 창에 붙은 뒤에만 쓸 수 있어서 여기서 잇는다.
+    override func viewWillAppear() {
+        super.viewWillAppear()
+        guard !tabsBelowToolbar, let guide = view.window?.contentLayoutGuide as? NSLayoutGuide else { return }
+        tabs.topAnchor.constraint(equalTo: guide.topAnchor, constant: 8).isActive = true
+        tabsBelowToolbar = true
+    }
+    private var tabsBelowToolbar = false
+
     var showsFiles: Bool { tabs.selectedSegment == Tab.files.rawValue }
     /// PDF 없는 새 탭: 넘겨 볼 페이지가 없으니 Files만 보인다(고른 탭으로 기억하지는 않음).
     var isStartPage = false
@@ -455,7 +465,7 @@ final class SidebarViewController: NSViewController {
             view.addSubview(sub)
         }
         var constraints = [
-            tabs.topAnchor.constraint(equalTo: view.topAnchor, constant: 8),
+            tabs.topAnchor.constraint(greaterThanOrEqualTo: view.topAnchor, constant: 8),
             tabs.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 10),
             tabs.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -10),
         ]

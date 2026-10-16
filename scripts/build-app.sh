@@ -13,6 +13,11 @@ APP="build/PaperMark.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/PaperMark"
+# SwiftPM은 링크한 SDK 버전을 최소 버전(14.0)으로 적어 넣는다. 그러면 새 macOS가 앱을 옛 SDK용으로 보고
+# 호환 모양(평평한 신호등, 옛 제목 표시줄과 툴바)으로 그리므로, 실제로 빌드한 SDK 버전으로 고쳐 쓴다.
+MIN_OS="$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' Resources/Info.plist)"
+vtool -set-build-version macos "$MIN_OS" "$(xcrun --sdk macosx --show-sdk-version)" -replace \
+  -output "$APP/Contents/MacOS/PaperMark" "$APP/Contents/MacOS/PaperMark" 2>/dev/null
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 codesign --force --sign - "$APP"

@@ -52,7 +52,8 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
 
     init(document: PMDocument) {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 980, height: 1180),
-                              styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                              // fullSizeContentView: PDF가 반투명 툴바 아래까지 깔려서 스크롤하면 툴바 뒤로 비친다.
+                              styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                               backing: .buffered, defer: false)
         window.minSize = NSSize(width: 520, height: 400)
         window.toolbarStyle = .expanded   // 제목 표시줄(파일 이름) 아래에 툴바를 따로 둔다
@@ -179,6 +180,13 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
     private func closeStartPage() {
         guard let document = pmDocument, document.fileURL == nil else { return }
         document.close()
+    }
+
+    /// 제목 옆 아이콘: PDF 파일 아이콘(대개 밋밋한 흰 문서) 대신 PaperMark 아이콘을 보인다.
+    /// 아이콘을 끌어 파일을 옮기거나 ⌘클릭으로 경로를 보는 기능은 그대로다.
+    override func synchronizeWindowTitleWithDocumentName() {
+        super.synchronizeWindowTitleWithDocumentName()
+        window?.standardWindowButton(.documentIconButton)?.image = NSApp.applicationIconImage
     }
 
     @objc func toggleSidebar(_ sender: Any?) {
@@ -360,6 +368,11 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
         modeButton.contentTintColor = highlighting ? store.currentColor : nil
         eraserButton.state = store.eraserMode ? .on : .off
         eraserButton.contentTintColor = store.eraserMode ? .systemRed : nil
+        // macOS 26부터 켜진 툴바 버튼은 아이콘 대신 바탕을 강조색으로 채우므로 바탕도 같은 색으로 한다.
+        if #available(macOS 26, *) {
+            modeButton.bezelColor = highlighting ? store.currentColor : nil
+            eraserButton.bezelColor = store.eraserMode ? .systemRed : nil
+        }
         func key(_ command: Command) -> String {
             ShortcutStore.shared.shortcut(for: command).map { " (\($0.display))" } ?? ""
         }
