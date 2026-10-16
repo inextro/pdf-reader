@@ -211,7 +211,10 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
         eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp, .keyDown, .keyUp]) { [weak self] event in
             guard let self, event.window === self.window else { return event }
             if event.type == .keyDown || event.type == .keyUp { return self.handleKey(event) ? nil : event }
+            // PDF는 툴바 뒤까지 깔려 있으므로(fullSizeContentView) 툴바·제목 표시줄에 가린 곳은 PDF로 치지 않는다.
+            // 그러지 않으면 지우개가 켜진 동안 툴바 클릭까지 가로채서 지우개를 끌 수도 없다.
             let inPDF = self.pdfView.bounds.contains(self.pdfView.convert(event.locationInWindow, from: nil))
+                && self.window?.contentLayoutRect.contains(event.locationInWindow) == true
             // 지우개 모드: PDF 안의 클릭·드래그는 PDFView에 넘기지 않고(텍스트 선택 안 함) 지나간 주석을 지운다.
             if ColorStore.shared.eraserMode || self.erasedDuringDrag != nil {
                 return self.handleEraser(event, inPDF: inPDF) ? nil : event
@@ -350,8 +353,16 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
         highlightCurrentSelection()
     }
 
+    /// 지우개가 켜져 있으면 형광펜 버튼은 꺼진 것처럼 보이므로, 누르면 지우개를 끄고 형광펜을 켠다.
     @objc func toggleHighlightMode(_ sender: Any?) {
-        ColorStore.shared.highlightMode.toggle()
+        let store = ColorStore.shared
+        if store.eraserMode {
+            spaceHeld = false
+            store.eraserMode = false
+            store.highlightMode = true
+        } else {
+            store.highlightMode.toggle()
+        }
     }
 
     @objc func toggleEraserMode(_ sender: Any?) {
@@ -518,7 +529,7 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         switch item.action {
         case #selector(toggleHighlightMode(_:)):
-            item.state = ColorStore.shared.highlightMode ? .on : .off
+            item.state = ColorStore.shared.highlightMode && !ColorStore.shared.eraserMode ? .on : .off
             return true
         case #selector(toggleEraserMode(_:)):
             item.state = ColorStore.shared.eraserMode ? .on : .off
