@@ -70,6 +70,13 @@ Requires macOS 14 (Sonoma) or later. Runs natively on Apple Silicon and Intel Ma
 To make it the default PDF app, select a PDF in Finder, press `⌘I`, choose PaperMark under
 **Open with**, and click **Change All…**.
 
+### Companion app: PDFRouter
+
+[PDFRouter](https://github.com/inextro/pdf-router) takes the default PDF app slot and opens each PDF
+in an app chosen by where the file lives: PDFs in your Zotero attachment folders go to PaperMark, and
+everything else goes to Preview. This is handy for launchers like Raycast or Alfred, which always use
+the system default app.
+
 ## Keyboard shortcuts
 
 All shortcuts except `Space`, `T`, and `Esc` can be changed in **Settings** (`⌘,`).
