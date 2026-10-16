@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.4.0
+
+- New: The sidebar has a Files tab that shows the folders and PDFs around the current file, like an IDE
+  explorer. Move up a level or pick any root folder, and double-click to open.
+- New: PaperMark starts from your working folder (the file tree's root). Each launch opens a tab with its
+  file tree next to the files you had open. On first launch it asks you to choose the folder.
+- New: The tab bar's `+` opens a new tab that starts on the file tree. PDFs you open always become tabs in
+  the current window, and the tab bar stays visible even with a single tab.
+- New: Updated for the current macOS design, with glass toolbar buttons, the standard window controls, and
+  the PaperMark icon next to the window title.
+- Improved: The sidebar opens wider, and its edge is easier to grab and drag.
+- Fix: While the eraser was on, toolbar clicks could be swallowed, so you could not turn the eraser off.
+  Clicking the highlighter button while erasing now switches back to highlighting.
+
 ## 0.3.1
 
 - Fix: Word snapping keeps brackets paired, so dragging `(word` highlights `(word)` instead of dropping the `)`.
