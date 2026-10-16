@@ -68,27 +68,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// 앱을 끌 때 열려 있던 파일들을 다시 연다. 없으면 가장 최근 파일, 그것도 없으면 열기 창.
+    /// 작업 폴더(파일 트리 root)의 파일 트리를 보여 주는 새 탭을 맨 앞에 열고, 앱을 끌 때 열려 있던 파일들을 다시 연다.
+    /// 다시 열 파일이 없으면 가장 최근 파일을 연다.
     private func reopenLastFiles() {
-        let controller = NSDocumentController.shared
-        let exists = { (url: URL) in FileManager.default.fileExists(atPath: url.path) }
-        var urls = Session.files.filter(exists)
-        if urls.isEmpty, let recent = controller.recentDocumentURLs.first(where: exists) { urls = [recent] }
-        guard !urls.isEmpty else { controller.openDocument(nil); return }
-        var pending = urls.count, opened = 0
-        for url in urls {
-            controller.openDocument(withContentsOf: url, display: true) { document, _, _ in
-                pending -= 1
-                if document != nil { opened += 1 }
-                if pending == 0, opened == 0 { controller.openDocument(nil) }
+        askWorkingFolderOnce {
+            self.openStartTab()
+            let controller = NSDocumentController.shared
+            let exists = { (url: URL) in FileManager.default.fileExists(atPath: url.path) }
+            var urls = Session.files.filter(exists)
+            if urls.isEmpty, let recent = controller.recentDocumentURLs.first(where: exists) { urls = [recent] }
+            for url in urls {
+                controller.openDocument(withContentsOf: url, display: true) { _, _, _ in }
             }
+        }
+    }
+
+    /// 작업 폴더를 정한 적이 없으면 처음 한 번만 묻는다. 취소하거나 사이드바에서 root를 풀면 다시 묻지 않는다.
+    private func askWorkingFolderOnce(then next: @escaping () -> Void) {
+        let key = "didAskWorkingFolder"
+        guard FileTreeRoot.url == nil, !UserDefaults.standard.bool(forKey: key) else { next(); return }
+        UserDefaults.standard.set(true, forKey: key)
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.prompt = "Choose"
+        panel.directoryURL = PMDocumentController.googleDriveFolder()
+        panel.begin { response in
+            if response == .OK, let url = panel.url { FileTreeRoot.url = url }
+            next()
+        }
+    }
+
+    /// 탭 막대의 + 버튼과 같은 PDF 없는 새 탭(작업 폴더의 파일 트리와 열기 버튼).
+    private func openStartTab() {
+        do {
+            _ = try NSDocumentController.shared.openUntitledDocumentAndDisplay(true)
+        } catch {
+            NSApp.presentError(error)
         }
     }
 
     func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool { false }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !flag { NSDocumentController.shared.openDocument(nil) }
+        if !flag { openStartTab() }
         return false
     }
 

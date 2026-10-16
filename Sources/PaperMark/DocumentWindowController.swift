@@ -56,6 +56,11 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
                               styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                               backing: .buffered, defer: false)
         window.minSize = NSSize(width: 520, height: 400)
+        // 다시 열 파일과 페이지는 Session이 맡는다. 시스템 창 복원까지 켜 두면 지난 창이 먼저 살아나서
+        // 앱 시작 흐름(작업 폴더 탭, 직전 파일 열기)을 건너뛰게 된다.
+        window.isRestorable = false
+        // 시스템 설정("문서를 열 때 탭 사용")과 관계없이 새 PDF는 항상 지금 창의 탭으로 연다.
+        window.tabbingMode = .preferred
         window.toolbarStyle = .expanded   // 제목 표시줄(파일 이름) 아래에 툴바를 따로 둔다
         super.init(window: window)
         window.delegate = self
@@ -77,6 +82,7 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
         // contentViewController로 넣으면 창이 내용의 fitting size(최소 크기)로 줄어들어서 뷰만 붙인다.
         splitController = makeSplitViewController(fileURL: document.fileURL)
         window.contentView = splitController.view
+        applyDefaultSidebarWidth()
         // 새 탭에서는 사이드바(파일 트리)가 접혀 있으면 안 된다.
         if document.fileURL == nil { splitController.splitViewItems.first?.isCollapsed = false }
 
@@ -129,12 +135,30 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
         let main = NSSplitViewItem(viewController: mainContent)
         main.minimumThickness = 360
 
-        let split = NSSplitViewController()
+        let split = SidebarSplitViewController()
         split.addSplitViewItem(sidebar)
         split.addSplitViewItem(main)
         // 사이드바 폭과 접힘 상태를 기억한다.
-        split.splitView.autosaveName = "PaperMarkSidebar"
+        split.splitView.autosaveName = Self.sidebarAutosaveName
         return split
+    }
+
+    // 기본 너비를 넓히면서 이름을 바꿨다. 예전 이름으로 저장된 좁은 너비는 쓰지 않고 한 번 새 기본값으로 연다.
+    private static let sidebarAutosaveName = "PaperMarkSidebarWidth"
+    private static let defaultSidebarWidth: CGFloat = 240
+
+    /// 저장된 사이드바 너비가 없으면(처음 열 때) 파일 이름이 덜 잘리도록 기본 너비로 연다.
+    private func applyDefaultSidebarWidth() {
+        guard UserDefaults.standard.object(forKey: "NSSplitView Subview Frames \(Self.sidebarAutosaveName)") == nil
+        else { return }
+        splitController.view.layoutSubtreeIfNeeded()
+        splitController.splitView.setPosition(Self.defaultSidebarWidth, ofDividerAt: 0)
+    }
+
+    /// 탭이 하나뿐이어도 탭 막대를 보인다. 한 번 켜면 시스템이 기억하므로 꺼져 있을 때만 켠다.
+    private func showTabBar() {
+        guard let window, window.tabGroup?.isTabBarVisible == false else { return }
+        window.toggleTabBar(nil)
     }
 
     /// 탭 막대의 + 버튼으로 연 새 탭(PDF 없는 문서): 빈 화면 대신 안내와 열기 버튼을 두고 사이드바에 파일 트리를 연다.
@@ -282,6 +306,7 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
 
     // 창으로 돌아올 때 파일 트리를 다시 읽고(다른 곳에서 파일이 바뀌었을 수 있다) 이 창의 PDF를 보여 준다.
     func windowDidBecomeKey(_ notification: Notification) {
+        showTabBar()
         if sidebarContent.showsFiles, !sidebarCollapsed { sidebarContent.files.reload(revealDocument: true) }
     }
 
@@ -616,5 +641,17 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
         default:
             return nil
         }
+    }
+}
+
+/// 사이드바 분할선은 1pt라 잡히는 폭이 분할선 주변 4pt 남짓뿐이다. 그런데 바로 오른쪽 PDF 여백까지
+/// 경계처럼 보여서, 보이는 경계를 잡으면 끌리지 않았다. 잡는 범위를 그 여백까지 넓힌다.
+private final class SidebarSplitViewController: NSSplitViewController {
+    override func splitView(_ splitView: NSSplitView, effectiveRect proposedEffectiveRect: NSRect,
+                            forDrawnRect drawnRect: NSRect, ofDividerAt dividerIndex: Int) -> NSRect {
+        let rect = super.splitView(splitView, effectiveRect: proposedEffectiveRect,
+                                   forDrawnRect: drawnRect, ofDividerAt: dividerIndex)
+        return rect.union(NSRect(x: drawnRect.minX - 3, y: drawnRect.minY,
+                                 width: drawnRect.width + 9, height: drawnRect.height))
     }
 }

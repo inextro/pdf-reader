@@ -345,9 +345,17 @@ final class FileTreeView: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
             outline.isItemExpanded(node) ? outline.collapseItem(node) : outline.expandItem(node)
             return
         }
+        let current = window
         NSDocumentController.shared.openDocument(withContentsOf: node.url, display: true) { [weak self] document, _, error in
             if let error { NSApp.presentError(error) }
-            if document != nil { self?.didOpen?() }
+            guard let document else { return }
+            // 다른 창으로 떨어졌으면 이 창의 탭으로 붙인다(이미 열려 있던 PDF도 이 창으로 데려온다).
+            if let current, let opened = document.windowControllers.first?.window, opened !== current,
+               current.tabGroup?.windows.contains(opened) != true {
+                current.addTabbedWindow(opened, ordered: .above)
+                opened.makeKeyAndOrderFront(nil)
+            }
+            self?.didOpen?()
         }
     }
 
@@ -440,15 +448,36 @@ final class SidebarViewController: NSViewController {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
-    /// 사이드바는 창 꼭대기(신호등·툴바 뒤)까지 깔리므로, 탭은 툴바 아래부터 둔다.
-    /// 창의 contentLayoutGuide는 창에 붙은 뒤에만 쓸 수 있어서 여기서 잇는다.
-    override func viewWillAppear() {
-        super.viewWillAppear()
-        guard !tabsBelowToolbar, let guide = view.window?.contentLayoutGuide as? NSLayoutGuide else { return }
-        tabs.topAnchor.constraint(equalTo: guide.topAnchor, constant: 8).isActive = true
-        tabsBelowToolbar = true
+    /// 사이드바는 창 꼭대기(신호등·툴바 뒤)까지 깔린다. Pages/Files는 오른쪽 탭 막대와 같은 줄 가운데에 두고,
+    /// 탭 막대가 없으면(전체 화면 등) 툴바 바로 아래(콘텐츠 영역 맨 위)에 둔다.
+    private var tabsTop: NSLayoutConstraint!
+
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        guard let window = view.window, let tabsTop else { return }
+        let top: CGFloat
+        if let bar = tabBarFrame(in: window) {
+            top = view.bounds.maxY - (bar.midY + tabs.fittingSize.height / 2)
+        } else {
+            top = view.bounds.maxY - view.convert(window.contentLayoutRect, from: nil).maxY + 8
+        }
+        // 레이아웃 중에 상수를 바꾸면 다시 레이아웃되므로 값이 달라질 때만 바꾼다.
+        if abs(tabsTop.constant - top) > 0.5 { tabsTop.constant = top }
     }
-    private var tabsBelowToolbar = false
+
+    /// 창의 탭 막대(시스템 뷰)를 이 뷰 좌표로. 안 보이면 nil. 공개 API가 없어 뷰 계층에서 클래스 이름으로 찾는다.
+    private func tabBarFrame(in window: NSWindow) -> NSRect? {
+        guard let frameView = window.contentView?.superview else { return nil }
+        func find(_ v: NSView) -> NSView? {
+            if v === window.contentView { return nil }
+            if NSStringFromClass(type(of: v)).contains("TabBar"), !v.isHiddenOrHasHiddenAncestor, v.frame.height > 0 {
+                return v
+            }
+            return v.subviews.lazy.compactMap(find).first
+        }
+        guard let bar = find(frameView) else { return nil }
+        return view.convert(bar.bounds, from: bar)
+    }
 
     var showsFiles: Bool { tabs.selectedSegment == Tab.files.rawValue }
     /// PDF 없는 새 탭: 넘겨 볼 페이지가 없으니 Files만 보인다(고른 탭으로 기억하지는 않음).
@@ -464,8 +493,10 @@ final class SidebarViewController: NSViewController {
             sub.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview(sub)
         }
+        // self.view는 아직 없으므로(접근하면 loadView가 다시 불린다) 지역 view에 건다.
+        tabsTop = tabs.topAnchor.constraint(equalTo: view.topAnchor, constant: 8)
         var constraints = [
-            tabs.topAnchor.constraint(greaterThanOrEqualTo: view.topAnchor, constant: 8),
+            tabsTop!,
             tabs.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 10),
             tabs.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -10),
         ]

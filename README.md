@@ -39,7 +39,9 @@ palette, then keep going on another device.
   current file, like an IDE explorer. Move up a level or pick any root folder, and double-click to open.
   The tab bar's `+` opens a new tab that starts on the file tree.
 - **Customizable keyboard shortcuts** (`⌘,`).
-- **Picks up where you left off.** Reopens the files you had open, at the page you were reading.
+- **Picks up where you left off.** Reopens the files you had open, at the page you were reading, next to
+  a tab showing your working folder's file tree. The working folder is the file tree's root folder; on
+  first launch PaperMark asks you to choose one.
 - **Saves automatically** to the original file, and every change can be undone.
 
 ## Release notes
