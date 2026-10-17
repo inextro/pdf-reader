@@ -169,6 +169,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         add(view, "Zoom Out", #selector(DocumentWindowController.zoomOutPDF(_:)), .zoomOut)
         add(view, "Zoom to Fit", #selector(DocumentWindowController.zoomToFit(_:)), .zoomToFit)
 
+        let go = submenu(of: main, title: "Go")
+        add(go, "Back", #selector(DocumentWindowController.goBack(_:)), .goBack)
+        add(go, "Forward", #selector(DocumentWindowController.goForward(_:)), .goForward)
+
         let window = submenu(of: main, title: "Window")
         window.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
         window.addItem(withTitle: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")

@@ -5,7 +5,7 @@ import PaperMarkCore
 enum Command: String, CaseIterable {
     case highlightSelection, highlightMode, eraserMode, removeCurrentColor, translate
     case color1, color2, color3, color4, color5, color6, color7, color8, color9
-    case toggleSidebar, zoomIn, zoomOut, zoomToFit
+    case toggleSidebar, zoomIn, zoomOut, zoomToFit, goBack, goForward
     case find, findNext, findPrevious
 
     static func color(_ index: Int) -> Command? { Command(rawValue: "color\(index + 1)") }
@@ -21,6 +21,8 @@ enum Command: String, CaseIterable {
         case .zoomIn: "Zoom In"
         case .zoomOut: "Zoom Out"
         case .zoomToFit: "Zoom to Fit"
+        case .goBack: "Back"
+        case .goForward: "Forward"
         case .find: "Find"
         case .findNext: "Find Next"
         case .findPrevious: "Find Previous"
@@ -39,6 +41,8 @@ enum Command: String, CaseIterable {
         case .zoomIn: Shortcut(key: "=", modifiers: .command)
         case .zoomOut: Shortcut(key: "-", modifiers: .command)
         case .zoomToFit: Shortcut(key: "0", modifiers: .command)
+        case .goBack: Shortcut(key: "[", modifiers: .command)
+        case .goForward: Shortcut(key: "]", modifiers: .command)
         case .find: Shortcut(key: "f", modifiers: .command)
         case .findNext: Shortcut(key: "g", modifiers: .command)
         case .findPrevious: Shortcut(key: "g", modifiers: [.command, .shift])

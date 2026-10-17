@@ -432,17 +432,18 @@ final class FileTreeView: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
     }
 }
 
-/// 사이드바: 위쪽 Pages | Files 전환, 아래에 페이지 썸네일 또는 파일 트리.
+/// 사이드바: 위쪽 Contents | Files 전환, 아래에 목차 또는 파일 트리.
 final class SidebarViewController: NSViewController {
-    private enum Tab: Int { case pages, files }
+    // 예전 Pages(썸네일) 탭 자리를 Contents가 이어받아서, 저장된 탭 번호 0은 Contents로 연다.
+    private enum Tab: Int { case contents, files }
     private static let tabKey = "sidebarTab"
 
     let files = FileTreeView()
-    private let thumbnails: PDFThumbnailView
-    private let tabs = NSSegmentedControl(labels: ["Pages", "Files"], trackingMode: .selectOne, target: nil, action: nil)
+    private let contents: ContentsView
+    private let tabs = NSSegmentedControl(labels: ["Contents", "Files"], trackingMode: .selectOne, target: nil, action: nil)
 
-    init(thumbnails: PDFThumbnailView) {
-        self.thumbnails = thumbnails
+    init(pdfView: PDFView) {
+        contents = ContentsView(pdfView: pdfView)
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -489,7 +490,7 @@ final class SidebarViewController: NSViewController {
         tabs.action = #selector(tabChanged(_:))
         tabs.controlSize = .small
         tabs.segmentDistribution = .fillEqually
-        for sub in [tabs, thumbnails, files] as [NSView] {
+        for sub in [tabs, contents, files] as [NSView] {
             sub.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview(sub)
         }
@@ -500,7 +501,7 @@ final class SidebarViewController: NSViewController {
             tabs.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 10),
             tabs.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -10),
         ]
-        for content in [thumbnails, files] as [NSView] {
+        for content in [contents, files] as [NSView] {
             constraints += [
                 content.topAnchor.constraint(equalTo: tabs.bottomAnchor, constant: 6),
                 content.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -510,19 +511,19 @@ final class SidebarViewController: NSViewController {
         }
         NSLayoutConstraint.activate(constraints)
         self.view = view
-        tabs.setEnabled(!isStartPage, forSegment: Tab.pages.rawValue)
-        show(isStartPage ? .files : Tab(rawValue: UserDefaults.standard.integer(forKey: Self.tabKey)) ?? .pages)
+        tabs.setEnabled(!isStartPage, forSegment: Tab.contents.rawValue)
+        show(isStartPage ? .files : Tab(rawValue: UserDefaults.standard.integer(forKey: Self.tabKey)) ?? .contents)
     }
 
     @objc private func tabChanged(_ sender: NSSegmentedControl) {
-        let tab = Tab(rawValue: sender.selectedSegment) ?? .pages
+        let tab = Tab(rawValue: sender.selectedSegment) ?? .contents
         UserDefaults.standard.set(tab.rawValue, forKey: Self.tabKey)
         show(tab)
     }
 
     private func show(_ tab: Tab) {
         tabs.selectedSegment = tab.rawValue
-        thumbnails.isHidden = tab != .pages
+        contents.isHidden = tab != .contents
         files.isHidden = tab != .files
         if tab == .files { files.reload(revealDocument: true) }
     }

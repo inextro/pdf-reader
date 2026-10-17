@@ -38,8 +38,12 @@ palette, then keep going on another device.
   selection, or right-click a highlight. Uses Apple's on-device Translation (macOS 14.4+), so it is
   free, private, and adds nothing to the app size. Hyphenated line breaks are joined before translating.
 - **Search** with next/previous result navigation.
-- **Sidebar with page thumbnails or a file tree.** The Files tab shows the folders and PDFs around the
-  current file, like an IDE explorer. Move up a level or pick any root folder, and double-click to open.
+- **Preview citations and figure references.** Rest the pointer on a link inside the paper, such as `[23]` or
+  `Fig. 3`, and a popover shows the reference entry or figure it points to. Click to jump there, then `⌘[` to come
+  back where you were (`⌘]` goes forward again).
+- **Sidebar with the table of contents or a file tree.** The Contents tab lists the PDF's sections and
+  subsections with page numbers. Click one to jump there; the section you are reading stays highlighted as you
+  scroll. The Files tab shows the folders and PDFs around the current file, like an IDE explorer. Move up a level or pick any root folder, and double-click to open.
   The tab bar's `+` opens a new tab that starts on the file tree.
 - **Customizable keyboard shortcuts** (`⌘,`).
 - **Picks up where you left off.** Reopens the files you had open, at the page you were reading, next to
@@ -97,6 +101,7 @@ All shortcuts except `Space`, `T`, and `Esc` can be changed in **Settings** (`�
 | Translate the selection | `⌘T` |
 | Find / next / previous result | `⌘F` / `⌘G` or `Return` / `⇧⌘G` or `⇧Return` |
 | Show or hide the sidebar | `⌃⌘S` |
+| Back / forward (after following a link, a section, or a search result) | `⌘[` / `⌘]` |
 | Zoom in / out / fit | `⌘=` / `⌘-` / `⌘0` |
 | Undo / redo | `⌘Z` / `⇧⌘Z` |
 

@@ -271,5 +271,72 @@ let path = FileTree.folders(from: treeDir, to: deep)?.map(\.lastPathComponent)
 check(path == ["b-folder", "sub"], "현재 파일까지 펼칠 폴더 (\(path ?? []))")
 check(FileTree.folders(from: treeDir.appendingPathComponent("A-folder"), to: deep) == nil, "root 밖 파일은 nil")
 
+// 문서 안 링크: hyperref처럼 이름 붙인 목적지로 이어진 링크와 GoTo 동작 링크만 잡고, 웹 주소 링크는 뺀다.
+let refs = (1...12).map { "[\($0)] Author \($0). A paper title that is long enough to wrap onto a second line. In Proc. Conf." }
+    .joined(separator: "\n")
+let linkURL = outDir.appendingPathComponent("links.pdf")
+do {
+    var box = CGRect(x: 0, y: 0, width: 612, height: 792)
+    let ctx = CGContext(linkURL as CFURL, mediaBox: &box, nil)!
+    ctx.beginPDFPage(nil)
+    let attr = NSAttributedString(string: refs, attributes: [.font: NSFont(name: "Helvetica", size: 9)!])
+    let setter = CTFramesetterCreateWithAttributedString(attr)
+    // 두 단: 왼쪽 단에 다 못 넣은 글자는 오른쪽 단으로 이어진다.
+    let leftFrame = CTFramesetterCreateFrame(setter, CFRange(location: 0, length: 0),
+                                             CGPath(rect: CGRect(x: 54, y: 540, width: 240, height: 200), transform: nil), nil)
+    CTFrameDraw(leftFrame, ctx)
+    let rest = CTFrameGetVisibleStringRange(leftFrame)
+    CTFrameDraw(CTFramesetterCreateFrame(setter, CFRange(location: rest.length, length: 0),
+                                         CGPath(rect: CGRect(x: 318, y: 540, width: 240, height: 200), transform: nil), nil), ctx)
+    ctx.addDestination("cite.2" as CFString, at: CGPoint(x: 54, y: 718))
+    ctx.endPDFPage()
+    ctx.beginPDFPage(nil)
+    ctx.setDestination("cite.2" as CFString, for: CGRect(x: 10, y: 10, width: 20, height: 10))
+    ctx.setURL(URL(string: "https://example.com")! as CFURL, for: CGRect(x: 70, y: 10, width: 20, height: 10))
+    ctx.endPDFPage()
+    ctx.closePDF()
+}
+let linkDoc = PDFDocument(url: linkURL)!
+let lp = linkDoc.page(at: 0)!, lp2 = linkDoc.page(at: 1)!
+let ltext = lp.string! as NSString
+let links = lp2.annotations.filter { $0.type == "Link" }.sorted { $0.bounds.minX < $1.bounds.minX }
+check(links.map { PDFLinks.destination(of: $0) != nil } == [true, false],
+      "이름 붙인 목적지 링크만 문서 안 링크, 웹 주소는 아님 (\(links.map { PDFLinks.destination(of: $0) != nil }))")
+check(links.first.flatMap(PDFLinks.destination(of:))?.page === lp, "링크가 1쪽을 가리킴")
+let viaAction = PDFAnnotation(bounds: CGRect(x: 40, y: 10, width: 20, height: 10), forType: .link, withProperties: nil)
+viaAction.action = PDFActionGoTo(destination: PDFDestination(page: lp, at: CGPoint(x: 54, y: 700)))
+check(PDFLinks.destination(of: viaAction)?.page === lp, "GoTo 동작만 있는 링크도 문서 안 링크")
+/// 그 글자가 있는 줄 위쪽(참고문헌 링크의 목적지 자리).
+func destination(atStartOf fragment: String) -> PDFDestination {
+    let bounds = lp.selection(for: ltext.range(of: fragment))!.bounds(for: lp)
+    return PDFDestination(page: lp, at: CGPoint(x: bounds.minX, y: bounds.maxY + 2))
+}
+
+// 미리보기 영역: 두 단이면 그 단 너비로, 한 단이면 본문 너비로, 아래에 글자가 없으면 쪽 너비로.
+let rightStart = (1...12).map { "[\($0)]" }.first { lp.selection(for: ltext.range(of: $0))?.bounds(for: lp).minX ?? 0 > 300 }!
+let leftRect = PDFLinks.previewRect(for: destination(atStartOf: "[2]"))!
+check(leftRect.minX < 54 && abs(leftRect.maxX - 308) < 1 && leftRect.height == 80, "두 단 왼쪽 단 미리보기 (\(leftRect))")
+let rightRect = PDFLinks.previewRect(for: destination(atStartOf: rightStart))!
+check(rightRect.minX > 300 && rightRect.maxX == 612, "두 단 오른쪽 단 미리보기 \(rightStart) (\(rightRect))")
+let singleRect = PDFLinks.previewRect(for: PDFDestination(page: wp, at: CGPoint(x: 72, y: 722)))!
+check(singleRect.minX == 66 && singleRect.maxX == 546, "한 단 미리보기는 본문 너비 (\(singleRect))")
+let blankRect = PDFLinks.previewRect(for: PDFDestination(page: lp2, at: CGPoint(x: 54, y: 700)))!
+check(blankRect.width == 612 && blankRect.height > 300, "글자 없는 곳(그림)은 쪽 너비로 크게 (\(blankRect))")
+let unspecified = CGFloat(kPDFDestinationUnspecifiedValue)
+check(PDFLinks.point(of: PDFDestination(page: lp, at: CGPoint(x: unspecified, y: unspecified))) == CGPoint(x: 0, y: 792),
+      "좌표를 정하지 않은 목적지는 쪽 왼쪽 위")
+
+// 목차: 지금 읽는 위치를 지난 마지막 항목. 두 단이라 같은 쪽 안에서 목차 순서와 높이 순서가 어긋날 수 있다.
+let sections = [PDFContents.Position(page: 0, y: 700), .init(page: 2, y: 600), .init(page: 2, y: 300), .init(page: 2, y: 700), .init(page: 4, y: 500)]
+check(PDFContents.current(in: sections, at: .init(page: 0, y: 750)) == nil, "첫 절 위면 고른 항목 없음")
+check(PDFContents.current(in: sections, at: .init(page: 1, y: 100)) == 0, "다음 절 전까지는 앞 절")
+check(PDFContents.current(in: sections, at: .init(page: 2, y: 400)) == 3, "같은 쪽에서 위치를 지난 목차 순서의 마지막 항목")
+check(PDFContents.current(in: sections, at: .init(page: 3, y: 0)) == 3, "쪽을 넘기면 그 쪽의 마지막 절")
+check(PDFContents.current(in: sections, at: .init(page: 9, y: 0)) == 4, "끝 절")
+let item = PDFOutline()
+item.action = PDFActionGoTo(destination: PDFDestination(page: lp, at: CGPoint(x: 0, y: 500)))
+check(PDFLinks.destination(of: item)?.page === lp, "GoTo 동작만 있는 목차 항목도 목적지가 있다")
+check(PDFLinks.destination(of: PDFOutline()) == nil, "목적지 없는 목차 항목")
+
 print(failures == 0 ? "ALL PASS" : "\(failures) FAILED", "→", outDir.path)
 exit(failures == 0 ? 0 : 1)

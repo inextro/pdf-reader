@@ -23,7 +23,6 @@ private final class HighlightAction: NSObject {
 
 final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSWindowDelegate, NSMenuItemValidation {
     private let pdfView = ReaderPDFView()
-    private let thumbnails = PDFThumbnailView()
     private var splitController: NSSplitViewController!
     private var sidebarContent: SidebarViewController!
     private let palette = PaletteView()
@@ -125,12 +124,9 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
-    /// 왼쪽은 사이드바(페이지 썸네일 또는 파일 트리, ⌃⌘S로 접기), 오른쪽은 PDF.
+    /// 왼쪽은 사이드바(목차 또는 파일 트리, ⌃⌘S로 접기), 오른쪽은 PDF.
     private func makeSplitViewController(fileURL: URL?) -> NSSplitViewController {
-        thumbnails.pdfView = pdfView
-        thumbnails.thumbnailSize = NSSize(width: 96, height: 124)
-        thumbnails.backgroundColor = .clear
-        sidebarContent = SidebarViewController(thumbnails: thumbnails)
+        sidebarContent = SidebarViewController(pdfView: pdfView)
         sidebarContent.files.documentURL = fileURL
         sidebarContent.isStartPage = fileURL == nil
         if fileURL == nil { sidebarContent.files.didOpen = { [weak self] in self?.closeStartPage() } }
@@ -564,6 +560,10 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
     @objc func zoomOutPDF(_ sender: Any?) { pdfView.zoomOut(sender) }
     @objc func zoomToFit(_ sender: Any?) { pdfView.autoScales = true }
 
+    // 링크·목차·검색으로 옮겨 간 자리를 PDFView가 기록해 두므로 그 기록을 오간다.
+    @objc func goBack(_ sender: Any?) { pdfView.goBack(sender) }
+    @objc func goForward(_ sender: Any?) { pdfView.goForward(sender) }
+
     // MARK: 실행 취소 (창이 문서의 undo manager를 쓰게 한다)
 
     func windowWillReturnUndoManager(_ window: NSWindow) -> UndoManager? {
@@ -587,6 +587,10 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
             return true
         case #selector(findNextResult(_:)), #selector(findPreviousResult(_:)):
             return !results.isEmpty
+        case #selector(goBack(_:)):
+            return pdfView.canGoBack
+        case #selector(goForward(_:)):
+            return pdfView.canGoForward
         default:
             return true
         }
