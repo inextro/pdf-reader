@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.5.0
+
+- New: Rest the pointer on a citation, such as `[23]` or `Park et al., 2023`, to preview the reference entry it
+  points to. PaperMark finds the entry by its number or author name, so the preview is right even when the
+  paper's link target is off. Links to figures, tables, and equations just jump.
+- New: The sidebar's Pages tab is now a Contents tab with the PDF's table of contents and page numbers. Click a
+  section to jump there; the section you are reading stays highlighted as you scroll.
+- New: Back (`⌘[`) and Forward (`⌘]`) after following a link, a section, or a search result.
+- New: The toolbar shows the current page and the page count.
+- Changed: The default palette has four colors (pink, blue, yellow, purple). A palette you already customized is kept.
+- Improved: Double-clicking highlights the whole word without surrounding quotes, so `‘t-SNE’` highlights `t-SNE`.
+- Fix: Opening several PDFs at once (for example from Raycast or Finder) opened separate windows. They now open as
+  tabs in the current window.
+- Fix: Word snapping no longer extends into a superscript citation number, so dragging over `replay²¹⁻²³`
+  highlights just `replay`. It also no longer pulls in a trailing apostrophe or closing quote.
+- Fix: Numbers such as `84 × 84 × 4` were treated as phone numbers, which made them hard to highlight and could
+  open a contact card on Force Click.
+
 ## 0.4.0
 
 - New: The sidebar has a Files tab that shows the folders and PDFs around the current file, like an IDE
