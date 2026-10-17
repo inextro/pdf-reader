@@ -232,13 +232,20 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
     // MARK: 형광펜
 
     private func installMouseMonitor() {
-        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp, .keyDown, .keyUp]) { [weak self] event in
+        // EventTypeMask에는 찾아보기(.quickLook) 멤버가 없어서 이벤트 종류 값으로 만든다.
+        let quickLookMask = NSEvent.EventTypeMask(rawValue: 1 << NSEvent.EventType.quickLook.rawValue)
+        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp, .keyDown, .keyUp, .pressure, quickLookMask]) { [weak self] event in
             guard let self, event.window === self.window else { return event }
             if event.type == .keyDown || event.type == .keyUp { return self.handleKey(event) ? nil : event }
             // PDF는 툴바 뒤까지 깔려 있으므로(fullSizeContentView) 툴바·제목 표시줄에 가린 곳은 PDF로 치지 않는다.
             // 그러지 않으면 지우개가 켜진 동안 툴바 클릭까지 가로채서 지우개를 끌 수도 없다.
             let inPDF = self.pdfView.bounds.contains(self.pdfView.convert(event.locationInWindow, from: nil))
                 && self.window?.contentLayoutRect.contains(event.locationInWindow) == true
+            // Force Click(세게 누르기)과 찾아보기는 macOS 데이터 감지로 이어져서 "84 × 84 × 4" 같은 숫자를 전화번호로 보고
+            // 연락처 카드를 띄운다. 클릭 압력이 가벼우면 칠하다가도 쉽게 눌리므로 PDF 위에서는 넘기지 않는다.
+            if event.type == .quickLook || event.type == .pressure {
+                return inPDF && (event.type == .quickLook || event.stage >= 2) ? nil : event
+            }
             // 지우개 모드: PDF 안의 클릭·드래그는 PDFView에 넘기지 않고(텍스트 선택 안 함) 지나간 주석을 지운다.
             if ColorStore.shared.eraserMode || self.erasedDuringDrag != nil {
                 return self.handleEraser(event, inPDF: inPDF) ? nil : event

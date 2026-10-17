@@ -32,6 +32,12 @@ final class PMDocument: NSDocument {
         guard let document = PDFDocument(data: data) else {
             throw NSError(domain: NSCocoaErrorDomain, code: NSFileReadCorruptFileError)
         }
+        // 데이터 감지가 켜져 있으면 "84 × 84 × 4"(전화번호), "20 episodes" 같은 글자에 점선 상자를 띄워
+        // 그 위에서는 단어를 칠하기 어렵고, 누르면 전화를 걸기도 한다. 이 설정은 공개 헤더에 없어서
+        // (PDFView 쪽은 deprecated) 있을 때만 KVC로 끈다.
+        if document.responds(to: Selector(("setEnableDataDetectors:"))) {
+            document.setValue(false, forKey: "enableDataDetectors")
+        }
         pdf = document
         undoManager?.removeAllActions()
         for case let controller as DocumentWindowController in windowControllers {
