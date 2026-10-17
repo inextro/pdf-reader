@@ -183,10 +183,12 @@ check(got.contains(String(expected.dropFirst(3).dropLast(3))), "형광펜이 덮
 
 // 단어 단위 맞춤: 단어 중간이면 넓히고, 문장부호(오타 "results.In")에서는 멈추고, 앞뒤 공백은 뺀다
 func makeTextPDF(_ text: String, at url: URL) -> PDFDocument {
+    makeTextPDF(NSAttributedString(string: text, attributes: [.font: NSFont(name: "Helvetica", size: 14)!]), at: url)
+}
+func makeTextPDF(_ attr: NSAttributedString, at url: URL) -> PDFDocument {
     var box = CGRect(x: 0, y: 0, width: 612, height: 792)
     let ctx = CGContext(url as CFURL, mediaBox: &box, nil)!
     ctx.beginPDFPage(nil)
-    let attr = NSAttributedString(string: text, attributes: [.font: NSFont(name: "Helvetica", size: 14)!])
     let frame = CTFramesetterCreateFrame(CTFramesetterCreateWithAttributedString(attr), CFRange(location: 0, length: 0),
                                          CGPath(rect: box.insetBy(dx: 72, dy: 72), transform: nil), nil)
     CTFrameDraw(frame, ctx)
@@ -212,6 +214,22 @@ check(snapped("(word)", length: 3) == "(word)", "여는 괄호를 잡으면 닫�
 check(snapped("(word)", offset: 2, length: 4) == "(word)", "닫는 괄호를 잡으면 여는 괄호까지 (\(snapped("(word)", offset: 2, length: 4)))")
 check(snapped("(word)", offset: 1, length: 3) == "word", "괄호 없이 단어만 잡으면 괄호는 빼기 (\(snapped("(word)", offset: 1, length: 3)))")
 check(snapped("[f(x)]", length: 4) == "[f(x)]", "중첩 괄호 (\(snapped("[f(x)]", length: 4)))")
+
+// 인용 번호 위첨자: 본문보다 작은 글자가 바로 붙어 있다. "replay²¹⁻²³"
+let body = NSFont(name: "Helvetica", size: 14)!, small = NSFont(name: "Helvetica", size: 9)!
+let supText = NSMutableAttributedString(string: "termed experience replay", attributes: [.font: body])
+supText.append(NSAttributedString(string: "21–23", attributes: [.font: small, kCTBaselineOffsetAttributeName as NSAttributedString.Key: 5]))
+supText.append(NSAttributedString(string: " that uses word2vec here.", attributes: [.font: body]))
+let supDoc = makeTextPDF(supText, at: outDir.appendingPathComponent("superscript.pdf"))
+let sp = supDoc.page(at: 0)!
+let stext = sp.string! as NSString
+func snappedSup(_ fragment: String, offset: Int = 0, length: Int) -> String {
+    let at = stext.range(of: fragment).location + offset
+    return Highlights.snappedToWords(sp.selection(for: NSRange(location: at, length: length))!).string ?? ""
+}
+check(snappedSup("experience", offset: 3, length: 12) == "experience replay", "위첨자 앞에서 멈춤 (\(snappedSup("experience", offset: 3, length: 12)))")
+check(snappedSup("replay21", length: 8) == "replay21", "위첨자를 직접 잡으면 유지 (\(snappedSup("replay21", length: 8)))")
+check(snappedSup("word2vec", length: 5) == "word2vec", "같은 크기 숫자는 단어 안 (\(snappedSup("word2vec", length: 5)))")
 
 // 파일 트리: 폴더와 PDF만, 숨김·패키지는 빼고, 폴더 먼저 Finder 순서(file2 < file10)
 let treeDir = outDir.appendingPathComponent("tree")

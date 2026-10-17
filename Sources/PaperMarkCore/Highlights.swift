@@ -39,6 +39,7 @@ public enum Highlights {
     /// 선택 양 끝이 단어 중간이면 단어 끝까지 넓히고, 앞뒤 공백은 뺀다.
     /// 단어는 글자·숫자(와 아포스트로피)가 이어진 덩어리라서 문장부호에서는 넓히지 않는다.
     /// 그래서 "results.In"처럼 마침표 뒤 공백이 빠진 오타가 있어도 "results"까지만 잡힌다.
+    /// 글자 크기가 확 바뀌는 곳도 경계로 본다. 그래서 "replay²¹⁻²³"처럼 인용 번호 위첨자가 붙어 있어도 "replay"까지만 잡힌다.
     /// 괄호는 짝을 맞춘다. "(word"를 잡으면 바로 뒤의 ")"까지 넓힌다.
     public static func snappedToWords(_ selection: PDFSelection) -> PDFSelection {
         guard let document = selection.pages.first?.document,
@@ -54,8 +55,10 @@ public enum Highlights {
         while end > 0, isSpace(lastText.character(at: end - 1)), !(sameRun && end <= start) { end -= 1 }
         guard !(sameRun && start >= end) else { return selection }
         // 단어 중간이면 넓히기
-        while start > 0, isWord(firstText.character(at: start - 1)), isWord(firstText.character(at: start)) { start -= 1 }
-        while end < lastText.length, isWord(lastText.character(at: end - 1)), isWord(lastText.character(at: end)) { end += 1 }
+        while start > 0, isWord(firstText.character(at: start - 1)), isWord(firstText.character(at: start)),
+              sameSize(on: first, start - 1, start) { start -= 1 }
+        while end < lastText.length, isWord(lastText.character(at: end - 1)), isWord(lastText.character(at: end)),
+              sameSize(on: last, end - 1, end) { end += 1 }
         guard let snapped = document.selection(from: first, atCharacterIndex: start, to: last, atCharacterIndex: end - 1)
         else { return selection }
         // 짝이 안 맞는 괄호가 있으면 바로 옆의 짝 괄호까지 넓힌다: "(word" → "(word)"
@@ -96,6 +99,18 @@ public enum Highlights {
     static func isWord(_ c: unichar) -> Bool {
         guard let scalar = Unicode.Scalar(c) else { return true }   // 서로게이트 쌍의 반쪽은 글자로 본다
         return CharacterSet.alphanumerics.contains(scalar) || c == 0x27 || c == 0x2019   // ' ’
+    }
+
+    /// 두 글자의 폰트 크기가 비슷한가. 위첨자·아래첨자는 본문보다 작아서 여기서 갈린다.
+    static func sameSize(on page: PDFPage, _ a: Int, _ b: Int) -> Bool {
+        guard let x = fontSize(on: page, at: a), let y = fontSize(on: page, at: b) else { return true }
+        return min(x, y) >= max(x, y) * 0.8
+    }
+
+    static func fontSize(on page: PDFPage, at index: Int) -> CGFloat? {
+        guard let text = page.selection(for: NSRange(location: index, length: 1))?.attributedString, text.length > 0
+        else { return nil }
+        return (text.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)?.pointSize
     }
 
     static func isSpace(_ c: unichar) -> Bool {
