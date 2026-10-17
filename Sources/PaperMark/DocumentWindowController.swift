@@ -6,6 +6,7 @@ private extension NSToolbarItem.Identifier {
     static let highlightMode = NSToolbarItem.Identifier("highlightMode")
     static let eraser = NSToolbarItem.Identifier("eraser")
     static let palette = NSToolbarItem.Identifier("palette")
+    static let pageNumber = NSToolbarItem.Identifier("pageNumber")
     static let search = NSToolbarItem.Identifier("search")
 }
 
@@ -28,6 +29,7 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
     private let palette = PaletteView()
     private let modeButton = NSButton()
     private let eraserButton = NSButton()
+    private let pageLabel = NSTextField(labelWithString: "")
     private var searchItem: NSSearchToolbarItem?
 
     private var results: [PDFSelection] = []
@@ -98,6 +100,8 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
         eraserButton.image = NSImage(systemSymbolName: "eraser", accessibilityDescription: "Eraser Mode")
         eraserButton.target = self
         eraserButton.action = #selector(toggleEraserMode(_:))
+        pageLabel.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+        pageLabel.textColor = .secondaryLabelColor
 
         let toolbar = NSToolbar(identifier: "PaperMarkToolbar")
         toolbar.delegate = self
@@ -110,9 +114,12 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
                                                name: ShortcutStore.didChange, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(pageChanged),
                                                name: .PDFViewPageChanged, object: pdfView)
+        NotificationCenter.default.addObserver(self, selector: #selector(updatePageLabel),
+                                               name: .PDFViewDocumentChanged, object: pdfView)
         NotificationCenter.default.addObserver(self, selector: #selector(pdfSelectionChanged),
                                                name: .PDFViewSelectionChanged, object: pdfView)
         colorStoreChanged()
+        updatePageLabel()
         installMouseMonitor()
     }
 
@@ -603,9 +610,19 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
 
     // 앱을 끌 때는 창이 닫히지 않을 수 있어서 페이지가 바뀔 때마다 기록한다.
     @objc private func pageChanged(_ note: Notification) {
+        updatePageLabel()
         guard pageToRestore == nil, let url = pmDocument?.fileURL, let page = pdfView.currentPage,
               let index = pdfView.document?.index(for: page) else { return }
         Session.setLastPage(index, of: url)
+    }
+
+    /// 툴바 팔레트 옆에 "현재 쪽 / 전체 쪽"을 보여 준다. 시작 탭처럼 PDF가 없으면 비운다.
+    @objc private func updatePageLabel() {
+        guard let document = pdfView.document, let page = pdfView.currentPage, document.pageCount > 0 else {
+            pageLabel.stringValue = ""
+            return
+        }
+        pageLabel.stringValue = "\(document.index(for: page) + 1) / \(document.pageCount)"
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -617,7 +634,7 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
     // MARK: 툴바
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.toggleSidebar, .sidebarTrackingSeparator, .highlightMode, .eraser, .palette, .flexibleSpace, .search]
+        [.toggleSidebar, .sidebarTrackingSeparator, .highlightMode, .eraser, .palette, .pageNumber, .flexibleSpace, .search]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -641,6 +658,11 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
             let item = NSToolbarItem(itemIdentifier: identifier)
             item.label = "Color"
             item.view = palette
+            return item
+        case .pageNumber:
+            let item = NSToolbarItem(itemIdentifier: identifier)
+            item.label = "Page"
+            item.view = pageLabel
             return item
         case .search:
             let item = NSSearchToolbarItem(itemIdentifier: identifier)
