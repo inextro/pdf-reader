@@ -197,7 +197,7 @@ func makeTextPDF(_ attr: NSAttributedString, at url: URL) -> PDFDocument {
     return PDFDocument(url: url)!
 }
 // 페이지는 문서를 약하게 참조하므로 문서를 변수로 붙잡아 둔다.
-let wordsDoc = makeTextPDF("The quick brown fox saw results.In this case don't stop. See (word). Also [f(x)] here.",
+let wordsDoc = makeTextPDF("The quick brown fox saw results.In this case don't stop. See (word). Also [f(x)] here. The users' data and ‘replay’ too. Named ‘t-SNE’ here.",
                           at: outDir.appendingPathComponent("words.pdf"))
 let wp = wordsDoc.page(at: 0)!
 let wtext = wp.string! as NSString
@@ -214,12 +214,31 @@ check(snapped("(word)", length: 3) == "(word)", "여는 괄호를 잡으면 닫�
 check(snapped("(word)", offset: 2, length: 4) == "(word)", "닫는 괄호를 잡으면 여는 괄호까지 (\(snapped("(word)", offset: 2, length: 4)))")
 check(snapped("(word)", offset: 1, length: 3) == "word", "괄호 없이 단어만 잡으면 괄호는 빼기 (\(snapped("(word)", offset: 1, length: 3)))")
 check(snapped("[f(x)]", length: 4) == "[f(x)]", "중첩 괄호 (\(snapped("[f(x)]", length: 4)))")
+check(snapped("users'", offset: 1, length: 2) == "users", "단어 뒤 아포스트로피는 넓히지 않음 (\(snapped("users'", offset: 1, length: 2)))")
+check(snapped("‘replay’", offset: 2, length: 3) == "replay", "작은따옴표는 넓히지 않음 (\(snapped("‘replay’", offset: 2, length: 3)))")
+
+// 더블클릭: 누른 글자가 속한 단어만
+func clicked(_ fragment: String, offset: Int) -> String {
+    Highlights.word(at: wtext.range(of: fragment).location + offset, on: wp)?.string ?? "nil"
+}
+check(clicked("‘t-SNE’", offset: 4) == "t-SNE", "더블클릭 ‘t-SNE’ → 따옴표 없이 하이픈 단어 (\(clicked("‘t-SNE’", offset: 4)))")
+check(clicked("don't", offset: 1) == "don't", "더블클릭 don't (\(clicked("don't", offset: 1)))")
+check(clicked("users'", offset: 2) == "users", "더블클릭 users' → 아포스트로피 빼기 (\(clicked("users'", offset: 2)))")
+check(clicked("(word)", offset: 0) == "nil", "괄호를 더블클릭하면 단어 없음 (\(clicked("(word)", offset: 0)))")
+func doubleClicked(_ fragment: String, offset: Int = 0, length: Int) -> String {
+    let at = wtext.range(of: fragment).location + offset
+    return Highlights.doubleClickedWord(wp.selection(for: NSRange(location: at, length: length))!)?.string ?? "nil"
+}
+check(doubleClicked("t-SNE’", offset: 1, length: 5) == "t-SNE", "PDFKit이 잡은 -SNE’ → t-SNE (\(doubleClicked("t-SNE’", offset: 1, length: 5)))")
+check(doubleClicked("quick brown", length: 11) == "nil", "더블클릭한 채 여러 단어를 끌면 다시 고르지 않음 (\(doubleClicked("quick brown", length: 11)))")
 
 // 인용 번호 위첨자: 본문보다 작은 글자가 바로 붙어 있다. "replay²¹⁻²³"
 let body = NSFont(name: "Helvetica", size: 14)!, small = NSFont(name: "Helvetica", size: 9)!
 let supText = NSMutableAttributedString(string: "termed experience replay", attributes: [.font: body])
 supText.append(NSAttributedString(string: "21–23", attributes: [.font: small, kCTBaselineOffsetAttributeName as NSAttributedString.Key: 5]))
-supText.append(NSAttributedString(string: " that uses word2vec here.", attributes: [.font: body]))
+supText.append(NSAttributedString(string: " that uses word2vec, named ‘t-SNE’", attributes: [.font: body]))
+supText.append(NSAttributedString(string: "25", attributes: [.font: small, kCTBaselineOffsetAttributeName as NSAttributedString.Key: 5]))
+supText.append(NSAttributedString(string: " here.", attributes: [.font: body]))
 let supDoc = makeTextPDF(supText, at: outDir.appendingPathComponent("superscript.pdf"))
 let sp = supDoc.page(at: 0)!
 let stext = sp.string! as NSString
@@ -230,6 +249,11 @@ func snappedSup(_ fragment: String, offset: Int = 0, length: Int) -> String {
 check(snappedSup("experience", offset: 3, length: 12) == "experience replay", "위첨자 앞에서 멈춤 (\(snappedSup("experience", offset: 3, length: 12)))")
 check(snappedSup("replay21", length: 8) == "replay21", "위첨자를 직접 잡으면 유지 (\(snappedSup("replay21", length: 8)))")
 check(snappedSup("word2vec", length: 5) == "word2vec", "같은 크기 숫자는 단어 안 (\(snappedSup("word2vec", length: 5)))")
+let replayAt = stext.range(of: "replay21").location
+check(Highlights.word(at: replayAt + 2, on: sp)?.string == "replay", "더블클릭 replay²¹ → 위첨자 빼기 (\(Highlights.word(at: replayAt + 2, on: sp)?.string ?? "nil"))")
+let tsneAt = stext.range(of: "t-SNE").location
+check(Highlights.word(at: tsneAt + 3, on: sp)?.string == "t-SNE", "더블클릭 ‘t-SNE’²⁵ → 따옴표·위첨자 빼기 (\(Highlights.word(at: tsneAt + 3, on: sp)?.string ?? "nil"))")
+check(snappedSup("t-SNE", offset: 2, length: 2) == "SNE", "드래그 SN → ‘t-SNE’²⁵의 따옴표 빼기 (\(snappedSup("t-SNE", offset: 2, length: 2)))")
 
 // 파일 트리: 폴더와 PDF만, 숨김·패키지는 빼고, 폴더 먼저 Finder 순서(file2 < file10)
 let treeDir = outDir.appendingPathComponent("tree")

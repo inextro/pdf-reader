@@ -55,9 +55,9 @@ public enum Highlights {
         while end > 0, isSpace(lastText.character(at: end - 1)), !(sameRun && end <= start) { end -= 1 }
         guard !(sameRun && start >= end) else { return selection }
         // 단어 중간이면 넓히기
-        while start > 0, isWord(firstText.character(at: start - 1)), isWord(firstText.character(at: start)),
+        while start > 0, isWord(firstText, at: start - 1, on: first), isWord(firstText, at: start, on: first),
               sameSize(on: first, start - 1, start) { start -= 1 }
-        while end < lastText.length, isWord(lastText.character(at: end - 1)), isWord(lastText.character(at: end)),
+        while end < lastText.length, isWord(lastText, at: end - 1, on: last), isWord(lastText, at: end, on: last),
               sameSize(on: last, end - 1, end) { end += 1 }
         guard let snapped = document.selection(from: first, atCharacterIndex: start, to: last, atCharacterIndex: end - 1)
         else { return selection }
@@ -75,6 +75,33 @@ public enum Highlights {
         guard (newStart, newEnd) != (start, end) else { return snapped }
         return document.selection(from: first, atCharacterIndex: newStart, to: last, atCharacterIndex: newEnd - 1) ?? snapped
     }
+
+    /// 더블클릭으로 PDFKit이 잡은 단어를 다시 고른다. PDFKit은 "‘t-SNE’"에서 "-SNE’"처럼 문장부호를 섞어 잡으므로
+    /// 선택 안의 첫 글자에서 단어를 새로 찾는다. 더블클릭한 채 끌어 여러 단어를 잡았거나 글자가 없으면 nil.
+    public static func doubleClickedWord(_ selection: PDFSelection) -> PDFSelection? {
+        guard selection.pages.count == 1, let page = selection.pages.first, let text = page.string as NSString?,
+              let range = textRanges(of: selection, on: page).first,
+              !(selection.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).contains(where: \.isWhitespace),
+              let index = (range.location..<NSMaxRange(range)).first(where: { isAlphanumeric(text.character(at: $0)) })
+        else { return nil }
+        return word(at: index, on: page)
+    }
+
+    /// index의 글자가 속한 단어. 글자·숫자와 그 사이에 낀 아포스트로피·하이픈을 한 단어로 본다:
+    /// "don't", "t-SNE". 위첨자는 넣지 않는다.
+    public static func word(at index: Int, on page: PDFPage) -> PDFSelection? {
+        guard let text = page.string as NSString?, index >= 0, index < text.length,
+              isWord(text, at: index, on: page, joiners: wordJoiners) else { return nil }
+        var start = index, end = index + 1
+        while start > 0, isWord(text, at: start - 1, on: page, joiners: wordJoiners),
+              sameSize(on: page, start - 1, start) { start -= 1 }
+        while end < text.length, isWord(text, at: end, on: page, joiners: wordJoiners),
+              sameSize(on: page, end - 1, end) { end += 1 }
+        return page.selection(for: NSRange(location: start, length: end - start))
+    }
+
+    static let apostrophes: Set<unichar> = [0x27, 0x2019]   // ' ’
+    static let wordJoiners = apostrophes.union([0x2D, 0x2010])   // - ‐
 
     /// 여는 괄호 → 닫는 괄호
     static let brackets: [unichar: unichar] = [0x28: 0x29, 0x5B: 0x5D, 0x7B: 0x7D, 0x201C: 0x201D]   // () [] {} “”
@@ -96,9 +123,19 @@ public enum Highlights {
         (0..<selection.numberOfTextRanges(on: page)).map { selection.range(at: $0, on: page) }.filter { $0.length > 0 }
     }
 
-    static func isWord(_ c: unichar) -> Bool {
+    /// index의 글자가 단어의 일부인가. 아포스트로피(joiners)는 양옆이 같은 크기의 글자일 때만 단어 안으로 본다.
+    /// 그래서 "don't"는 한 단어지만 "users'"나 ‘replay’²⁵의 따옴표까지 넓히지는 않는다.
+    static func isWord(_ text: NSString, at index: Int, on page: PDFPage, joiners: Set<unichar> = apostrophes) -> Bool {
+        let c = text.character(at: index)
+        guard joiners.contains(c) else { return isAlphanumeric(c) }
+        return index > 0 && index + 1 < text.length
+            && isAlphanumeric(text.character(at: index - 1)) && isAlphanumeric(text.character(at: index + 1))
+            && sameSize(on: page, index - 1, index + 1)
+    }
+
+    static func isAlphanumeric(_ c: unichar) -> Bool {
         guard let scalar = Unicode.Scalar(c) else { return true }   // 서로게이트 쌍의 반쪽은 글자로 본다
-        return CharacterSet.alphanumerics.contains(scalar) || c == 0x27 || c == 0x2019   // ' ’
+        return CharacterSet.alphanumerics.contains(scalar)
     }
 
     /// 두 글자의 폰트 크기가 비슷한가. 위첨자·아래첨자는 본문보다 작아서 여기서 갈린다.

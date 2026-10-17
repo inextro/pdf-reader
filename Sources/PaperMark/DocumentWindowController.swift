@@ -37,6 +37,8 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
     // 드래그(마우스 누름~뗌) 사이에 PDF 안에서 텍스트 선택이 바뀌었을 때만 칠한다.
     private var mouseDownInPDF = false
     private var selectionChangedDuringDrag = false
+    // 더블클릭으로 잡은 단어는 Highlights.doubleClickedWord로 다시 고른다.
+    private var doubleClicked = false
     private var eventMonitor: Any?
     // 지우개로 한 번 문지르는 동안 지운 주석들(마우스를 떼면 실행 취소 하나로 기록).
     private var erasedDuringDrag: [PlacedHighlight]?
@@ -255,6 +257,7 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
                 self.mouseDownInPDF = inPDF
                 self.selectionChangedDuringDrag = false
                 self.translateDrag = self.translateHeld
+                self.doubleClicked = inPDF && event.clickCount == 2
             } else if self.mouseDownInPDF {
                 self.mouseDownInPDF = false
                 // PDFView가 mouseUp을 처리해 선택을 확정한 다음에 칠한다.
@@ -371,7 +374,9 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
 
     private func highlightCurrentSelection() {
         // 드래그는 글자 단위라 양 끝을 단어 경계로 맞춘다(문장부호에서는 넓히지 않음).
-        guard let selection = pdfView.currentSelection.map(Highlights.snappedToWords),
+        let word = doubleClicked ? pdfView.currentSelection.flatMap(Highlights.doubleClickedWord) : nil
+        doubleClicked = false
+        guard let selection = word ?? pdfView.currentSelection.map(Highlights.snappedToWords),
               !(selection.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         let color = ColorStore.shared.currentColor, author = NSFullUserName()
         let highlights = Highlights.make(from: selection, color: color, author: author)

@@ -25,7 +25,8 @@ palette, then keep going on another device.
 - **Highlight mode.** Turn it on and every drag highlights immediately. No toolbar trips.
 - **Snaps to whole words.** A drag that ends mid-word extends to the word boundary, but stops at
   punctuation, so a typo like `results.In` still highlights just `results`. It also stops before a
-  superscript citation number, so dragging over `replay²¹⁻²³` highlights just `replay`. A bracket you drag over
+  superscript citation number, so dragging over `replay²¹⁻²³` highlights just `replay`. Double-clicking
+  highlights the whole word without surrounding quotes, so double-clicking `‘t-SNE’` highlights `t-SNE`. A bracket you drag over
   pulls in its partner, so dragging `(word` highlights `(word)`.
 - **Clean overlaps.** Highlighting over an existing highlight merges them into one layer instead of
   stacking darker and darker color.
