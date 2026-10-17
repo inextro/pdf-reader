@@ -312,19 +312,55 @@ func destination(atStartOf fragment: String) -> PDFDestination {
     return PDFDestination(page: lp, at: CGPoint(x: bounds.minX, y: bounds.maxY + 2))
 }
 
-// 미리보기 영역: 두 단이면 그 단 너비로, 한 단이면 본문 너비로, 아래에 글자가 없으면 쪽 너비로.
+// 미리보기 영역: 두 단이면 그 단 너비로, 한 단이면 본문 너비로.
 let rightStart = (1...12).map { "[\($0)]" }.first { lp.selection(for: ltext.range(of: $0))?.bounds(for: lp).minX ?? 0 > 300 }!
-let leftRect = PDFLinks.previewRect(for: destination(atStartOf: "[2]"))!
+func top(of fragment: String) -> CGPoint {
+    let bounds = lp.selection(for: ltext.range(of: fragment))!.bounds(for: lp)
+    return CGPoint(x: bounds.minX, y: bounds.maxY + 1)
+}
+let leftRect = PDFLinks.previewRect(on: lp, at: top(of: "[2]"))
 check(leftRect.minX < 54 && abs(leftRect.maxX - 308) < 1 && leftRect.height == 80, "두 단 왼쪽 단 미리보기 (\(leftRect))")
-let rightRect = PDFLinks.previewRect(for: destination(atStartOf: rightStart))!
+let rightRect = PDFLinks.previewRect(on: lp, at: top(of: rightStart))
 check(rightRect.minX > 300 && rightRect.maxX == 612, "두 단 오른쪽 단 미리보기 \(rightStart) (\(rightRect))")
-let singleRect = PDFLinks.previewRect(for: PDFDestination(page: wp, at: CGPoint(x: 72, y: 722)))!
+let singleRect = PDFLinks.previewRect(on: wp, at: CGPoint(x: 72, y: 722))
 check(singleRect.minX == 66 && singleRect.maxX == 546, "한 단 미리보기는 본문 너비 (\(singleRect))")
-let blankRect = PDFLinks.previewRect(for: PDFDestination(page: lp2, at: CGPoint(x: 54, y: 700)))!
-check(blankRect.width == 612 && blankRect.height > 300, "글자 없는 곳(그림)은 쪽 너비로 크게 (\(blankRect))")
 let unspecified = CGFloat(kPDFDestinationUnspecifiedValue)
 check(PDFLinks.point(of: PDFDestination(page: lp, at: CGPoint(x: unspecified, y: unspecified))) == CGPoint(x: 0, y: 792),
       "좌표를 정하지 않은 목적지는 쪽 왼쪽 위")
+
+// 인용 미리보기: 목적지 좌표가 엉뚱해도(단 끝·쪽 머리) 번호로 항목을 찾고, 그림·식 번호 링크는 미리보지 않는다.
+let citeDoc = makeTextPDF((1...14).map { "[\($0)] Author\($0) Name. A paper title, 20\(10 + $0)." }.joined(separator: "\n")
+                          + "\nSmith, J. and Lee, K. A study of things, 2020."
+                          + "\nSee Figure 3, (5), Jones 2021, Smith et al. 2020 and [7].",
+                          at: outDir.appendingPathComponent("cites.pdf"))
+let cp = citeDoc.page(at: 0)!, ctext = cp.string! as NSString
+func link(over fragment: String, offset: Int = 0, length: Int? = nil, to point: CGPoint) -> PDFAnnotation {
+    let r = ctext.range(of: fragment)
+    let range = NSRange(location: r.location + offset, length: length ?? r.length - offset)
+    let a = PDFAnnotation(bounds: cp.selection(for: range)!.bounds(for: cp), forType: .link, withProperties: nil)
+    a.destination = PDFDestination(page: cp, at: point)
+    return a
+}
+func previewHead(_ a: PDFAnnotation) -> String {
+    guard let (page, rect) = PDFLinks.citationPreview(for: a, on: cp) else { return "nil" }
+    return page.selection(for: CGRect(x: rect.minX, y: rect.maxY - 18, width: rect.width, height: 18))?.string?
+        .trimmingCharacters(in: .whitespacesAndNewlines) ?? "?"
+}
+let pageTop = CGPoint(x: 72, y: 792), pageBottom = CGPoint(x: 72, y: 60)
+check(previewHead(link(over: "[7].", offset: 1, length: 1, to: pageTop)).hasPrefix("[7]"),
+      "쪽 머리에 찍힌 목적지도 [7] 항목을 찾음 (\(previewHead(link(over: "[7].", offset: 1, length: 1, to: pageTop))))")
+check(previewHead(link(over: "[7].", offset: 1, length: 1, to: pageBottom)).hasPrefix("[7]"), "단 끝에 찍힌 목적지도 [7] 항목을 찾음")
+check(previewHead(link(over: "Figure 3", offset: 7, length: 1, to: top(of: "[3]"))) == "nil", "Figure 3의 번호 링크는 미리보지 않음")
+check(previewHead(link(over: "(5)", offset: 1, length: 1, to: pageTop)) == "nil", "식 번호 (5) 링크는 미리보지 않음")
+check(previewHead(link(over: "Smith et al. 2020", to: pageTop)).hasPrefix("Smith, J."),
+      "저자-연도 인용은 저자 성으로 항목을 찾음 (\(previewHead(link(over: "Smith et al. 2020", to: pageTop))))")
+check(previewHead(link(over: "2020 and", length: 4, to: pageTop)).hasPrefix("Smith, J."), "연도에만 걸린 링크는 앞 낱말의 저자로 찾음")
+check(previewHead(link(over: "Jones 2021", to: pageTop)) == "nil", "참고문헌에 없는 저자는 미리보지 않음")
+check(PDFLinks.citationNumber("[12]") == 12 && PDFLinks.citationNumber("12,") == 12 && PDFLinks.citationNumber("2017") == nil
+      && PDFLinks.citationNumber("Fig. 3") == nil, "번호 인용 번호 읽기")
+check(PDFLinks.startsEntry("[3] Author", number: 3) && PDFLinks.startsEntry("3. Author", number: 3)
+      && PDFLinks.startsEntry("3 Author", number: 3) && !PDFLinks.startsEntry("30. Author", number: 3)
+      && !PDFLinks.startsEntry("3 of the", number: 3), "번호 항목 첫 줄 알아보기")
 
 // 목차: 지금 읽는 위치를 지난 마지막 항목. 두 단이라 같은 쪽 안에서 목차 순서와 높이 순서가 어긋날 수 있다.
 let sections = [PDFContents.Position(page: 0, y: 700), .init(page: 2, y: 600), .init(page: 2, y: 300), .init(page: 2, y: 700), .init(page: 4, y: 500)]

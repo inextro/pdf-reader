@@ -24,7 +24,7 @@ final class ReaderPDFView: PDFView {
 
     // MARK: 링크 미리보기
 
-    // 인용 번호나 "Fig. 3" 같은 문서 안 링크 위에 마우스를 잠깐 두면 가리키는 곳을 popover로 보여 준다.
+    // 인용 링크 위에 마우스를 잠깐 두면 가리키는 참고문헌 항목을 popover로 보여 준다. 그림·표 링크는 누르면 가기만 한다.
     // PDFView 자체 추적 영역과 섞이지 않도록 마우스 움직임은 따로 둔 추적 영역에서 받는다.
     private lazy var hoverTracker = LinkHoverTracker(view: self)
     private var hoverArea: NSTrackingArea?
@@ -39,14 +39,14 @@ final class ReaderPDFView: PDFView {
         }
     }
 
-    /// 마우스 아래 링크가 문서 안을 가리키면 그 링크와 목적지.
-    fileprivate func internalLink(at locationInWindow: NSPoint) -> (PDFAnnotation, PDFPage, PDFDestination)? {
+    /// 마우스 아래 링크가 문서 안을 가리키면 그 링크와 링크가 있는 쪽.
+    fileprivate func internalLink(at locationInWindow: NSPoint) -> (PDFAnnotation, PDFPage)? {
         let point = convert(locationInWindow, from: nil)
         guard let page = page(for: point, nearest: false) else { return nil }
         // annotation(at:)은 맨 위 주석만 주므로, 인용 번호까지 칠한 형광펜이 링크를 덮으면 못 찾는다.
         let pagePoint = convert(point, to: page)
         for annotation in page.annotations.reversed() where annotation.bounds.contains(pagePoint) {
-            if let destination = PDFLinks.destination(of: annotation) { return (annotation, page, destination) }
+            if PDFLinks.destination(of: annotation) != nil { return (annotation, page) }
         }
         return nil
     }
@@ -97,14 +97,14 @@ private final class LinkHoverTracker: NSResponder {
     override func mouseMoved(with event: NSEvent) {
         // 지우개를 쓰거나 끌어서 칠하는 중에는 띄우지 않는다.
         guard !ColorStore.shared.eraserMode, NSEvent.pressedMouseButtons == 0,
-              let (annotation, page, destination) = view.internalLink(at: event.locationInWindow) else {
+              let (annotation, page) = view.internalLink(at: event.locationInWindow) else {
             dismiss()
             return
         }
         guard annotation !== hovered else { return }
         dismiss()
         hovered = annotation
-        let work = DispatchWorkItem { [weak self] in self?.show(annotation, on: page, destination: destination) }
+        let work = DispatchWorkItem { [weak self] in self?.show(annotation, on: page) }
         pending = work
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.delay, execute: work)
     }
@@ -119,10 +119,11 @@ private final class LinkHoverTracker: NSResponder {
         popover = nil
     }
 
-    private func show(_ annotation: PDFAnnotation, on page: PDFPage, destination: PDFDestination) {
-        guard view.window?.isKeyWindow == true, let target = destination.page,
-              let rect = PDFLinks.previewRect(for: destination), rect.width > 1, rect.height > 1 else { return }
-        // 두 단 논문의 한 단(약 260pt)이 읽기 좋은 크기가 되도록 키우고, 쪽 너비 그림은 너무 커지지 않게 줄인다.
+    private func show(_ annotation: PDFAnnotation, on page: PDFPage) {
+        guard view.window?.isKeyWindow == true,
+              let (target, rect) = PDFLinks.citationPreview(for: annotation, on: page), rect.width > 1, rect.height > 1
+        else { return }
+        // 두 단 논문의 한 단(약 260pt)이 읽기 좋은 크기가 되도록 키우고, 한 단 논문의 본문 너비는 너무 커지지 않게 줄인다.
         let scale = min(1.6, 520 / rect.width)
         let size = NSSize(width: (rect.width * scale).rounded(), height: (rect.height * scale).rounded())
         let image = NSImage(size: size, flipped: false) { _ in

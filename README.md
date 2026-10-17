@@ -38,9 +38,10 @@ palette, then keep going on another device.
   selection, or right-click a highlight. Uses Apple's on-device Translation (macOS 14.4+), so it is
   free, private, and adds nothing to the app size. Hyphenated line breaks are joined before translating.
 - **Search** with next/previous result navigation.
-- **Preview citations and figure references.** Rest the pointer on a link inside the paper, such as `[23]` or
-  `Fig. 3`, and a popover shows the reference entry or figure it points to. Click to jump there, then `⌘[` to come
-  back where you were (`⌘]` goes forward again).
+- **Preview citations.** Rest the pointer on a citation link, such as `[23]` or `Park et al., 2023`, and a popover
+  shows the reference entry it points to. PaperMark finds the entry by its number or author name, so the preview
+  stays right even when the paper's link target is off. Links to figures, tables, and equations just jump. After
+  following any link, press `⌘[` to come back where you were (`⌘]` goes forward again).
 - **Sidebar with the table of contents or a file tree.** The Contents tab lists the PDF's sections and
   subsections with page numbers. Click one to jump there; the section you are reading stays highlighted as you
   scroll. The Files tab shows the folders and PDFs around the current file, like an IDE explorer. Move up a level or pick any root folder, and double-click to open.
