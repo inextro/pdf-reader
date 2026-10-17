@@ -7,8 +7,9 @@ final class ColorStore {
     static let didChange = Notification.Name("PaperMarkColorStoreDidChange")
 
     private let defaults = UserDefaults.standard
-    // 아이패드 PDF Expert에서 쓰는 형광펜 색과 같게 맞춘다(PDF Expert 주석의 /C 값).
-    private let builtInPresets = ["#F0CCDE", "#CEF3FE", "#FFFBC5", "#C1FFD9", "#EBC4F7", "#FFC677"]
+    // 아이패드 PDF Expert에서 쓰는 형광펜 색과 같게 맞춘다(PDF Expert 주석의 /C 값). 그중 자주 쓰는 네 가지만 둔다.
+    // 이미 저장된 프리셋은 그대로 두려고 paletteVersion은 올리지 않는다.
+    private let builtInPresets = ["#F0CCDE", "#CEF3FE", "#FFFBC5", "#EBC4F7"]
     private let paletteVersion = 2
 
     private init() {

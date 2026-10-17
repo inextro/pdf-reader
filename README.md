@@ -21,7 +21,8 @@ palette, then keep going on another device.
 ## Features
 
 - **Highlight with your own colors.** Pick from a preset palette with `⌘1`–`⌘9`, click the selected
-  color again to change it, or add new colors. The default palette matches PDF Expert's highlight colors.
+  color again to change it, or add new colors. The default palette uses four of PDF Expert's highlight colors
+  (pink, blue, yellow, purple).
 - **Highlight mode.** Turn it on and every drag highlights immediately. No toolbar trips.
 - **Snaps to whole words.** A drag that ends mid-word extends to the word boundary, but stops at
   punctuation, so a typo like `results.In` still highlights just `results`. It also stops before a
