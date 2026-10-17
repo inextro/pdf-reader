@@ -603,6 +603,7 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
     }
 
     override func showWindow(_ sender: Any?) {
+        joinExistingWindow()
         super.showWindow(sender)
         // 창 크기가 정해진 다음에 마지막으로 보던 페이지로 간다.
         DispatchQueue.main.async { [weak self] in
@@ -610,6 +611,17 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
             self.pageToRestore = nil
             if let page = self.pdfView.document?.page(at: index) { self.pdfView.go(to: page) }
         }
+    }
+
+    /// 처음 띄우는 창이면 이미 열린 문서 창의 탭으로 붙인다. tabbingMode만으로는 PaperMark가 뒤에 있을 때
+    /// (Finder, Raycast, PDFRouter로 열 때) 붙을 주 창이 없어서 새 창이 따로 뜬다.
+    private func joinExistingWindow() {
+        guard let window, !window.isVisible, (window.tabGroup?.windows.count ?? 1) <= 1 else { return }
+        let others = NSApp.orderedWindows.filter {
+            $0 !== window && $0.windowController is DocumentWindowController && $0.isVisible && !$0.isMiniaturized
+        }
+        guard let target = NSApp.mainWindow.flatMap({ main in others.first { $0 === main } }) ?? others.first else { return }
+        target.addTabbedWindow(window, ordered: .above)
     }
 
     // 앱을 끌 때는 창이 닫히지 않을 수 있어서 페이지가 바뀔 때마다 기록한다.
