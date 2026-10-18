@@ -1,5 +1,6 @@
 import AppKit
 import CoreText
+import CryptoKit
 import PDFKit
 import PaperMarkCore
 
@@ -373,6 +374,65 @@ let item = PDFOutline()
 item.action = PDFActionGoTo(destination: PDFDestination(page: lp, at: CGPoint(x: 0, y: 500)))
 check(PDFLinks.destination(of: item)?.page === lp, "GoTo 동작만 있는 목차 항목도 목적지가 있다")
 check(PDFLinks.destination(of: PDFOutline()) == nil, "목적지 없는 목차 항목")
+
+// 업데이트: 버전 비교, 릴리스 JSON, 내려받은 zip 검증과 앱 교체
+check(Updates.isNewer("0.10.0", than: "0.9.1") && Updates.isNewer("v0.5.1", than: "0.5.0")
+      && Updates.isNewer("1.0", than: "0.9.9") && !Updates.isNewer("0.5.0", than: "0.5.0")
+      && !Updates.isNewer("0.5", than: "0.5.0") && !Updates.isNewer("0.4.9", than: "0.5.0"), "버전 비교")
+
+let updateDir = outDir.appendingPathComponent("update")
+try? FileManager.default.removeItem(at: updateDir)
+try FileManager.default.createDirectory(at: updateDir, withIntermediateDirectories: true)
+/// Info.plist만 든 가짜 PaperMark.app을 만들어 release.sh처럼 ditto로 묶는다.
+func makeAppZip(version: String, bundleID: String = "com.inextro.papermark", name: String) -> URL {
+    let folder = updateDir.appendingPathComponent(name)
+    let app = folder.appendingPathComponent("PaperMark.app")
+    try! FileManager.default.createDirectory(at: app.appendingPathComponent("Contents"), withIntermediateDirectories: true)
+    (["CFBundleIdentifier": bundleID, "CFBundleShortVersionString": version] as NSDictionary)
+        .write(to: app.appendingPathComponent("Contents/Info.plist"), atomically: true)
+    let zip = updateDir.appendingPathComponent("\(name).zip")
+    let ditto = Process()
+    ditto.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+    ditto.arguments = ["-c", "-k", "--keepParent", app.path, zip.path]
+    try! ditto.run()
+    ditto.waitUntilExit()
+    return zip
+}
+func sha256(_ url: URL) -> String {
+    "sha256:" + SHA256.hash(data: try! Data(contentsOf: url)).map { String(format: "%02x", $0) }.joined()
+}
+let goodZip = makeAppZip(version: "9.9.9", name: "good")
+let releaseJSON = """
+{"tag_name": "v9.9.9", "html_url": "https://github.com/inextro/pdf-reader/releases/tag/v9.9.9",
+ "body": "- New: something\\n\\n---\\nDownload `PaperMark-9.9.9.zip`, unzip, and move it.",
+ "assets": [{"name": "PaperMark-9.9.9.zip", "browser_download_url": "\(goodZip.absoluteString)", "digest": "\(sha256(goodZip))"}]}
+"""
+let releaseFile = updateDir.appendingPathComponent("latest.json")
+try releaseJSON.write(to: releaseFile, atomically: true, encoding: .utf8)
+let semaphore = DispatchSemaphore(value: 0)
+var fetched: Updates.Release?
+Task { fetched = try? await Updates.latestRelease(from: releaseFile); semaphore.signal() }
+semaphore.wait()
+check(fetched?.version == "9.9.9" && fetched?.zip?.url == goodZip, "릴리스 JSON에서 버전과 zip 찾기 (\(fetched?.version ?? "nil"))")
+check(fetched?.changes == "- New: something", "패치 노트에서 설치 안내 빼기 (\(fetched?.changes ?? "nil"))")
+
+let unpacked = try? Updates.unpack(zip: goodZip, digest: sha256(goodZip), bundleID: "com.inextro.papermark", version: "9.9.9")
+check(unpacked?.lastPathComponent == "PaperMark.app", "zip을 풀어 앱 찾기")
+func unpackError(_ zip: URL, digest: String?, version: String = "9.9.9") -> Updates.UpdateError? {
+    do { _ = try Updates.unpack(zip: zip, digest: digest, bundleID: "com.inextro.papermark", version: version); return nil }
+    catch { return error as? Updates.UpdateError }
+}
+check(unpackError(goodZip, digest: "sha256:" + String(repeating: "0", count: 64)) == .checksumMismatch, "체크섬이 다르면 거부")
+check(unpackError(goodZip, digest: nil, version: "9.9.8") == .notTheApp("version"), "버전이 다르면 거부")
+check(unpackError(makeAppZip(version: "9.9.9", bundleID: "com.example.other", name: "other"), digest: nil) == .notTheApp("bundle ID"),
+      "번들 ID가 다르면 거부")
+
+let installedApp = updateDir.appendingPathComponent("Installed/PaperMark.app")
+try FileManager.default.createDirectory(at: installedApp.appendingPathComponent("Contents"), withIntermediateDirectories: true)
+(["CFBundleShortVersionString": "0.5.0"] as NSDictionary).write(to: installedApp.appendingPathComponent("Contents/Info.plist"), atomically: true)
+if let unpacked { try? Updates.replace(installedApp, with: unpacked) }
+let replacedVersion = NSDictionary(contentsOf: installedApp.appendingPathComponent("Contents/Info.plist"))?["CFBundleShortVersionString"] as? String
+check(replacedVersion == "9.9.9", "설치된 앱을 새 앱으로 교체 (\(replacedVersion ?? "nil"))")
 
 print(failures == 0 ? "ALL PASS" : "\(failures) FAILED", "→", outDir.path)
 exit(failures == 0 ? 0 : 1)

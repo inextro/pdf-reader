@@ -41,8 +41,11 @@ final class SettingsWindowController: NSWindowController {
         message.textColor = .systemOrange
         message.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
         let reset = NSButton(title: "Restore Defaults", target: self, action: #selector(restoreDefaults(_:)))
+        let updates = NSButton(checkboxWithTitle: "Check for updates automatically", target: self,
+                               action: #selector(toggleUpdateChecks(_:)))
+        updates.state = UpdateController.shared.checksAutomatically ? .on : .off
 
-        let stack = NSStackView(views: [grid, hint, message, reset])
+        let stack = NSStackView(views: [updates, grid, hint, message, reset])
         stack.orientation = .vertical
         stack.alignment = .centerX
         stack.spacing = 12
@@ -57,6 +60,10 @@ final class SettingsWindowController: NSWindowController {
 
     private func show(_ text: String) {
         message.stringValue = text
+    }
+
+    @objc private func toggleUpdateChecks(_ sender: NSButton) {
+        UpdateController.shared.checksAutomatically = sender.state == .on
     }
 
     @objc private func restoreDefaults(_ sender: Any?) {

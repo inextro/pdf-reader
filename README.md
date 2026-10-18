@@ -51,6 +51,9 @@ palette, then keep going on another device.
   a tab showing your working folder's file tree. The working folder is the file tree's root folder; on
   first launch PaperMark asks you to choose one.
 - **Saves automatically** to the original file, and every change can be undone.
+- **Updates itself.** Once a day PaperMark checks GitHub for a new release and shows what's new. Click
+  **Install and Relaunch** to update in place, or use **PaperMark → Check for Updates…** any time. Turn off the
+  daily check in Settings (`⌘,`).
 
 ## Release notes
 

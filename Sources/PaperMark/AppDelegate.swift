@@ -62,6 +62,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.addObserver(self, selector: #selector(applyShortcuts),
                                                name: ShortcutStore.didChange, object: nil)
         applyShortcuts()
+        MainActor.assumeIsolated { UpdateController.shared.start() }
         // Dock에서 그냥 실행했을 때는 직전 파일을 다시 연다(파일을 더블클릭해 실행한 경우 제외).
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             if NSDocumentController.shared.documents.isEmpty { self.reopenLastFiles() }
@@ -120,6 +121,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let app = submenu(of: main, title: "PaperMark")
         app.addItem(withTitle: "About PaperMark", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        // 메뉴는 앱을 켤 때 메인 스레드에서 만든다.
+        app.addItem(withTitle: "Check for Updates…", action: #selector(UpdateController.checkForUpdates(_:)), keyEquivalent: "")
+            .target = MainActor.assumeIsolated { UpdateController.shared }
         app.addItem(.separator())
         app.addItem(withTitle: "Settings…", action: #selector(openSettings(_:)), keyEquivalent: ",").target = self
         app.addItem(.separator())
