@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.0
+
+- New: PaperMark checks for a new version once a day and shows what's new. Click **Install and Relaunch** to
+  update in place, without downloading a zip or approving the app again in Privacy & Security. Choose **Later**
+  or **Skip This Version** to wait. **PaperMark → Check for Updates…** checks right away, and Settings (`⌘,`)
+  can turn off the daily check.
+- Note: Versions before 0.6.0 can't update themselves, so install this version by hand once.
+
 ## 0.5.0
 
 - New: Rest the pointer on a citation, such as `[23]` or `Park et al., 2023`, to preview the reference entry it
