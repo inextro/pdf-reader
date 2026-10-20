@@ -2,3 +2,9 @@
 build/
 .DS_Store
 .swiftpm/
+
+# pmcheck가 저장소 폴더에 만드는 검증용 파일
+/*.pdf
+/page1.png
+/tree/
+/update/

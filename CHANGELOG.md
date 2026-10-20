@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.7.0
+
+- New: After you click a link to a citation, figure, or table, a **Back to p. N** button appears at the bottom.
+  Click it to return to where you were. Forward takes you to the link target again.
+- New: The mouse back and forward buttons go back and forward, including MX Master buttons set up in
+  Logi Options+.
+- Improved: Citation previews show the whole reference entry, even when it continues in the next column or on
+  the next page. Entries with very long author lists are shortened in the middle.
+- Improved: Previews appear for more citations, such as split author–year citations and `Theorem [10]`.
+  Links to sections, the appendix, and equations no longer show a wrong preview.
+- Fix: Internal links no longer show a "Go to page N" tooltip.
+
 ## 0.6.0
 
 - New: PaperMark checks for a new version once a day and shows what's new. Click **Install and Relaunch** to
