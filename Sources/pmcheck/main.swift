@@ -342,8 +342,9 @@ func link(over fragment: String, offset: Int = 0, length: Int? = nil, to point: 
     a.destination = PDFDestination(page: cp, at: point)
     return a
 }
-func previewHead(_ a: PDFAnnotation) -> String {
-    guard let (page, rect) = PDFLinks.citationPreview(for: a, on: cp) else { return "nil" }
+func previewHead(_ a: PDFAnnotation, on linkPage: PDFPage? = nil) -> String {
+    guard let first = PDFLinks.citationPreview(for: a, on: linkPage ?? cp)?.first else { return "nil" }
+    let (page, rect) = (first.page, first.rect)
     return page.selection(for: CGRect(x: rect.minX, y: rect.maxY - 18, width: rect.width, height: 18))?.string?
         .trimmingCharacters(in: .whitespacesAndNewlines) ?? "?"
 }
@@ -351,12 +352,132 @@ let pageTop = CGPoint(x: 72, y: 792), pageBottom = CGPoint(x: 72, y: 60)
 check(previewHead(link(over: "[7].", offset: 1, length: 1, to: pageTop)).hasPrefix("[7]"),
       "쪽 머리에 찍힌 목적지도 [7] 항목을 찾음 (\(previewHead(link(over: "[7].", offset: 1, length: 1, to: pageTop))))")
 check(previewHead(link(over: "[7].", offset: 1, length: 1, to: pageBottom)).hasPrefix("[7]"), "단 끝에 찍힌 목적지도 [7] 항목을 찾음")
+let shownSeven = PDFLinks.citationPreview(for: link(over: "[7].", offset: 1, length: 1, to: pageTop), on: cp)?.first
+    .flatMap { $0.page.selection(for: $0.rect)?.string } ?? ""
+check(shownSeven.hasPrefix("[7]") && !shownSeven.contains("[6]") && !shownSeven.contains("[8]"),
+      "미리보기는 그 항목만 담는다 (\(shownSeven.debugDescription))")
 check(previewHead(link(over: "Figure 3", offset: 7, length: 1, to: top(of: "[3]"))) == "nil", "Figure 3의 번호 링크는 미리보지 않음")
 check(previewHead(link(over: "(5)", offset: 1, length: 1, to: pageTop)) == "nil", "식 번호 (5) 링크는 미리보지 않음")
 check(previewHead(link(over: "Smith et al. 2020", to: pageTop)).hasPrefix("Smith, J."),
       "저자-연도 인용은 저자 성으로 항목을 찾음 (\(previewHead(link(over: "Smith et al. 2020", to: pageTop))))")
 check(previewHead(link(over: "2020 and", length: 4, to: pageTop)).hasPrefix("Smith, J."), "연도에만 걸린 링크는 앞 낱말의 저자로 찾음")
 check(previewHead(link(over: "Jones 2021", to: pageTop)) == "nil", "참고문헌에 없는 저자는 미리보지 않음")
+// 이름이 앞에 오는 형식에서 저자가 많아 연도가 미리보기 아래에 있고, 인용 링크는 괄호까지 들거나 줄을 넘어 둘로 나뉜다.
+let helvetica: [NSAttributedString.Key: Any] = [.font: NSFont(name: "Helvetica", size: 14)!]
+let hanging = NSMutableParagraphStyle()
+hanging.headIndent = 12
+let authorText = NSMutableAttributedString(
+    string: "Ann Park, " + (1...40).map { "Bo Kim\($0)" }.joined(separator: ", ") + ". A paper with many authors, 2019.\n",
+    attributes: helvetica.merging([.paragraphStyle: hanging]) { $1 })
+authorText.append(NSAttributedString(string: "As shown (Park et al., 2019) here. Wrapped Park et al.,\n2019 ends.", attributes: helvetica))
+let authorDoc = makeTextPDF(authorText, at: outDir.appendingPathComponent("authors.pdf"))
+let ap = authorDoc.page(at: 0)!, atext = ap.string! as NSString
+func authorLink(_ fragment: String, offset: Int = 0, length: Int? = nil) -> PDFAnnotation {
+    let r = atext.range(of: fragment)
+    let range = NSRange(location: r.location + offset, length: length ?? r.length - offset)
+    let a = PDFAnnotation(bounds: ap.selection(for: range)!.bounds(for: ap), forType: .link, withProperties: nil)
+    a.destination = PDFDestination(page: ap, at: pageTop)
+    ap.addAnnotation(a)
+    return a
+}
+check(previewHead(authorLink("(Park et al., 2019)"), on: ap).hasPrefix("Ann Park"),
+      "괄호까지 링크에 든 인용, 연도가 미리보기 아래에 있는 긴 항목 (\(previewHead(authorLink("(Park et al., 2019)"), on: ap)))")
+_ = authorLink("Park et al.,\n", length: 12)
+let wrappedYear = authorLink("\n2019 ends", offset: 1, length: 4)
+check(previewHead(wrappedYear, on: ap).hasPrefix("Ann Park"), "줄을 넘어 나뉜 인용의 연도 쪽 링크도 윗줄 저자로 찾음 (\(previewHead(wrappedYear, on: ap)))")
+let shownLong = PDFLinks.citationPreview(for: wrappedYear, on: ap)?.first.flatMap { $0.page.selection(for: $0.rect)?.string } ?? ""
+check(shownLong.hasSuffix("many authors, 2019.") && !shownLong.contains("As shown"),
+      "긴 항목은 끝(연도)까지 늘려 보여 주고 아래 본문은 담지 않는다 (…\(String(shownLong.suffix(40)).debugDescription))")
+
+// 두 단 참고문헌: 왼쪽 단 끝에서 끊긴 항목은 오른쪽 단 맨 위의 이어지는 부분까지 붙여 보여 준다.
+// 번호는 오른쪽에 맞춰 찍어서 "[9]"가 "[10]"보다 안쪽에서 시작하고, 본문과 따로 그린다(ACM처럼).
+let spillURL = outDir.appendingPathComponent("spill.pdf")
+let spillFont = NSFont(name: "Helvetica", size: 9)!
+let entryTexts = (1...14).map { "Author\($0) Name, Other Person, and Third Writer. A fairly long paper title number \($0) about many things. In Proceedings of a Conference, 20\(10 + $0)." }
+var spillTop: [CGPoint] = []
+var splitEntry = 0
+do {
+    var box = CGRect(x: 0, y: 0, width: 612, height: 792)
+    let ctx = CGContext(spillURL as CFURL, mediaBox: &box, nil)!
+    ctx.beginPDFPage(nil)
+    let hanging = NSMutableParagraphStyle()
+    hanging.headIndent = 0
+    let body = NSAttributedString(string: entryTexts.joined(separator: "\n"), attributes: [.font: spillFont, .paragraphStyle: hanging])
+    let setter = CTFramesetterCreateWithAttributedString(body)
+    // 번호 자리(18pt)를 비우고 본문을 그린 뒤, 각 항목 첫 줄 왼쪽에 번호를 따로 찍는다.
+    var leftHeight: CGFloat = 200, left: CTFrame
+    repeat {   // 항목 중간에서 끊기도록 왼쪽 단 높이를 고른다
+        left = CTFramesetterCreateFrame(setter, CFRange(location: 0, length: 0),
+                                        CGPath(rect: CGRect(x: 72, y: 720 - leftHeight, width: 222, height: leftHeight), transform: nil), nil)
+        let cut = CTFrameGetVisibleStringRange(left).length
+        let starts = entryTexts.indices.map { entryTexts[..<$0].reduce(0) { $0 + ($1 as NSString).length + 1 } }
+        splitEntry = starts.lastIndex { $0 < cut } ?? 0
+        if !starts.contains(cut) && cut - starts[splitEntry] > 30 { break }
+        leftHeight += 3
+    } while leftHeight < 400
+    let rest = CTFrameGetVisibleStringRange(left).length
+    let right = CTFramesetterCreateFrame(setter, CFRange(location: rest, length: 0),
+                                         CGPath(rect: CGRect(x: 336, y: 72, width: 222, height: 648), transform: nil), nil)
+    for frame in [left, right] {
+        CTFrameDraw(frame, ctx)
+        let lines = CTFrameGetLines(frame) as! [CTLine]
+        var origins = [CGPoint](repeating: .zero, count: lines.count)
+        CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 0), &origins)
+        let frameX: CGFloat = frame === left ? 72 : 336, frameY: CGFloat = frame === left ? 720 - leftHeight : 72
+        for (line, origin) in zip(lines, origins) {
+            let start = CTLineGetStringRange(line).location
+            guard let n = entryTexts.indices.first(where: { entryTexts[..<$0].reduce(0) { $0 + ($1 as NSString).length + 1 } == start }) else { continue }
+            let label = NSAttributedString(string: "[\(n + 1)]", attributes: [.font: spillFont])
+            let labelLine = CTLineCreateWithAttributedString(label)
+            let width = CTLineGetTypographicBounds(labelLine, nil, nil, nil)
+            ctx.textPosition = CGPoint(x: frameX - 4 - width, y: frameY + origin.y)   // 오른쪽 맞춤
+            CTLineDraw(labelLine, ctx)
+            spillTop.append(CGPoint(x: frameX - 18, y: frameY + origin.y + 10))
+        }
+    }
+    ctx.textPosition = CGPoint(x: 72, y: 750)
+    CTLineDraw(CTLineCreateWithAttributedString(NSAttributedString(string: "See \(splitEntry + 1) and 9 here.", attributes: [.font: spillFont])), ctx)
+    ctx.endPDFPage()
+    ctx.closePDF()
+}
+let spillDoc = PDFDocument(url: spillURL)!
+let spillPage = spillDoc.page(at: 0)!
+/// 쪽 위 "See n and 9 here."(n은 끊긴 항목 번호)의 번호에 건 링크.
+func spillCite(_ number: Int, to entry: Int) -> PDFAnnotation {
+    let sentence = "See \(splitEntry + 1) and 9"
+    let start = (spillPage.string! as NSString).range(of: sentence).location
+    let range = number == 9 ? NSRange(location: start + sentence.count - 1, length: 1) : NSRange(location: start + 4, length: "\(number)".count)
+    let a = PDFAnnotation(bounds: spillPage.selection(for: range)!.bounds(for: spillPage), forType: .link, withProperties: nil)
+    a.destination = PDFDestination(page: spillPage, at: spillTop[entry])
+    return a
+}
+let spillLink = spillCite(splitEntry + 1, to: splitEntry)
+let spillRegions = PDFLinks.citationPreview(for: spillLink, on: spillPage) ?? []
+let spillShown = spillRegions.map { $0.page.selection(for: $0.rect)?.string ?? "" }
+check(spillRegions.count == 2 && spillShown[0].hasPrefix("[\(splitEntry + 1)]") && spillShown[1].hasSuffix("20\(11 + splitEntry).")
+      && !spillShown.joined().contains("[\(splitEntry + 2)]"),
+      "단 끝에서 끊긴 [\(splitEntry + 1)] 항목은 오른쪽 단 이어지는 부분까지, 다음 항목 없이 (\(spillShown.map { String($0.suffix(30)) }))")
+let nineLink = spillCite(9, to: 8)
+let nineShown = (PDFLinks.citationPreview(for: nineLink, on: spillPage) ?? []).map { $0.page.selection(for: $0.rect)?.string ?? "" }.joined()
+check(nineShown.hasPrefix("[9]") && nineShown.contains("2019.") && !nineShown.contains("[10]"),
+      "오른쪽 맞춤 번호: [9] 항목은 왼쪽으로 삐져나온 [10]에서 끝난다 (…\(String(nineShown.suffix(30)).debugDescription))")
+
+// 저자가 너무 많아 한도를 넘는 항목은 앞 몇 줄과 끝(제목·연도)만 보여 주고 가운데는 건너뛴다.
+let manyText = NSMutableAttributedString(
+    string: "Ann Park, " + (1...260).map { "Bo Kim\($0)" }.joined(separator: ", ") + ". A paper with very many authors. Big Conference, 2018.\n",
+    attributes: [.font: NSFont(name: "Helvetica", size: 10)!, .paragraphStyle: hanging])
+manyText.append(NSAttributedString(string: "As shown by Park et al. (2018) here.", attributes: [.font: NSFont(name: "Helvetica", size: 10)!]))
+let manyDoc = makeTextPDF(manyText, at: outDir.appendingPathComponent("many.pdf"))
+let manyPage = manyDoc.page(at: 0)!
+let manyLink = PDFAnnotation(bounds: manyPage.selection(for: (manyPage.string! as NSString).range(of: "Park et al."))!.bounds(for: manyPage), forType: .link, withProperties: nil)
+manyLink.destination = PDFDestination(page: manyPage, at: pageTop)
+manyPage.addAnnotation(manyLink)
+let manyRegions = PDFLinks.citationPreview(for: manyLink, on: manyPage) ?? []
+let manyShown = manyRegions.map { $0.page.selection(for: $0.rect)?.string ?? "" }
+check(manyRegions.count == 2 && manyRegions[1].omittedBefore && manyShown[0].hasPrefix("Ann Park")
+      && manyShown[1].hasSuffix("Big Conference, 2018.") && !manyShown.joined().contains("As shown")
+      && manyRegions.map(\.rect.height).reduce(0, +) < 120,
+      "저자가 너무 많은 항목은 앞뒤만, 가운데 생략 (\(manyRegions.map { Int($0.rect.height) }) …\(String(manyShown.last?.suffix(30) ?? "").debugDescription))")
 check(PDFLinks.citationNumber("[12]") == 12 && PDFLinks.citationNumber("12,") == 12 && PDFLinks.citationNumber("2017") == nil
       && PDFLinks.citationNumber("Fig. 3") == nil, "번호 인용 번호 읽기")
 check(PDFLinks.startsEntry("[3] Author", number: 3) && PDFLinks.startsEntry("3. Author", number: 3)

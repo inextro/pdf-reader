@@ -239,9 +239,18 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
     private func installMouseMonitor() {
         // EventTypeMask에는 찾아보기(.quickLook) 멤버가 없어서 이벤트 종류 값으로 만든다.
         let quickLookMask = NSEvent.EventTypeMask(rawValue: 1 << NSEvent.EventType.quickLook.rawValue)
-        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp, .keyDown, .keyUp, .pressure, quickLookMask]) { [weak self] event in
+        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp, .otherMouseDown, .swipe, .keyDown, .keyUp, .pressure, quickLookMask]) { [weak self] event in
             guard let self, event.window === self.window else { return event }
             if event.type == .keyDown || event.type == .keyUp { return self.handleKey(event) ? nil : event }
+            // 마우스 옆 버튼: 뒤로는 링크를 누른 자리로 돌아가기(없으면 이동 기록 뒤로), 앞으로는 이동 기록 앞으로.
+            // 보통은 3·4번 버튼으로 오지만, Logi Options+는 옆 버튼을 세 손가락 쓸기(swipe)로 바꿔 보낸다.
+            // 쓸기는 오른쪽으로 쓸면(뒤로) deltaX가 +1, 왼쪽으로 쓸면(앞으로) -1이다.
+            if event.type == .otherMouseDown || event.type == .swipe {
+                let back = event.type == .swipe ? event.deltaX > 0 : event.buttonNumber == 3
+                let forward = event.type == .swipe ? event.deltaX < 0 : event.buttonNumber == 4
+                if back { self.goBack(nil) } else if forward { self.goForward(nil) } else { return event }
+                return nil
+            }
             // PDF는 툴바 뒤까지 깔려 있으므로(fullSizeContentView) 툴바·제목 표시줄에 가린 곳은 PDF로 치지 않는다.
             // 그러지 않으면 지우개가 켜진 동안 툴바 클릭까지 가로채서 지우개를 끌 수도 없다.
             let inPDF = self.pdfView.bounds.contains(self.pdfView.convert(event.locationInWindow, from: nil))
@@ -561,8 +570,13 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
     @objc func zoomToFit(_ sender: Any?) { pdfView.autoScales = true }
 
     // 링크·목차·검색으로 옮겨 간 자리를 PDFView가 기록해 두므로 그 기록을 오간다.
-    @objc func goBack(_ sender: Any?) { pdfView.goBack(sender) }
-    @objc func goForward(_ sender: Any?) { pdfView.goForward(sender) }
+    // 링크를 눌러 옮겨 왔으면(돌아가기 버튼이 떠 있으면) 링크를 누른 자리로 먼저 돌아간다.
+    @objc func goBack(_ sender: Any?) {
+        if pdfView.canReturnToLinkOrigin { pdfView.returnToLinkOrigin() } else { pdfView.goBack(sender) }
+    }
+    @objc func goForward(_ sender: Any?) {
+        if pdfView.canRedoLinkJump { pdfView.redoLinkJump() } else { pdfView.goForward(sender) }
+    }
 
     // MARK: 실행 취소 (창이 문서의 undo manager를 쓰게 한다)
 
@@ -588,9 +602,9 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
         case #selector(findNextResult(_:)), #selector(findPreviousResult(_:)):
             return !results.isEmpty
         case #selector(goBack(_:)):
-            return pdfView.canGoBack
+            return pdfView.canReturnToLinkOrigin || pdfView.canGoBack
         case #selector(goForward(_:)):
-            return pdfView.canGoForward
+            return pdfView.canRedoLinkJump || pdfView.canGoForward
         default:
             return true
         }
