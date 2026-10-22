@@ -31,8 +31,21 @@ public enum Highlights {
             }
         }
         return pages.map { page in
-            PlacedHighlight(page: page, annotation: annotation(rects: rectsByPage[ObjectIdentifier(page)]!,
+            PlacedHighlight(page: page, annotation: annotation(rects: joinLinePieces(rectsByPage[ObjectIdentifier(page)]!),
                                                                 color: color, author: author))
+        }
+    }
+
+    /// PDFKit의 selectionsByLine()은 한 줄을 여러 조각으로 나눠 돌려주기도 한다: "From Figure ", "3, ", "we".
+    /// 조각 사이의 단어 간격은 어느 조각에도 들지 않아서 그대로 칠하면 형광펜이 단어 사이에서 끊긴다.
+    /// 그래서 같은 줄에서 글자 1.5개 너비 안으로 이어지는 앞뒤 조각을 한 사각형으로 합친다. 단 사이 여백처럼 넓은 틈은 둔다.
+    public static func joinLinePieces(_ pieces: [CGRect]) -> [CGRect] {
+        pieces.reduce(into: []) { lines, r in
+            if let last = lines.last, touches(last, r, slack: 1.5 * max(last.height, r.height)) {
+                lines[lines.count - 1] = last.union(r)
+            } else {
+                lines.append(r)
+            }
         }
     }
 
@@ -197,11 +210,11 @@ public enum Highlights {
         return (added, removed)
     }
 
-    /// 같은 줄(세로로 절반 이상 겹침)에 있고 가로로 겹치거나 1pt 안으로 붙어 있으면 맞닿은 것으로 본다.
-    static func touches(_ a: CGRect, _ b: CGRect) -> Bool {
+    /// 같은 줄(세로로 절반 이상 겹침)에 있고 가로로 겹치거나 slack(기본 1pt) 안으로 붙어 있으면 맞닿은 것으로 본다.
+    static func touches(_ a: CGRect, _ b: CGRect, slack: CGFloat = 1) -> Bool {
         let vertical = min(a.maxY, b.maxY) - max(a.minY, b.minY)
         guard vertical >= 0.5 * min(a.height, b.height) else { return false }
-        return a.minX <= b.maxX + 1 && b.minX <= a.maxX + 1
+        return a.minX <= b.maxX + slack && b.minX <= a.maxX + slack
     }
 
     /// 맞닿은 사각형을 줄마다 하나로 합치고 위에서 아래, 왼쪽에서 오른쪽 순서로 정렬한다.

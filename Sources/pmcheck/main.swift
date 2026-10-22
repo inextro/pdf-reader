@@ -118,6 +118,14 @@ check(!layered, "합친 주석 안에서 겹치는 사각형 없음")
 let apart = place(Highlights.make(from: mp.selection(for: NSRange(location: 900, length: 40))!, color: yellow))
 check(apart.removed.isEmpty && mp.annotations.filter(Highlights.isHighlight).count == 2, "떨어진 형광펜은 합치지 않음")
 
+// PDFKit이 한 줄을 "From Figure ", "3, ", "we" 조각으로 돌려준 실제 논문의 사각형들. 다음 줄은 두 단에 걸쳐 있다.
+let pieces = [CGRect(x: 63.76, y: 347.48, width: 44.62, height: 8.74), CGRect(x: 110.61, y: 347.48, width: 6.12, height: 8.74),
+              CGRect(x: 118.97, y: 347.48, width: 10.60, height: 8.74), CGRect(x: 53.80, y: 336.52, width: 241.80, height: 8.74),
+              CGRect(x: 318.00, y: 336.52, width: 240.20, height: 8.74)]
+let joinedLines = Highlights.joinLinePieces(pieces)
+check(joinedLines.count == 3 && joinedLines[0] == pieces[0].union(pieces[2]),
+      "한 줄 조각은 단어 사이까지 한 사각형으로, 다음 줄·옆 단은 따로 (\(joinedLines.count)개)")
+
 // 형광펜 말고 다른 주석: 밑줄은 줄 사각형, 펜은 실제 선 근처, 메모는 bounds로 판정. 링크는 제외
 let markDoc = PDFDocument(url: sourceURL)!
 let kp = markDoc.page(at: 0)!
