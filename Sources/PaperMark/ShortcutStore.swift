@@ -37,7 +37,7 @@ enum Command: String, CaseIterable {
         case .eraserMode: Shortcut(key: "e", modifiers: [.command, .shift])
         case .removeCurrentColor: nil
         case .translate: Shortcut(key: "t", modifiers: .command)
-        case .toggleSidebar: Shortcut(key: "s", modifiers: [.command, .control])
+        case .toggleSidebar: Shortcut(key: "b", modifiers: .command)
         case .zoomIn: Shortcut(key: "=", modifiers: .command)
         case .zoomOut: Shortcut(key: "-", modifiers: .command)
         case .zoomToFit: Shortcut(key: "0", modifiers: .command)

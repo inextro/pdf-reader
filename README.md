@@ -45,7 +45,8 @@ palette, then keep going on another device.
 - **Sidebar with the table of contents or a file tree.** The Contents tab lists the PDF's sections and
   subsections with page numbers. Click one to jump there; the section you are reading stays highlighted as you
   scroll. The Files tab shows the folders and PDFs around the current file, like an IDE explorer. Move up a level or pick any root folder, and double-click to open.
-  The tab bar's `+` opens a new tab that starts on the file tree.
+  The tab bar's `+` opens a new tab that starts on the file tree. Closing the last PDF tab leaves this tab open
+  instead of closing the window.
 - **Customizable keyboard shortcuts** (`⌘,`).
 - **Picks up where you left off.** Reopens the files you had open, at the page you were reading, next to
   a tab showing your working folder's file tree. The working folder is the file tree's root folder; on
@@ -104,7 +105,7 @@ All shortcuts except `Space`, `T`, and `Esc` can be changed in **Settings** (`�
 | Translate while dragging | hold `T` |
 | Translate the selection | `⌘T` |
 | Find / next / previous result | `⌘F` / `⌘G` or `Return` / `⇧⌘G` or `⇧Return` |
-| Show or hide the sidebar | `⌃⌘S` |
+| Show or hide the sidebar | `⌘B` |
 | Back / forward (after following a link, a section, or a search result) | `⌘[` / `⌘]` |
 | Zoom in / out / fit | `⌘=` / `⌘-` / `⌘0` |
 | Undo / redo | `⌘Z` / `⇧⌘Z` |

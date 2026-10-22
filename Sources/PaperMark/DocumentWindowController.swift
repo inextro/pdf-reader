@@ -124,7 +124,7 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
-    /// 왼쪽은 사이드바(목차 또는 파일 트리, ⌃⌘S로 접기), 오른쪽은 PDF.
+    /// 왼쪽은 사이드바(목차 또는 파일 트리, ⌘B로 접기), 오른쪽은 PDF.
     private func makeSplitViewController(fileURL: URL?) -> NSSplitViewController {
         sidebarContent = SidebarViewController(pdfView: pdfView)
         sidebarContent.files.documentURL = fileURL
@@ -611,8 +611,15 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
     }
 
     // 사용자가 창을 닫을 때만 불린다(앱을 끄면서 닫히는 창은 아님). 다음 실행 때 다시 열 목록에서 뺀다.
+    // 마지막 PDF 탭을 닫으면 창이 사라지지 않게 시작 탭(파일 트리)을 연다. 아직 이 창이 떠 있어서 새 탭은 이 창에 붙는다.
+    // 시작 탭을 닫으면 창도 닫힌다.
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        if let url = pmDocument?.fileURL { Session.didCloseByUser(url) }
+        if let url = pmDocument?.fileURL {
+            Session.didCloseByUser(url)
+            if NSDocumentController.shared.documents.allSatisfy({ $0 === pmDocument }) {
+                NSDocumentController.shared.newDocument(sender)
+            }
+        }
         return true
     }
 
