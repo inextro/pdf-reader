@@ -62,6 +62,8 @@ final class ReaderPDFView: PDFView {
 
     private var spotAtLinkClick: Spot?
     private var linkClickLocation = NSPoint.zero
+    // 누른 자리의 형광펜 등에 덮인 링크. 끌지 않고 떼면 직접 따라간다.
+    private var pressedCoveredLink: PDFAnnotation?
     private var returnSpots: [Spot] = [] { didSet { updateReturnBar() } }
     // 돌아가기로 떠난 자리. 앞으로 가기(마우스 앞으로 버튼, ⌘])로 다시 간다. 링크를 새로 누르면 비운다.
     private var forwardSpots: [Spot] = []
@@ -169,6 +171,33 @@ final class ReaderPDFView: PDFView {
         return nil
     }
 
+    // MARK: 형광펜에 덮인 링크
+
+    // PDFKit은 맨 위 주석만 보고 링크인지 가린다. 그래서 링크 위에 형광펜을 칠하면 손가락 커서가 뜨지 않고,
+    // 눌러도 링크를 따라가지 않는다. 그런 링크는 커서를 직접 바꾸고, 누르면 직접 따라간다.
+
+    /// 마우스 아래에서 형광펜 등 사용자 주석에 덮인 링크. 덮이지 않은 링크는 PDFKit이 처리하므로 nil.
+    private func coveredLink(at locationInWindow: NSPoint) -> PDFAnnotation? {
+        let point = convert(locationInWindow, from: nil)
+        guard let page = page(for: point, nearest: false) else { return nil }
+        let pagePoint = convert(point, to: page)
+        guard let top = page.annotation(at: pagePoint), Markups.isUserMarkup(top) else { return nil }
+        return page.annotations.last { Markups.type(of: $0) == "Link" && $0.bounds.contains(pagePoint) }
+    }
+
+    override func areaOfInterest(forMouse event: NSEvent) -> PDFAreaOfInterest {
+        var area = super.areaOfInterest(forMouse: event)
+        if coveredLink(at: event.locationInWindow) != nil { area.insert(.linkArea) }
+        return area
+    }
+
+    /// PDFKit이 링크를 누를 때처럼 링크의 동작을 실행한다. 문서 안 링크는 그 자리로 가고, 웹 주소는 브라우저로 연다.
+    private func follow(_ link: PDFAnnotation) {
+        guard let action = link.action ?? link.destination.map(PDFActionGoTo.init(destination:)) ?? link.url.map(PDFActionURL.init(url:))
+        else { return }
+        perform(action)
+    }
+
     override func scrollWheel(with event: NSEvent) {
         hoverTracker.dismiss()
         super.scrollWheel(with: event)
@@ -178,21 +207,28 @@ final class ReaderPDFView: PDFView {
         hoverTracker.dismiss()
         spotAtLinkClick = event.clickCount == 1 && internalLink(at: event.locationInWindow) != nil ? currentSpot() : nil
         linkClickLocation = event.locationInWindow
+        pressedCoveredLink = event.clickCount == 1 ? coveredLink(at: event.locationInWindow) : nil
         super.mouseDown(with: event)
         // PDFView가 mouseDown 안에서 뗄 때까지 추적하며 링크를 따라갔을 수도 있다.
         DispatchQueue.main.async { [weak self] in self?.recordJumpIfMoved() }
     }
 
     // 링크에서 시작해 글자를 끌어 고르다 화면이 저절로 스크롤된 것은 옮겨 간 게 아니다.
+    // 형광펜에 덮인 링크에서 시작해 끌면 칠하려는 것이므로 링크를 따라가지 않는다.
     override func mouseDragged(with event: NSEvent) {
         if hypot(event.locationInWindow.x - linkClickLocation.x, event.locationInWindow.y - linkClickLocation.y) > 4 {
             spotAtLinkClick = nil
+            pressedCoveredLink = nil
         }
         super.mouseDragged(with: event)
     }
 
     override func mouseUp(with event: NSEvent) {
         super.mouseUp(with: event)
+        if let link = pressedCoveredLink {
+            pressedCoveredLink = nil
+            follow(link)
+        }
         DispatchQueue.main.async { [weak self] in
             self?.recordJumpIfMoved()
             self?.spotAtLinkClick = nil
