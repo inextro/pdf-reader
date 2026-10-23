@@ -642,7 +642,25 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
             $0 !== window && $0.windowController is DocumentWindowController && $0.isVisible && !$0.isMiniaturized
         }
         guard let target = NSApp.mainWindow.flatMap({ main in others.first { $0 === main } }) ?? others.first else { return }
-        target.addTabbedWindow(window, ordered: .above)
+        Self.addTab(window, to: target)
+    }
+
+    /// target 창의 탭으로 붙인다. 새 탭(PDF 없는 시작 탭)은 늘 맨 오른쪽에 둔다:
+    /// 새 탭은 맨 끝에 붙이고, PDF는 target 오른쪽에 붙이되 그 자리가 새 탭보다 오른쪽이면 새 탭 왼쪽에 넣는다.
+    static func addTab(_ window: NSWindow, to target: NSWindow) {
+        let tabs = target.tabGroup?.windows ?? [target]
+        if isStartTab(window) {
+            (tabs.last ?? target).addTabbedWindow(window, ordered: .above)
+        } else if let start = tabs.firstIndex(where: isStartTab), let at = tabs.firstIndex(of: target), start <= at {
+            tabs[start].addTabbedWindow(window, ordered: .below)
+        } else {
+            target.addTabbedWindow(window, ordered: .above)
+        }
+    }
+
+    private static func isStartTab(_ window: NSWindow) -> Bool {
+        guard let document = (window.windowController as? DocumentWindowController)?.pmDocument else { return false }
+        return document.fileURL == nil
     }
 
     // 앱을 끌 때는 창이 닫히지 않을 수 있어서 페이지가 바뀔 때마다 기록한다.

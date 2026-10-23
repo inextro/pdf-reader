@@ -352,7 +352,7 @@ final class FileTreeView: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
             // 다른 창으로 떨어졌으면 이 창의 탭으로 붙인다(이미 열려 있던 PDF도 이 창으로 데려온다).
             if let current, let opened = document.windowControllers.first?.window, opened !== current,
                current.tabGroup?.windows.contains(opened) != true {
-                current.addTabbedWindow(opened, ordered: .above)
+                DocumentWindowController.addTab(opened, to: current)
                 opened.makeKeyAndOrderFront(nil)
             }
             self?.didOpen?()

@@ -69,7 +69,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// 작업 폴더(파일 트리 root)의 파일 트리를 보여 주는 새 탭을 맨 앞에 열고, 앱을 끌 때 열려 있던 파일들을 다시 연다.
+    /// 작업 폴더(파일 트리 root)의 파일 트리를 보여 주는 새 탭을 먼저 열고, 앱을 끌 때 열려 있던 파일들을 다시 연다.
+    /// 다시 연 파일은 새 탭 왼쪽에 붙어서 새 탭은 맨 오른쪽에 남는다.
     /// 다시 열 파일이 없으면 가장 최근 파일을 연다.
     private func reopenLastFiles() {
         askWorkingFolderOnce {
