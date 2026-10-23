@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.8.0
+
+- New: Translate treats the text as English by default, so a single word such as "infancy" translates right
+  away instead of asking you to choose a language. Text that is clearly in another language, such as a Korean
+  paragraph, is still detected. The translation appears in a popover with a **Copy** button (macOS 15 or later).
+- New: The **New Tab** tab always stays at the right end of the tab bar. PDFs open to its left.
+- New: Show/Hide Sidebar is now `⌘B` by default. A shortcut you changed in Settings stays as it is.
+- New: Closing the last PDF tab keeps the window open with a New Tab. Close the New Tab to close the window.
+- Fix: Highlights no longer break into pieces between words, such as in "Figure 3".
+- Fix: Links covered by a highlight can be clicked again.
+
 ## 0.7.0
 
 - New: After you click a link to a citation, figure, or table, a **Back to p. N** button appears at the bottom.
