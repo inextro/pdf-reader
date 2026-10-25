@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.1
+
+- Fix: You can drag from linked text, such as `Figure 3` or a citation number, to highlight or select it.
+  Clicking without dragging still follows the link.
+- Improved: Citation previews follow the current zoom, so the reference entry appears at the same size as the
+  text on the page. A preview never gets wider than the PDF view.
+
 ## 0.8.0
 
 - New: Translate treats the text as English by default, so a single word such as "infancy" translates right
