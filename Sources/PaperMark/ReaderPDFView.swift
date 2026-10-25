@@ -191,6 +191,33 @@ final class ReaderPDFView: PDFView {
         return area
     }
 
+    // MARK: 링크에서 시작해 끌기
+
+    // PDFKit은 링크 위에서 누르면 끌어도 글자를 고르지 않아서, 링크가 걸린 글자("Figure 3", 인용 번호)를
+    // 칠할 수 없었다. 그래서 덮이지 않은 링크도 누름을 직접 받는다: 끌면 누른 자리부터 글자를 고르고
+    // (형광펜 모드면 떼는 순간 칠해진다), 끌지 않고 떼면 링크를 따라간다.
+    private var pressedLink: (link: PDFAnnotation, page: PDFPage, point: NSPoint)?
+    private var draggedFromLink = false
+
+    /// 마우스 아래 맨 위 주석이 링크면 그 링크와 쪽, 쪽 좌표. 형광펜에 덮인 링크는 coveredLink가 맡는다.
+    private func uncoveredLink(at locationInWindow: NSPoint) -> (link: PDFAnnotation, page: PDFPage, point: NSPoint)? {
+        let point = convert(locationInWindow, from: nil)
+        guard let page = page(for: point, nearest: false) else { return nil }
+        let pagePoint = convert(point, to: page)
+        guard let top = page.annotation(at: pagePoint), Markups.type(of: top) == "Link" else { return nil }
+        return (top, page, pagePoint)
+    }
+
+    private func selectFromPressedLink(to event: NSEvent) {
+        guard let pressed = pressedLink else { return }
+        autoscroll(with: event)
+        let point = convert(event.locationInWindow, from: nil)
+        guard let page = page(for: point, nearest: true),
+              let selection = document?.selection(from: pressed.page, at: pressed.point, to: page, at: convert(point, to: page))
+        else { return }
+        setCurrentSelection(selection, animate: false)
+    }
+
     /// PDFKit이 링크를 누를 때처럼 링크의 동작을 실행한다. 문서 안 링크는 그 자리로 가고, 웹 주소는 브라우저로 연다.
     private func follow(_ link: PDFAnnotation) {
         guard let action = link.action ?? link.destination.map(PDFActionGoTo.init(destination:)) ?? link.url.map(PDFActionURL.init(url:))
@@ -208,6 +235,12 @@ final class ReaderPDFView: PDFView {
         spotAtLinkClick = event.clickCount == 1 && internalLink(at: event.locationInWindow) != nil ? currentSpot() : nil
         linkClickLocation = event.locationInWindow
         pressedCoveredLink = event.clickCount == 1 ? coveredLink(at: event.locationInWindow) : nil
+        pressedLink = event.clickCount == 1 ? uncoveredLink(at: event.locationInWindow) : nil
+        draggedFromLink = false
+        if pressedLink != nil {
+            window?.makeFirstResponder(self)
+            return
+        }
         super.mouseDown(with: event)
         // PDFView가 mouseDown 안에서 뗄 때까지 추적하며 링크를 따라갔을 수도 있다.
         DispatchQueue.main.async { [weak self] in self?.recordJumpIfMoved() }
@@ -219,12 +252,25 @@ final class ReaderPDFView: PDFView {
         if hypot(event.locationInWindow.x - linkClickLocation.x, event.locationInWindow.y - linkClickLocation.y) > 4 {
             spotAtLinkClick = nil
             pressedCoveredLink = nil
+            if pressedLink != nil, !draggedFromLink {
+                draggedFromLink = true
+                NSCursor.iBeam.set()
+            }
+        }
+        guard pressedLink == nil else {
+            if draggedFromLink { selectFromPressedLink(to: event) }
+            return
         }
         super.mouseDragged(with: event)
     }
 
     override func mouseUp(with event: NSEvent) {
-        super.mouseUp(with: event)
+        if let pressed = pressedLink {
+            pressedLink = nil
+            if !draggedFromLink { follow(pressed.link) }
+        } else {
+            super.mouseUp(with: event)
+        }
         if let link = pressedCoveredLink {
             pressedCoveredLink = nil
             follow(link)
@@ -296,10 +342,10 @@ private final class LinkHoverTracker: NSResponder {
     private func show(_ annotation: PDFAnnotation, on page: PDFPage) {
         guard view.window?.isKeyWindow == true,
               let regions = PDFLinks.citationPreview(for: annotation, on: page)?.filter({ $0.rect.width > 1 && $0.rect.height > 1 }),
-              let first = regions.first
+              let widest = regions.map(\.rect.width).max()
         else { return }
-        // 두 단 논문의 한 단(약 260pt)이 읽기 좋은 크기가 되도록 키우고, 한 단 논문의 본문 너비는 너무 커지지 않게 줄인다.
-        let scale = min(1.6, 520 / first.rect.width)
+        // 본문과 같은 크기로 보이게 지금 배율로 그린다(확대하면 미리보기도 커진다). 다만 PDF 화면보다 넓어지지는 않게 한다.
+        let scale = min(view.scaleFactor, (view.bounds.width - 40) / widest)
         // 다음 단·다음 쪽으로 이어진 부분은 아래에 붙이고, 사이에 옅은 선을 그어 끊긴 자리를 알린다.
         // 저자가 너무 많아 가운데를 건너뛴 자리에는 그렇다고 적는다.
         let gap: CGFloat = 7, omittedGap: CGFloat = 20
@@ -307,7 +353,7 @@ private final class LinkHoverTracker: NSResponder {
             .font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor(white: 0.45, alpha: 1),
         ])
         let gaps = regions.dropFirst().map { $0.omittedBefore ? omittedGap : gap }.reduce(0, +)
-        let size = NSSize(width: (regions.map(\.rect.width).max()! * scale).rounded(),
+        let size = NSSize(width: (widest * scale).rounded(),
                           height: (regions.map { $0.rect.height * scale }.reduce(0, +) + gaps).rounded())
         let image = NSImage(size: size, flipped: false) { _ in
             guard let context = NSGraphicsContext.current?.cgContext else { return false }
