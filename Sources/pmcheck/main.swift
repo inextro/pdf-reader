@@ -3,6 +3,7 @@ import CoreText
 import CryptoKit
 import PDFKit
 import PaperMarkCore
+import PaperMarkLibrary
 
 // 사용법: pmcheck <출력 폴더>
 // 텍스트 PDF를 만들고, 형광펜을 칠해 저장한 뒤 다시 열어 주석이 보존되는지 확인한다.
@@ -562,6 +563,147 @@ try FileManager.default.createDirectory(at: installedApp.appendingPathComponent(
 if let unpacked { try? Updates.replace(installedApp, with: unpacked) }
 let replacedVersion = NSDictionary(contentsOf: installedApp.appendingPathComponent("Contents/Info.plist"))?["CFBundleShortVersionString"] as? String
 check(replacedVersion == "9.9.9", "설치된 앱을 새 앱으로 교체 (\(replacedVersion ?? "nil"))")
+
+// 라이브러리: 스키마, Zotero 가져오기(합성 DB와 실제 DB), 다시 가져오기, 백업
+let libDir = outDir.appendingPathComponent("library")
+try? FileManager.default.removeItem(at: libDir)
+try FileManager.default.createDirectory(at: libDir, withIntermediateDirectories: true)
+
+let libURL = libDir.appendingPathComponent("library.sqlite")
+check((try? Library(url: libURL))?.version == Library.schemaVersion, "빈 DB에 스키마 만들기")
+check((try? Library(url: libURL))?.version == Library.schemaVersion, "다시 열어도 같은 스키마")
+
+check(ZoteroImport.parseDate("2023-10-31 2023-10-31") == ("2023-10-31", 2023)
+      && ZoteroImport.parseDate("1994-12-00 1994-12") == ("1994-12", 1994)
+      && ZoteroImport.parseDate("0000-00-00 Spring") == ("Spring", nil)
+      && ZoteroImport.parseDate(nil) == (nil, nil), "Zotero 날짜 읽기")
+check(ZoteroImport.arxivID(archiveID: "arXiv:2310.20453", extra: nil, url: nil) == "2310.20453"
+      && ZoteroImport.arxivID(archiveID: nil, extra: "TLDR: x\narXiv:2303.14524 [cs]", url: nil) == "2303.14524"
+      && ZoteroImport.arxivID(archiveID: nil, extra: nil, url: "https://arxiv.org/abs/2509.20234v2") == "2509.20234v2"
+      && ZoteroImport.arxivID(archiveID: nil, extra: "PMID: 1", url: "https://doi.org/10.1/x") == nil, "arXiv ID 찾기")
+check(ZoteroImport.prefValue("extensions.zotero.baseAttachmentPath",
+                             in: #"user_pref("extensions.zotero.baseAttachmentPath", "/Users/a/My Drive/zotero");"#)
+      == "/Users/a/My Drive/zotero", "prefs.js에서 첨부 base 폴더 읽기")
+
+/// Zotero 스키마에서 가져오기가 읽는 테이블만 가진 작은 DB.
+let zURL = libDir.appendingPathComponent("zotero.sqlite")
+let zdb = try SQLiteDatabase(path: zURL.path)
+try zdb.execute("""
+    CREATE TABLE libraries (libraryID INTEGER PRIMARY KEY, type TEXT);
+    CREATE TABLE itemTypes (itemTypeID INTEGER PRIMARY KEY, typeName TEXT);
+    CREATE TABLE items (itemID INTEGER PRIMARY KEY, itemTypeID INT, dateAdded TEXT, dateModified TEXT, libraryID INT, key TEXT);
+    CREATE TABLE fields (fieldID INTEGER PRIMARY KEY, fieldName TEXT);
+    CREATE TABLE itemDataValues (valueID INTEGER PRIMARY KEY, value UNIQUE);
+    CREATE TABLE itemData (itemID INT, fieldID INT, valueID INT);
+    CREATE TABLE creators (creatorID INTEGER PRIMARY KEY, firstName TEXT, lastName TEXT, fieldMode INT);
+    CREATE TABLE creatorTypes (creatorTypeID INTEGER PRIMARY KEY, creatorType TEXT);
+    CREATE TABLE itemCreators (itemID INT, creatorID INT, creatorTypeID INT, orderIndex INT);
+    CREATE TABLE itemAttachments (itemID INTEGER PRIMARY KEY, parentItemID INT, linkMode INT, contentType TEXT, path TEXT);
+    CREATE TABLE itemNotes (itemID INTEGER PRIMARY KEY, parentItemID INT, note TEXT, title TEXT);
+    CREATE TABLE collections (collectionID INTEGER PRIMARY KEY, collectionName TEXT, parentCollectionID INT, libraryID INT, key TEXT);
+    CREATE TABLE collectionItems (collectionID INT, itemID INT, orderIndex INT);
+    CREATE TABLE tags (tagID INTEGER PRIMARY KEY, name TEXT);
+    CREATE TABLE itemTags (itemID INT, tagID INT, type INT);
+    CREATE TABLE deletedItems (itemID INTEGER PRIMARY KEY);
+    CREATE TABLE deletedCollections (collectionID INTEGER PRIMARY KEY);
+    INSERT INTO libraries VALUES (1, 'user');
+    INSERT INTO itemTypes VALUES (3, 'attachment'), (11, 'conferencePaper'), (22, 'journalArticle'), (28, 'note'), (31, 'preprint'), (5, 'thesis');
+    INSERT INTO creatorTypes VALUES (1, 'author'), (2, 'editor');
+    INSERT INTO fields VALUES (1, 'title'), (2, 'date'), (3, 'DOI'), (4, 'citationKey'), (5, 'proceedingsTitle'), (6, 'extra'), (7, 'pages'), (8, 'publicationTitle');
+    INSERT INTO items VALUES
+      (1, 11, '2026-02-09 05:30:49', '2026-03-02 05:30:30', 1, 'AAAA0001'),
+      (2, 22, '2026-02-10 00:00:00', '2026-02-10 00:00:00', 1, 'AAAA0002'),
+      (3, 31, '2026-02-11 00:00:00', '2026-02-11 00:00:00', 1, 'AAAA0003'),
+      (4, 5,  '2026-02-12 00:00:00', '2026-02-12 00:00:00', 1, 'AAAA0004'),
+      (10, 3, '2026-02-09 05:30:49', '2026-02-09 05:30:49', 1, 'ATT00010'),
+      (11, 3, '2026-02-09 05:30:49', '2026-02-09 05:30:49', 1, 'ATT00011'),
+      (12, 28, '2026-02-09 05:30:49', '2026-02-09 05:30:49', 1, 'NOTE0012'),
+      (13, 3, '2026-02-09 05:30:49', '2026-02-09 05:30:49', 1, 'ATT00013');
+    INSERT INTO itemDataValues VALUES (1, 'A ConvNet for the 2020s'), (2, '2022-06-00 2022-06'), (3, '10.1109/CVPR52688.2022.01167'),
+      (4, 'liu2022convnet'), (5, 'Proceedings of CVPR'), (6, 'TALLRec'), (7, '2023 2023'), (8, 'bao2023tallrec'),
+      (9, 'A Preprint'), (10, 'arXiv:2310.20453 [cs]'), (11, '11976-11986'), (12, 'A Thesis'), (13, 'RecSys Journal');
+    INSERT INTO itemData VALUES (1,1,1), (1,2,2), (1,3,3), (1,4,4), (1,5,5), (1,7,11),
+      (2,1,6), (2,2,7), (2,4,8), (2,8,13), (3,1,9), (3,6,10), (4,1,12);
+    INSERT INTO creators VALUES (1, 'Zhuang', 'Liu', 0), (2, 'Hanzi', 'Mao', 0), (3, 'Keqin', 'Bao', 0), (4, '', 'OpenAI', 1), (5, 'Ed', 'Itor', 0);
+    INSERT INTO itemCreators VALUES (1,2,1,1), (1,1,1,0), (1,5,2,2), (2,3,1,0), (3,4,1,0);
+    INSERT INTO itemAttachments VALUES (10, 1, 2, 'application/pdf', 'attachments:archive/ConvNet.pdf'),
+      (11, 3, 1, 'application/pdf', 'storage:preprint.pdf'), (13, 2, 2, 'application/pdf', '/elsewhere/TALLRec.pdf');
+    INSERT INTO itemNotes VALUES (12, 1, '<p>Accepted at CVPR</p>', 'Accepted');
+    INSERT INTO collections VALUES (1, 'Vision', NULL, 1, 'COLL0001'), (2, 'CNN', 1, 1, 'COLL0002'), (3, 'RecSys', NULL, 1, 'COLL0003');
+    INSERT INTO collectionItems VALUES (2, 1, 0), (3, 2, 0);
+    INSERT INTO tags VALUES (1, 'to-read'), (2, 'unused');
+    INSERT INTO itemTags VALUES (1, 1, 0), (3, 1, 0);
+    """)
+let zBase = URL(fileURLWithPath: "/Drive/zotero", isDirectory: true)
+let library = try Library(url: libURL)
+let firstImport = try ZoteroImport.run(zotero: zURL, attachmentBase: zBase, libraryFolder: zBase, into: library)
+check(firstImport.items == 4 && firstImport.attachments == 2 && firstImport.skippedAttachments == 1 && firstImport.collections == 3
+      && firstImport.tags == 1 && firstImport.notes == 1, "합성 Zotero DB 가져오기 (\(firstImport))")
+let imported = try library.items()
+let convnet = imported.first { $0.citationKey == "liu2022convnet" }
+check(convnet?.title == "A ConvNet for the 2020s" && convnet?.year == 2022 && convnet?.date == "2022-06"
+      && convnet?.venue == "Proceedings of CVPR" && convnet?.doi == "10.1109/CVPR52688.2022.01167"
+      && convnet?.fields["pages"] == "11976-11986" && convnet?.addedAt == "2026-02-09T05:30:49Z",
+      "서지 필드 매핑")
+check(convnet?.creators.map(\.family) == ["Liu", "Mao", "Itor"] && convnet?.creators.last?.role == "editor"
+      && convnet?.authorSummary == "Liu & Mao", "저자 순서와 역할 (\(convnet?.authorSummary ?? "nil"))")
+check(convnet?.attachments == ["archive/ConvNet.pdf"]
+      && imported.first { $0.title == "TALLRec" }?.attachments == ["/elsewhere/TALLRec.pdf"],
+      "PDF 경로는 라이브러리 폴더 기준 상대 경로, 밖이면 절대 경로")
+let preprint = imported.first { $0.title == "A Preprint" }
+check(preprint?.arxivID == "2310.20453" && preprint?.authorSummary == "OpenAI" && preprint?.attachments == []
+      && preprint?.tags == ["to-read"], "preprint: arXiv ID, 기관 저자, storage 첨부 건너뛰기")
+check(imported.first { $0.title == "A Thesis" }?.type == "other", "모르는 유형은 other")
+let collections = try library.collections()
+let vision = collections.first { $0.name == "Vision" }, cnn = collections.first { $0.name == "CNN" }
+check(cnn?.parentID == vision?.id && vision?.parentID == nil && convnet.map { LibraryFilter.collection(cnn!.id).includes($0) } == true
+      && convnet.map { LibraryFilter.collection(vision!.id).includes($0) } == false, "하위 컬렉션과 소속")
+check(imported.filter(LibraryFilter.unfiled.includes).map(\.title).sorted() == ["A Preprint", "A Thesis"], "Unfiled")
+check(convnet?.matches("convnet liu") == true && convnet?.matches("cvpr 2020s") == true
+      && convnet?.matches("tallrec") == false, "검색어 낱말이 모두 맞아야 한다")
+let foundByPath = try library.itemID(forPDF: zBase.appendingPathComponent("archive/ConvNet.pdf"), in: zBase)
+check(foundByPath == convnet?.id,
+      "PDF 경로로 항목 찾기")
+
+// 다시 가져오기: 같은 결과, key 유지, Zotero에서 지우거나 바꾼 것 반영
+let again = try ZoteroImport.run(zotero: zURL, attachmentBase: zBase, libraryFolder: zBase, into: library)
+let againItems = try library.items()
+check(again == firstImport && againItems == imported, "다시 가져와도 결과가 같다")
+try zdb.execute("""
+    INSERT INTO deletedItems VALUES (4);
+    UPDATE itemDataValues SET value = 'TALLRec: Efficient' WHERE valueID = 6;
+    DELETE FROM collections WHERE collectionID = 3;
+    DELETE FROM collectionItems WHERE collectionID = 3;
+    DELETE FROM itemTags;
+    """)
+let third = try ZoteroImport.run(zotero: zURL, attachmentBase: zBase, libraryFolder: zBase, into: library)
+let afterEdit = try library.items()
+let afterTags = try library.tags()
+check(third.items == 3 && third.removed == 1 && third.collections == 2 && third.tags == 0
+      && afterEdit.contains { $0.title == "TALLRec: Efficient" && $0.key == imported.first { $0.title == "TALLRec" }?.key }
+      && !afterEdit.contains { $0.title == "A Thesis" } && afterTags.isEmpty,
+      "Zotero에서 지우고 고친 것 반영, PaperMark key는 유지 (\(third))")
+
+let backupURL = try LibraryBackup.write(library, to: libDir)
+let backup = try? JSONDecoder().decode(LibraryBackup.File.self, from: Data(contentsOf: backupURL))
+let backupConvnet = backup?.items.first { $0.citationKey == "liu2022convnet" }
+check(backup?.items.count == 3 && backup?.deleted.count == 1 && backup?.collections.count == 2
+      && backup?.collections.first { $0.name == "CNN" }?.parent == vision?.key
+      && backupConvnet?.collections == [cnn?.key ?? ""] && backupConvnet?.notes == ["<p>Accepted at CVPR</p>"],
+      "JSON 백업은 key로 서로를 가리킨다")
+
+// 실제 Zotero 라이브러리(있을 때만): 임시 DB로 가져와 개수와 PDF 경로 확인
+if FileManager.default.fileExists(atPath: ZoteroImport.defaultDatabase.path), let base = ZoteroImport.attachmentBase() {
+    let real = try Library(url: libDir.appendingPathComponent("real.sqlite"))
+    let result = try ZoteroImport.run(zotero: ZoteroImport.defaultDatabase, attachmentBase: base, libraryFolder: base, into: real)
+    let items = try real.items()
+    let missing = items.flatMap(\.attachments).filter { !FileManager.default.fileExists(atPath: Library.resolve($0, in: base).path) }
+    check(result.items > 0 && result.unresolvedAttachments == 0 && missing.isEmpty
+          && items.filter { $0.citationKey != nil }.count == result.items,
+          "실제 Zotero 가져오기: 서지 \(result.items), PDF \(result.attachments), 컬렉션 \(result.collections), 태그 \(result.tags), 노트 \(result.notes), 건너뜀 \(result.skippedAttachments), 없는 PDF \(missing.count)")
+} else {
+    print("SKIP 실제 Zotero 라이브러리 없음")
+}
 
 print(failures == 0 ? "ALL PASS" : "\(failures) FAILED", "→", outDir.path)
 exit(failures == 0 ? 0 : 1)

@@ -144,7 +144,12 @@ The code is Swift and PDFKit, organized as:
 
 - `Sources/PaperMarkCore`: highlight geometry, merging, annotation hit testing, and shortcut parsing.
   This target has no UI, so `pmcheck` can test it.
+- `Sources/PaperMarkLibrary`: the paper library (SQLite database, Zotero import, JSON backup).
+  No UI either, so `pmcheck` tests it, including an import of `~/Zotero/zotero.sqlite` into a temporary database when it exists.
 - `Sources/PaperMark`: the app (document, window, toolbar, palette, settings).
+- `Sources/PaperLibrary`: PaperLibrary, a separate paper library app (in development on `feature/library`).
+  It lists the library by collection and tag, and opens PDFs in PaperMark.
+  Build it with `./scripts/build-app.sh --library [--install]`.
 - `Sources/pmcheck`: a command-line check that creates PDFs, annotates them, saves, and reloads.
 
 ## License
