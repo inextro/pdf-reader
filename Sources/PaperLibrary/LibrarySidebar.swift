@@ -18,6 +18,21 @@ private final class LibraryNode: NSObject {
     var isGroup: Bool { filter == nil }
 }
 
+/// 머리글 글자. 소스 목록은 머리글의 글자 칸(NSTextField)을 흐리게 그리므로 글자를 직접 그려 검정으로 둔다.
+private final class HeaderLabel: NSView {
+    var text = "" { didSet { needsDisplay = true } }
+    let font = NSFont.systemFont(ofSize: Style.fontSize - 3, weight: .bold)
+    override var allowsVibrancy: Bool { false }
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: NSView.noIntrinsicMetric, height: ceil(font.ascender - font.descender))
+    }
+    override func draw(_ dirtyRect: NSRect) {
+        let truncating = NSMutableParagraphStyle()
+        truncating.lineBreakMode = .byTruncatingTail
+        (text as NSString).draw(in: bounds, withAttributes: [.font: font, .foregroundColor: NSColor.labelColor, .paragraphStyle: truncating])
+    }
+}
+
 /// 라이브러리 창 사이드바: All Items, Unfiled, 컬렉션 트리, 태그. 고르면 onSelect로 표를 거른다.
 final class LibrarySidebarView: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate {
     var onSelect: ((LibraryFilter) -> Void)?
@@ -151,14 +166,18 @@ final class LibrarySidebarView: NSView, NSOutlineViewDataSource, NSOutlineViewDe
         guard let node = item as? LibraryNode else { return nil }
         let id = NSUserInterfaceItemIdentifier(node.isGroup ? "group" : "row")
         let cell = outlineView.makeView(withIdentifier: id, owner: nil) as? NSTableCellView ?? makeCell(id, icon: !node.isGroup)
-        cell.textField?.stringValue = node.isGroup ? node.title.uppercased() : node.title
+        cell.textField?.stringValue = node.title
+        (cell.subviews.first as? HeaderLabel)?.text = node.title.uppercased()
         if let symbol = node.symbol { cell.imageView?.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil) }
-        // 태그는 표·정보 패널의 알약과 같은 색으로.
-        if case .tag(let name)? = node.filter {
+        // 아이콘마다 색을 둔다. 태그는 표·정보 패널의 알약과 같은 색으로.
+        switch node.filter {
+        case .tag(let name)?:
             cell.imageView?.image = NSImage(systemSymbolName: "tag.fill", accessibilityDescription: nil)
             cell.imageView?.contentTintColor = TagColor.color(for: name)
-        } else {
-            cell.imageView?.contentTintColor = .secondaryLabelColor
+        case .all?: cell.imageView?.contentTintColor = .systemIndigo
+        case .unfiled?: cell.imageView?.contentTintColor = .systemOrange
+        case .collection?: cell.imageView?.contentTintColor = .systemBlue
+        case nil: break
         }
         return cell
     }
@@ -166,37 +185,37 @@ final class LibrarySidebarView: NSView, NSOutlineViewDataSource, NSOutlineViewDe
     private func makeCell(_ id: NSUserInterfaceItemIdentifier, icon: Bool) -> NSTableCellView {
         let cell = NSTableCellView()
         cell.identifier = id
+        guard icon else {
+            let header = HeaderLabel()
+            header.translatesAutoresizingMaskIntoConstraints = false
+            cell.addSubview(header)
+            NSLayoutConstraint.activate([
+                header.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+                header.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
+                header.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -4),
+            ])
+            return cell
+        }
         let field = NSTextField(labelWithString: "")
         field.font = Style.font
         field.lineBreakMode = .byTruncatingTail
         field.translatesAutoresizingMaskIntoConstraints = false
-        if !icon {
-            field.font = .systemFont(ofSize: Style.fontSize - 3, weight: .bold)
-            field.textColor = .secondaryLabelColor
-        }
         cell.addSubview(field)
         cell.textField = field
-        var constraints = [
+        let image = NSImageView()
+        image.symbolConfiguration = .init(pointSize: Style.fontSize - 1, weight: .regular)
+        image.contentTintColor = .secondaryLabelColor
+        image.translatesAutoresizingMaskIntoConstraints = false
+        cell.addSubview(image)
+        cell.imageView = image
+        NSLayoutConstraint.activate([
+            image.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
+            image.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+            image.widthAnchor.constraint(equalToConstant: 22),
+            field.leadingAnchor.constraint(equalTo: image.trailingAnchor, constant: 4),
             field.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
             field.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -4),
-        ]
-        if icon {
-            let image = NSImageView()
-            image.symbolConfiguration = .init(pointSize: Style.fontSize - 1, weight: .regular)
-            image.contentTintColor = .secondaryLabelColor
-            image.translatesAutoresizingMaskIntoConstraints = false
-            cell.addSubview(image)
-            cell.imageView = image
-            constraints += [
-                image.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
-                image.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-                image.widthAnchor.constraint(equalToConstant: 22),
-                field.leadingAnchor.constraint(equalTo: image.trailingAnchor, constant: 4),
-            ]
-        } else {
-            constraints.append(field.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2))
-        }
-        NSLayoutConstraint.activate(constraints)
+        ])
         return cell
     }
 

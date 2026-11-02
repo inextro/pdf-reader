@@ -16,6 +16,8 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
     private let connectorLabel = NSTextField(labelWithString: "")
     private let columnList = ChecklistView()
     private let infoList = ChecklistView()
+    private var searchBoxes: [SearchField: NSButton] = [:]
+    private let searchScope = NSButton(checkboxWithTitle: "Search only in the selected collection or tag", target: nil, action: nil)
 
     /// 미리보기에 쓰는 예시 논문.
     private static let sample: PaperMetadata = {
@@ -92,7 +94,8 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         let tabs = NSTabViewController()
         tabs.tabStyle = .toolbar
         for (view, title, symbol) in [(content, "Adding Papers", "square.and.arrow.down"),
-                                      (makeDisplayTab(), "Display", "rectangle.split.3x1")] {
+                                      (makeDisplayTab(), "Display", "rectangle.split.3x1"),
+                                      (makeSearchTab(), "Search", "magnifyingglass")] {
             let controller = NSViewController()
             controller.view = view
             controller.title = title
@@ -106,6 +109,8 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         window.toolbarStyle = .preference
         NotificationCenter.default.addObserver(self, selector: #selector(reloadLists), name: Settings.displayDidChange, object: nil)
         reloadLists()
+        NotificationCenter.default.addObserver(self, selector: #selector(reloadSearch), name: Settings.searchDidChange, object: nil)
+        reloadSearch()
 
         NotificationCenter.default.addObserver(self, selector: #selector(refresh), name: Connector.statusDidChange, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(refresh), name: LibraryStore.didChange, object: nil)
@@ -137,6 +142,68 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
             row.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
         ])
         return view
+    }
+
+    private func makeSearchTab() -> NSView {
+        let heading = NSTextField(labelWithString: "Search in")
+        heading.font = .boldSystemFont(ofSize: Style.fontSize)
+        let note = NSTextField(wrappingLabelWithString: "Fields the toolbar search looks in. Every word you type must appear in one of them. "
+                               + "You can also change these from the magnifying glass in the search field.")
+        note.font = .systemFont(ofSize: Style.fontSize - 2)
+        note.textColor = .secondaryLabelColor
+        note.preferredMaxLayoutWidth = 520
+        var views: [NSView] = [heading, note]
+        for field in SearchField.allCases {
+            let box = NSButton(checkboxWithTitle: field.title, target: self, action: #selector(searchChanged(_:)))
+            box.font = Style.font
+            searchBoxes[field] = box
+            views.append(box)
+        }
+        searchScope.font = Style.font
+        searchScope.target = self
+        searchScope.action = #selector(searchChanged(_:))
+        let scopeNote = NSTextField(wrappingLabelWithString: "When off, search always looks through all items, whatever is selected in the sidebar.")
+        scopeNote.font = note.font
+        scopeNote.textColor = .secondaryLabelColor
+        scopeNote.preferredMaxLayoutWidth = 520
+        let restore = NSButton(title: "Restore Defaults", target: self, action: #selector(restoreSearch(_:)))
+        restore.font = .systemFont(ofSize: Style.fontSize - 2)
+        views += [searchScope, scopeNote, restore]
+        let stack = NSStackView(views: views)
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 6
+        stack.setCustomSpacing(12, after: note)
+        if let last = searchBoxes[SearchField.allCases.last!] { stack.setCustomSpacing(18, after: last) }
+        stack.setCustomSpacing(14, after: scopeNote)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        let view = NSView()
+        view.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: view.topAnchor, constant: 20),
+            stack.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -20),
+            stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
+            stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
+        ])
+        return view
+    }
+
+    @objc private func reloadSearch() {
+        let fields = Settings.searchFields
+        for (field, box) in searchBoxes { box.state = fields.contains(field) ? .on : .off }
+        searchScope.state = Settings.searchWithinSelection ? .on : .off
+    }
+
+    @objc private func searchChanged(_ sender: NSButton) {
+        let fields = SearchField.allCases.filter { searchBoxes[$0]?.state == .on }
+        // 칸을 모두 끄면 검색이 아무것도 못 찾으니 마지막 하나는 남긴다.
+        if fields.isEmpty { sender.state = .on; return }
+        if sender === searchScope { Settings.searchWithinSelection = sender.state == .on } else { Settings.searchFields = fields }
+    }
+
+    @objc private func restoreSearch(_ sender: Any?) {
+        Settings.searchFields = SearchField.defaults
+        Settings.searchWithinSelection = false
     }
 
     private static func listColumn(_ title: String, _ hint: String, _ list: ChecklistView, restore: Selector, target: AnyObject) -> NSView {

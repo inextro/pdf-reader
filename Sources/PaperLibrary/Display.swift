@@ -3,14 +3,13 @@ import PaperMarkLibrary
 
 /// 표의 열. 보이는 열과 순서는 설정(Settings.columns)에 두고, 표 머리글을 끌거나 오른쪽 클릭해도, 설정 창에서도 고친다.
 enum LibraryColumn: String, CaseIterable {
-    case pdf, title, authors, year, venue, added, modified, type, citationKey, doi, arxiv, publisher, pages, tags
+    case title, authors, year, venue, added, modified, type, citationKey, doi, arxiv, publisher, pages, tags
 
     /// 처음 구성(Restore Default Columns).
-    static let defaults: [LibraryColumn] = [.pdf, .title, .authors, .year, .venue, .added]
+    static let defaults: [LibraryColumn] = [.title, .authors, .year, .venue, .added]
 
     var title: String {
         switch self {
-        case .pdf: "PDF"
         case .title: "Title"
         case .authors: "Authors"
         case .year: "Year"
@@ -29,7 +28,6 @@ enum LibraryColumn: String, CaseIterable {
 
     var width: CGFloat {
         switch self {
-        case .pdf: 44
         case .title: 360
         case .authors: 140
         case .year: 56
@@ -41,15 +39,12 @@ enum LibraryColumn: String, CaseIterable {
         }
     }
 
-    /// 열이 좁아도 잘리지 않을 만큼(PDF는 아이콘 하나).
-    var minWidth: CGFloat { self == .pdf ? 36 : 40 }
+    var minWidth: CGFloat { 40 }
 
     func text(_ item: LibraryEntry) -> String {
         switch self {
-        case .pdf: item.attachments.isEmpty ? "" : LibraryStore.shared.missingPDF.contains(item.id) ? "Missing" : "PDF"
         case .title: item.title
         case .authors: item.authorSummary
-        case .pdf: item.attachments.isEmpty ? "" : LibraryStore.shared.missingPDF.contains(item.id) ? "1" : "2"
         case .year: item.year.map(String.init) ?? ""
         case .venue: item.venue ?? ""
         case .added: String(item.addedAt.prefix(10))
@@ -66,7 +61,6 @@ enum LibraryColumn: String, CaseIterable {
 
     func sortValue(_ item: LibraryEntry) -> String {
         switch self {
-        case .pdf: item.attachments.isEmpty ? "" : LibraryStore.shared.missingPDF.contains(item.id) ? "1" : "2"
         case .year: item.year.map { String(format: "%04d", $0) } ?? ""
         case .added: item.addedAt
         case .modified: item.modifiedAt
@@ -134,6 +128,76 @@ extension Settings {
             guard newValue != infoFields else { return }
             UserDefaults.standard.set(newValue.map(\.rawValue), forKey: "infoFields")
             NotificationCenter.default.post(name: displayDidChange, object: nil)
+        }
+    }
+}
+
+/// 툴바 검색이 찾는 칸. 기본은 제목과 citation key.
+enum SearchField: String, CaseIterable {
+    case title, citationKey, authors, year, venue, publisher, doi, arxiv, tags, abstract
+
+    static let defaults: [SearchField] = [.title, .citationKey]
+
+    var title: String {
+        switch self {
+        case .title: "Title"
+        case .citationKey: "Citation Key"
+        case .authors: "Authors"
+        case .year: "Year"
+        case .venue: "Venue"
+        case .publisher: "Publisher"
+        case .doi: "DOI"
+        case .arxiv: "arXiv ID"
+        case .tags: "Tags"
+        case .abstract: "Abstract"
+        }
+    }
+
+    func text(_ item: LibraryEntry) -> String {
+        switch self {
+        case .title: item.title
+        case .citationKey: item.citationKey ?? ""
+        case .authors: item.creators.flatMap { [$0.family, $0.given ?? ""] }.joined(separator: " ")
+        case .year: item.year.map(String.init) ?? ""
+        case .venue: item.venue ?? ""
+        case .publisher: item.fields["publisher"] ?? ""
+        case .doi: item.doi ?? ""
+        case .arxiv: item.arxivID ?? ""
+        case .tags: item.tags.map(TagColor.displayName).joined(separator: " ")
+        case .abstract: item.abstract ?? ""
+        }
+    }
+
+    /// 검색어의 낱말이 모두 고른 칸들 중 어딘가에 있으면 맞는다(대소문자·악센트 무시, 낱말 일부도 맞음).
+    static func matches(_ item: LibraryEntry, _ query: String, in fields: [SearchField]) -> Bool {
+        let words = query.split(whereSeparator: \.isWhitespace)
+        guard !words.isEmpty else { return true }
+        let haystack = fields.map { $0.text(item) }.joined(separator: " ")
+        return words.allSatisfy { haystack.range(of: $0, options: [.caseInsensitive, .diacriticInsensitive]) != nil }
+    }
+}
+
+extension Settings {
+    static let searchDidChange = Notification.Name("SettingsSearchDidChange")
+
+    /// 검색이 찾는 칸.
+    static var searchFields: [SearchField] {
+        get {
+            let saved = UserDefaults.standard.stringArray(forKey: "searchFields")?.compactMap(SearchField.init) ?? SearchField.defaults
+            return saved.isEmpty ? SearchField.defaults : saved
+        }
+        set {
+            UserDefaults.standard.set(newValue.map(\.rawValue), forKey: "searchFields")
+            NotificationCenter.default.post(name: searchDidChange, object: nil)
+        }
+    }
+
+    /// 켜면 사이드바에서 고른 컬렉션·태그 안에서만 찾는다. 기본은 꺼져 있어 늘 전체에서 찾는다.
+    static var searchWithinSelection: Bool {
+        get { UserDefaults.standard.bool(forKey: "searchWithinSelection") }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "searchWithinSelection")
+            NotificationCenter.default.post(name: searchDidChange, object: nil)
         }
     }
 }

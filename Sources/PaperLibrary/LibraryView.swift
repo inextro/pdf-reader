@@ -39,7 +39,6 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSM
             c.title = column.title
             c.width = column.width
             c.minWidth = column.minWidth
-            if column == .pdf { c.maxWidth = 60; c.headerCell.alignment = .center }
             c.headerCell.font = .systemFont(ofSize: Style.fontSize - 2)
             c.sortDescriptorPrototype = NSSortDescriptor(key: column.rawValue, ascending: column != .added && column != .year)
             table.addTableColumn(c)
@@ -107,6 +106,8 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSM
                                                name: LibraryStore.didChange, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(applyColumns),
                                                name: Settings.displayDidChange, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(storeChanged),
+                                               name: Settings.searchDidChange, object: nil)
         refresh()
     }
 
@@ -125,7 +126,10 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSM
     /// 고른 행은 항목 key로 기억해 두었다가 다시 고른다.
     private func refresh() {
         let selected = Set(table.selectedRowIndexes.compactMap { rows.indices.contains($0) ? rows[$0].key : nil })
-        rows = sorted(store.items.filter { filter.includes($0) && $0.matches(query) })
+        // 검색어가 있으면 기본으로 사이드바 범위와 관계없이 전체에서 찾는다.
+        let scoped = query.isEmpty || Settings.searchWithinSelection
+        let fields = Settings.searchFields
+        rows = sorted(store.items.filter { (!scoped || filter.includes($0)) && SearchField.matches($0, query, in: fields) })
         table.reloadData()
         table.selectRowIndexes(IndexSet(rows.indices.filter { selected.contains(rows[$0].key) }), byExtendingSelection: false)
         onSelectionChange?(selectedItems)
@@ -328,15 +332,6 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSM
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         guard let id = tableColumn?.identifier, let column = Column(rawValue: id.rawValue) else { return nil }
         let item = rows[row]
-        if column == .pdf {
-            let cell = tableView.makeView(withIdentifier: id, owner: nil) as? NSTableCellView ?? makeIconCell(id)
-            let missing = store.missingPDF.contains(item.id)
-            cell.imageView?.image = item.attachments.isEmpty ? nil : NSImage(
-                systemSymbolName: missing ? "exclamationmark.triangle.fill" : "doc.fill",
-                accessibilityDescription: missing ? "PDF missing" : "PDF")
-            cell.imageView?.contentTintColor = missing ? .systemOrange : .controlAccentColor
-            return cell
-        }
         if column == .tags {
             let cell = tableView.makeView(withIdentifier: id, owner: nil) as? TagPillsView ?? {
                 let pills = TagPillsView()
@@ -358,21 +353,6 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSM
                 accessibilityDescription: missing ? "PDF missing" : "PDF")
             cell.imageView?.contentTintColor = missing ? .systemOrange : .secondaryLabelColor
         }
-        return cell
-    }
-
-    private func makeIconCell(_ id: NSUserInterfaceItemIdentifier) -> NSTableCellView {
-        let cell = NSTableCellView()
-        cell.identifier = id
-        let image = NSImageView()
-        image.symbolConfiguration = .init(pointSize: Style.fontSize - 1, weight: .regular)
-        image.translatesAutoresizingMaskIntoConstraints = false
-        cell.addSubview(image)
-        cell.imageView = image
-        NSLayoutConstraint.activate([
-            image.centerXAnchor.constraint(equalTo: cell.centerXAnchor),
-            image.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-        ])
         return cell
     }
 

@@ -40,11 +40,13 @@ final class LibraryWindowController: NSWindowController, NSToolbarDelegate, NSSe
         toolbar.displayMode = .iconOnly
         window.toolbar = toolbar
         window.toolbarStyle = .unified
-        searchItem.searchField.placeholderString = "Search Library"
         searchItem.searchField.font = Style.font
         searchItem.searchField.controlSize = .large
         searchItem.searchField.sendsSearchStringImmediately = true
         searchItem.searchField.delegate = self
+        NotificationCenter.default.addObserver(self, selector: #selector(searchSettingsChanged),
+                                               name: Settings.searchDidChange, object: nil)
+        searchSettingsChanged()
 
         addItem.image = NSImage(systemSymbolName: "wand.and.stars", accessibilityDescription: "Add by Identifier")
         addItem.label = "Add by Identifier"
@@ -89,6 +91,49 @@ final class LibraryWindowController: NSWindowController, NSToolbarDelegate, NSSe
 
     @objc func focusSearch(_ sender: Any?) {
         window?.makeFirstResponder(searchItem.searchField)
+    }
+
+    /// 돋보기를 누르면 찾을 칸과 범위를 고르는 메뉴. 안내 글자에 지금 찾는 칸을 보인다.
+    @objc private func searchSettingsChanged() {
+        let fields = Settings.searchFields
+        let field = searchItem.searchField
+        field.placeholderString = "Search " + fields.map(\.title).joined(separator: ", ")
+        let menu = NSMenu()
+        menu.font = Style.font
+        menu.addItem(withTitle: "Search In", action: nil, keyEquivalent: "")
+        for f in SearchField.allCases {
+            let item = menu.addItem(withTitle: f.title, action: #selector(toggleSearchField(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = f.rawValue
+            item.state = fields.contains(f) ? .on : .off
+            item.indentationLevel = 1
+        }
+        menu.addItem(.separator())
+        let scope = menu.addItem(withTitle: "Only in Selected Collection or Tag", action: #selector(toggleSearchScope(_:)), keyEquivalent: "")
+        scope.target = self
+        scope.state = Settings.searchWithinSelection ? .on : .off
+        let restore = menu.addItem(withTitle: "Restore Defaults", action: #selector(restoreSearch(_:)), keyEquivalent: "")
+        restore.target = self
+        field.searchMenuTemplate = menu
+    }
+
+    @objc private func toggleSearchField(_ sender: NSMenuItem) {
+        guard let f = (sender.representedObject as? String).flatMap(SearchField.init) else { return }
+        var fields = Settings.searchFields
+        if let i = fields.firstIndex(of: f) {
+            guard fields.count > 1 else { return }  // 하나는 남긴다.
+            fields.remove(at: i)
+        } else {
+            fields = SearchField.allCases.filter { fields.contains($0) || $0 == f }
+        }
+        Settings.searchFields = fields
+    }
+
+    @objc private func toggleSearchScope(_ sender: Any?) { Settings.searchWithinSelection.toggle() }
+
+    @objc private func restoreSearch(_ sender: Any?) {
+        Settings.searchFields = SearchField.defaults
+        Settings.searchWithinSelection = false
     }
 
     func controlTextDidChange(_ notification: Notification) {
