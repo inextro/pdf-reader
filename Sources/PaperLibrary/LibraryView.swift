@@ -1,6 +1,11 @@
 import AppKit
 import PaperMarkLibrary
 
+extension NSPasteboard.PasteboardType {
+    /// 표에서 끄는 논문(id 문자열).
+    static let libraryItem = NSPasteboard.PasteboardType("com.inextro.paperlibrary.item")
+}
+
 private final class LibraryTableView: NSTableView {
     var onReturn: (() -> Void)?
 
@@ -56,6 +61,9 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSM
         table.delegate = self
         table.target = self
         table.doubleAction = #selector(openClicked(_:))
+        // 사이드바 컬렉션으로 끌어 옮긴다(⌥ 누르면 참조 넣기).
+        table.setDraggingSourceOperationMask([.move, .copy], forLocal: true)
+        table.verticalMotionCanBeginDrag = false
         table.onReturn = { [weak self] in self?.openSelected() }
         table.menu = NSMenu()
         table.menu?.font = Style.font
@@ -194,20 +202,99 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSM
         if menu === table.headerView?.menu { fillColumnMenu(menu); return }
         guard rows.indices.contains(table.clickedRow) else { return }
         let item = rows[table.clickedRow]
-        let pdf = store.pdfURL(of: item)
-        if pdf != nil { add(menu, "Open PDF", #selector(openFromMenu(_:)), item) }
-        if pdf != nil, !store.missingPDF.contains(item.id) { add(menu, "Show in Finder", #selector(showInFinder(_:)), item) }
-        if store.webURL(of: item) != nil { add(menu, item.doi != nil ? "Open DOI" : "Open URL", #selector(openWeb(_:)), item) }
-        menu.addItem(.separator())
-        if item.citationKey != nil { add(menu, "Copy Citation Key", #selector(copyCitationKey(_:)), item) }
-        if item.doi != nil { add(menu, "Copy DOI", #selector(copyDOI(_:)), item) }
-        menu.addItem(.separator())
         // 우클릭한 줄이 고른 줄 가운데 하나면 고른 줄 전부, 아니면 그 줄만.
         let targets = table.selectedRowIndexes.contains(table.clickedRow) ? selectedItems : [item]
-        let regenerate = menu.addItem(withTitle: targets.count > 1 ? "Regenerate Citation Keys (\(targets.count))" : "Regenerate Citation Key",
-                                      action: #selector(regenerateCitationKeys(_:)), keyEquivalent: "")
-        regenerate.target = self
-        regenerate.representedObject = targets.map(\.id)
+        let ids = targets.map(\.id)
+        let count = targets.count > 1 ? " (\(targets.count))" : ""
+        let pdf = store.pdfURL(of: item)
+        var lastGroup: Int?
+        for action in Settings.itemMenu {
+            let menuItem: NSMenuItem?
+            switch action {
+            case .openPDF: menuItem = pdf == nil ? nil : add(menu, "Open PDF", #selector(openFromMenu(_:)), item)
+            case .showInFinder:
+                menuItem = pdf == nil || store.missingPDF.contains(item.id) ? nil : add(menu, "Show in Finder", #selector(showInFinder(_:)), item)
+            case .openWeb:
+                menuItem = store.webURL(of: item) == nil ? nil : add(menu, item.doi != nil ? "Open DOI" : "Open URL", #selector(openWeb(_:)), item)
+            case .copyCitationKey: menuItem = item.citationKey == nil ? nil : add(menu, "Copy Citation Key", #selector(copyCitationKey(_:)), item)
+            case .copyDOI: menuItem = item.doi == nil ? nil : add(menu, "Copy DOI", #selector(copyDOI(_:)), item)
+            case .moveTo: menuItem = collectionSubmenu(menu, "Move to" + count, #selector(moveFromMenu(_:)), ids, unfiled: true)
+            case .addReference:
+                menuItem = Settings.allowReferences ? collectionSubmenu(menu, "Add Reference to" + count, #selector(referenceFromMenu(_:)), ids, unfiled: false) : nil
+            case .removeFromCollection:
+                if case .collection(let c) = filter, targets.contains(where: { store.isReference($0, in: c) || store.pdfURL(of: $0) == nil }) {
+                    let name = store.collections.first { $0.id == c }?.name ?? "Collection"
+                    menuItem = menu.addItem(withTitle: "Remove from “\(name)”" + count, action: #selector(removeFromCollection(_:)), keyEquivalent: "")
+                    menuItem?.target = self
+                    menuItem?.representedObject = ids
+                } else { menuItem = nil }
+            case .regenerateCitationKey:
+                menuItem = menu.addItem(withTitle: targets.count > 1 ? "Regenerate Citation Keys" + count : "Regenerate Citation Key",
+                                        action: #selector(regenerateCitationKeys(_:)), keyEquivalent: "")
+                menuItem?.target = self
+                menuItem?.representedObject = ids
+            }
+            guard let menuItem else { continue }
+            if let lastGroup, lastGroup != action.group {
+                menu.insertItem(.separator(), at: menu.index(of: menuItem))
+            }
+            lastGroup = action.group
+        }
+    }
+
+    /// 컬렉션 트리를 들여쓴 하위 메뉴. 고르면 action이 (논문 id들, 컬렉션 id 또는 nil=Unfiled)를 받는다.
+    private func collectionSubmenu(_ menu: NSMenu, _ title: String, _ action: Selector, _ ids: [Int64], unfiled: Bool) -> NSMenuItem? {
+        guard !store.collections.isEmpty else { return nil }
+        let parent = menu.addItem(withTitle: title, action: nil, keyEquivalent: "")
+        let submenu = NSMenu()
+        submenu.font = Style.font
+        if unfiled {
+            let top = submenu.addItem(withTitle: "Unfiled", action: action, keyEquivalent: "")
+            top.target = self
+            top.representedObject = MenuTarget(ids: ids, collection: nil)
+            top.image = NSImage(systemSymbolName: "tray", accessibilityDescription: nil)
+            submenu.addItem(.separator())
+        }
+        let byParent = Dictionary(grouping: store.collections, by: \.parentID)
+        func addChildren(of parent: Int64?, depth: Int) {
+            for c in byParent[parent] ?? [] {
+                let entry = submenu.addItem(withTitle: c.name, action: action, keyEquivalent: "")
+                entry.target = self
+                entry.indentationLevel = depth
+                entry.representedObject = MenuTarget(ids: ids, collection: c.id)
+                entry.image = NSImage(systemSymbolName: "folder", accessibilityDescription: nil)
+                addChildren(of: c.id, depth: depth + 1)
+            }
+        }
+        addChildren(of: nil, depth: 0)
+        parent.submenu = submenu
+        return parent
+    }
+
+    private final class MenuTarget: NSObject {
+        let ids: [Int64]
+        let collection: Int64?
+        init(ids: [Int64], collection: Int64?) { (self.ids, self.collection) = (ids, collection) }
+    }
+
+    private var viewingCollection: Int64? {
+        if case .collection(let c) = filter { return c }
+        return nil
+    }
+
+    @objc private func moveFromMenu(_ sender: NSMenuItem) {
+        guard let target = sender.representedObject as? MenuTarget else { return }
+        store.move(target.ids, viewing: viewingCollection, to: target.collection, in: window)
+    }
+
+    @objc private func referenceFromMenu(_ sender: NSMenuItem) {
+        guard let target = sender.representedObject as? MenuTarget, let collection = target.collection else { return }
+        store.addReferences(target.ids, to: collection, in: window)
+    }
+
+    @objc private func removeFromCollection(_ sender: NSMenuItem) {
+        guard let ids = sender.representedObject as? [Int64], let c = viewingCollection else { return }
+        store.removeReferences(ids, from: c, in: window)
     }
 
     // MARK: 열 고르기
@@ -280,10 +367,12 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSM
         saveColumns()
     }
 
-    private func add(_ menu: NSMenu, _ title: String, _ action: Selector, _ item: LibraryEntry) {
+    @discardableResult
+    private func add(_ menu: NSMenu, _ title: String, _ action: Selector, _ item: LibraryEntry) -> NSMenuItem {
         let menuItem = menu.addItem(withTitle: title, action: action, keyEquivalent: "")
         menuItem.target = self
         menuItem.representedObject = item.id
+        return menuItem
     }
 
     private func item(of sender: NSMenuItem) -> LibraryEntry? {
@@ -318,6 +407,13 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSM
 
     func numberOfRows(in tableView: NSTableView) -> Int { rows.count }
 
+    func tableView(_ tableView: NSTableView, pasteboardWriterForRow row: Int) -> NSPasteboardWriting? {
+        guard rows.indices.contains(row) else { return nil }
+        let item = NSPasteboardItem()
+        item.setString(String(rows[row].id), forType: .libraryItem)
+        return item
+    }
+
     func tableViewSelectionDidChange(_ notification: Notification) {
         onSelectionChange?(selectedItems)
     }
@@ -348,9 +444,11 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSM
         cell.textField?.textColor = item.attachments.isEmpty ? .secondaryLabelColor : .labelColor
         if column == .title {
             let missing = store.missingPDF.contains(item.id)
+            // 보고 있는 컬렉션에서 참조인 논문은 화살표 아이콘(원본 PDF는 다른 폴더에 있다).
+            let reference = viewingCollection.map { store.isReference(item, in: $0) } ?? false
             cell.imageView?.image = item.attachments.isEmpty ? nil : NSImage(
-                systemSymbolName: missing ? "exclamationmark.triangle" : "doc.richtext",
-                accessibilityDescription: missing ? "PDF missing" : "PDF")
+                systemSymbolName: missing ? "exclamationmark.triangle" : reference ? "arrow.up.right.square" : "doc.richtext",
+                accessibilityDescription: missing ? "PDF missing" : reference ? "Reference" : "PDF")
             cell.imageView?.contentTintColor = missing ? .systemOrange : .secondaryLabelColor
         }
         return cell

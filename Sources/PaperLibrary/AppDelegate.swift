@@ -9,6 +9,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         showLibrary(nil)
         // 브라우저 확장이 논문을 보내는 로컬 서버
         Connector.shared.start()
+        // workspace 폴더와 컬렉션을 맞추고 폴더를 감시한다.
+        LibraryStore.shared.startWorkspaceSync()
     }
 
     /// `paperlibrary://`: 확장 팝업의 "Open PaperLibrary" 버튼이 앱을 켤 때 쓴다.

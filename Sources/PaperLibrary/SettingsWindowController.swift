@@ -15,6 +15,9 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
     private let sentenceCase = NSButton(checkboxWithTitle: "Write titles in sentence case (only the first word capitalized)", target: nil, action: nil)
     private let connectorLabel = NSTextField(labelWithString: "")
     private let columnList = ChecklistView()
+    private let menuList = ChecklistView()
+    private let allowReferences = NSButton(checkboxWithTitle: "Allow references: a paper can also appear in other collections (⌥-drag, Add Reference to)",
+                                           target: nil, action: nil)
     private let infoList = ChecklistView()
     private var searchBoxes: [SearchField: NSButton] = [:]
     private let searchScope = NSButton(checkboxWithTitle: "Search only in the selected collection or tag", target: nil, action: nil)
@@ -48,6 +51,8 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
             label.lineBreakMode = .byTruncatingMiddle
             label.widthAnchor.constraint(lessThanOrEqualToConstant: 560).isActive = true
         }
+        allowReferences.target = self
+        allowReferences.action = #selector(referencesChanged(_:))
         for box in [preferOnline, publishedVersion, sentenceCase] {
             box.target = self
             box.action = #selector(lookupChanged(_:))
@@ -61,7 +66,8 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         let changeLibrary = NSButton(title: "Change…", target: self, action: #selector(chooseLibraryFolder(_:)))
         let changePDF = NSButton(title: "Change…", target: self, action: #selector(choosePDFFolder(_:)))
         let grid = NSGridView(views: [
-            [Self.header("Library folder:"), Self.row(libraryFolderLabel, changeLibrary)],
+            [Self.header("Workspace folder:"), Self.row(libraryFolderLabel, changeLibrary)],
+            [NSGridCell.emptyContentView, allowReferences],
             [Self.header("Save new PDFs in:"), Self.row(pdfFolderLabel, changePDF)],
             [Self.header("PDF file name:"), fileNameField],
             [NSGridCell.emptyContentView, fileNamePreview],
@@ -77,7 +83,7 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         grid.columnSpacing = 10
         grid.column(at: 0).xPlacement = .trailing
         grid.rowAlignment = .firstBaseline
-        for row in [2, 6, 7, 9, 10] { grid.row(at: row).topPadding = 10 }
+        for row in [2, 3, 7, 8, 10, 11] { grid.row(at: row).topPadding = 10 }
         grid.translatesAutoresizingMaskIntoConstraints = false
 
         let content = NSView()
@@ -95,7 +101,8 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         tabs.tabStyle = .toolbar
         for (view, title, symbol) in [(content, "Adding Papers", "square.and.arrow.down"),
                                       (makeDisplayTab(), "Display", "rectangle.split.3x1"),
-                                      (makeSearchTab(), "Search", "magnifyingglass")] {
+                                      (makeSearchTab(), "Search", "magnifyingglass"),
+                                      (makeMenuTab(), "Menu", "contextualmenu.and.cursorarrow")] {
             let controller = NSViewController()
             controller.view = view
             controller.title = title
@@ -143,6 +150,27 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         ])
         return view
     }
+
+    private func makeMenuTab() -> NSView {
+        menuList.onChange = { Settings.itemMenu = $0.compactMap(ItemMenuAction.init) }
+        let column = Self.listColumn("Right-click menu", "Items shown when you right-click a paper in the list. Items that do not apply are hidden.",
+                                     menuList, restore: #selector(restoreMenu(_:)), target: self, rows: ItemMenuAction.allCases.count)
+        column.translatesAutoresizingMaskIntoConstraints = false
+        let view = NSView()
+        view.addSubview(column)
+        NSLayoutConstraint.activate([
+            column.topAnchor.constraint(equalTo: view.topAnchor, constant: 20),
+            column.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -20),
+            column.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
+            column.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -24),
+            view.widthAnchor.constraint(greaterThanOrEqualToConstant: 560),
+        ])
+        return view
+    }
+
+    @objc private func restoreMenu(_ sender: Any?) { Settings.itemMenu = ItemMenuAction.defaults }
+
+    @objc private func referencesChanged(_ sender: NSButton) { Settings.allowReferences = sender.state == .on }
 
     private func makeSearchTab() -> NSView {
         let heading = NSTextField(labelWithString: "Search in")
@@ -206,7 +234,8 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         Settings.searchWithinSelection = false
     }
 
-    private static func listColumn(_ title: String, _ hint: String, _ list: ChecklistView, restore: Selector, target: AnyObject) -> NSView {
+    private static func listColumn(_ title: String, _ hint: String, _ list: ChecklistView, restore: Selector, target: AnyObject,
+                                   rows: Int = InfoField.allCases.count) -> NSView {
         let heading = NSTextField(labelWithString: title)
         heading.font = .boldSystemFont(ofSize: Style.fontSize)
         let note = NSTextField(wrappingLabelWithString: hint + " Check to show, drag to reorder.")
@@ -216,7 +245,7 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         let button = NSButton(title: "Restore Defaults", target: target, action: restore)
         button.font = .systemFont(ofSize: Style.fontSize - 2)
         list.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([list.widthAnchor.constraint(equalToConstant: 300), list.heightAnchor.constraint(equalToConstant: CGFloat(InfoField.allCases.count) * (Style.rowHeight + 2) + 4)])
+        NSLayoutConstraint.activate([list.widthAnchor.constraint(equalToConstant: 300), list.heightAnchor.constraint(equalToConstant: CGFloat(rows) * (Style.rowHeight + 2) + 4)])
         let stack = NSStackView(views: [heading, note, list, button])
         stack.orientation = .vertical
         stack.alignment = .leading
@@ -229,6 +258,8 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         columnList.set(all: LibraryColumn.allCases.map { ($0.rawValue, $0.title) }, shown: Settings.columns.map(\.rawValue),
                        locked: [LibraryColumn.title.rawValue])
         infoList.set(all: InfoField.allCases.map { ($0.rawValue, $0.title) }, shown: Settings.infoFields.map(\.rawValue))
+        menuList.set(all: ItemMenuAction.allCases.map { ($0.rawValue, $0.title) }, shown: Settings.itemMenu.map(\.rawValue))
+        allowReferences.state = Settings.allowReferences ? .on : .off
     }
 
     @objc private func restoreColumns(_ sender: Any?) { Settings.columns = LibraryColumn.defaults }
@@ -280,7 +311,7 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
     }
 
     @objc private func chooseLibraryFolder(_ sender: Any?) {
-        choose("Choose the folder that holds your library PDFs. Paths in the library are stored relative to it.",
+        choose("Choose your workspace folder. Its subfolders are your collections, and paths in the library are stored relative to it.",
                from: LibraryStore.shared.folder ?? LibraryStore.googleDriveFolder()) { LibraryStore.shared.folder = $0 }
     }
 

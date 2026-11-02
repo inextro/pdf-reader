@@ -9,6 +9,12 @@ final class LibraryWindowController: NSWindowController, NSToolbarDelegate, NSSe
     private let searchItem = NSSearchToolbarItem(itemIdentifier: .init("search"))
     private let addItem = NSToolbarItem(itemIdentifier: .init("addByIdentifier"))
     private let addPopover = NSPopover()
+    /// 정보 패널 버튼. 기본 아이콘(sidebar.right)은 왼쪽 사이드바 버튼을 뒤집은 모양이라 구별되는 info 아이콘을 쓴다.
+    private let infoToggleItem = NSToolbarItem(itemIdentifier: .init("toggleInfo"))
+    private var newFilesSheet: NewFilesSheet?
+    private var infoItem: NSSplitViewItem!
+    /// 고른 논문이 없어 정보 패널을 접었다. 다시 고르면 편다(사용자가 직접 접은 것은 그대로 둔다).
+    private var infoAutoHidden = false
 
     init() {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1100, height: 700),
@@ -26,7 +32,7 @@ final class LibraryWindowController: NSWindowController, NSToolbarDelegate, NSSe
         split.addSplitViewItem(sidebarItem)
         split.addSplitViewItem(NSSplitViewItem(viewController: Self.controller(for: libraryView)))
         // 오른쪽 정보 패널. 툴바 버튼이나 View > Show Inspector(⌥⌘I)로 접고 편다.
-        let infoItem = NSSplitViewItem(inspectorWithViewController: Self.controller(for: infoView))
+        infoItem = NSSplitViewItem(inspectorWithViewController: Self.controller(for: infoView))
         infoItem.minimumThickness = 280
         infoItem.maximumThickness = 560
         infoItem.preferredThicknessFraction = 0.28
@@ -48,6 +54,12 @@ final class LibraryWindowController: NSWindowController, NSToolbarDelegate, NSSe
                                                name: Settings.searchDidChange, object: nil)
         searchSettingsChanged()
 
+        infoToggleItem.image = NSImage(systemSymbolName: "info.circle", accessibilityDescription: "Show Info")
+        infoToggleItem.label = "Info"
+        infoToggleItem.toolTip = "Show or hide paper info"
+        infoToggleItem.action = #selector(NSSplitViewController.toggleInspector(_:))
+        infoToggleItem.isNavigational = false
+
         addItem.image = NSImage(systemSymbolName: "wand.and.stars", accessibilityDescription: "Add by Identifier")
         addItem.label = "Add by Identifier"
         addItem.toolTip = "Add papers by DOI or arXiv ID (metadata only)"
@@ -64,12 +76,17 @@ final class LibraryWindowController: NSWindowController, NSToolbarDelegate, NSSe
         addPopover.behavior = .transient
 
         sidebar.onSelect = { [weak self] in self?.libraryView.filter = $0 }
-        libraryView.onSelectionChange = { [weak self] in self?.infoView.show($0) }
+        sidebar.onNewFiles = { [weak self] in self?.showNewFiles() }
+        libraryView.onSelectionChange = { [weak self] in
+            self?.infoView.show($0)
+            self?.updateInfoPanel(hasSelection: !$0.isEmpty)
+        }
         libraryView.onCountChange = { [weak window] count in
             window?.subtitle = "\(count) item\(count == 1 ? "" : "s")"
         }
         libraryView.filter = sidebar.selection
         window.subtitle = "\(LibraryStore.shared.items.count) items"
+        updateInfoPanel(hasSelection: !libraryView.selectedItems.isEmpty)
 
         window.center()
         window.setFrameAutosaveName("LibraryWindow")
@@ -81,6 +98,32 @@ final class LibraryWindowController: NSWindowController, NSToolbarDelegate, NSSe
         let controller = NSViewController()
         controller.view = view
         return controller
+    }
+
+    /// 고른 논문이 없으면 정보 패널을 접고, 고르면 다시 편다.
+    private func updateInfoPanel(hasSelection: Bool) {
+        if !hasSelection, !infoItem.isCollapsed {
+            infoAutoHidden = true
+            infoItem.animator().isCollapsed = true
+        } else if hasSelection, infoAutoHidden {
+            infoAutoHidden = false
+            infoItem.animator().isCollapsed = false
+        }
+    }
+
+    private func showNewFiles() {
+        guard let window, newFilesSheet == nil else { return }
+        guard !LibraryStore.shared.newFiles.isEmpty else {
+            let alert = NSAlert()
+            alert.messageText = "No unlinked PDFs"
+            alert.informativeText = "Every PDF in your workspace folder is already in the library. PDFs you add to the folder in Finder appear here."
+            alert.beginSheetModal(for: window)
+            return
+        }
+        let sheet = NewFilesSheet(files: LibraryStore.shared.newFiles)
+        sheet.onAdded = { [weak self] ids in self?.libraryView.select(itemIDs: Set(ids)) }
+        newFilesSheet = sheet
+        window.beginSheet(sheet.window!) { [weak self] _ in self?.newFilesSheet = nil }
     }
 
     @objc func addByIdentifier(_ sender: Any?) {
@@ -144,7 +187,7 @@ final class LibraryWindowController: NSWindowController, NSToolbarDelegate, NSSe
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         [.toggleSidebar, .sidebarTrackingSeparator, .flexibleSpace, addItem.itemIdentifier, searchItem.itemIdentifier,
-         .inspectorTrackingSeparator, .flexibleSpace, .toggleInspector]
+         .inspectorTrackingSeparator, .flexibleSpace, infoToggleItem.itemIdentifier]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -153,6 +196,6 @@ final class LibraryWindowController: NSWindowController, NSToolbarDelegate, NSSe
 
     func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
                  willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
-        [searchItem, addItem].first { $0.itemIdentifier == itemIdentifier }
+        [searchItem, addItem, infoToggleItem].first { $0.itemIdentifier == itemIdentifier }
     }
 }

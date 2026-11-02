@@ -96,7 +96,9 @@ public final class SQLiteDatabase {
     public var lastInsertID: Int64 { sqlite3_last_insert_rowid(handle) }
 
     /// body가 던지면 되돌린다.
+    /// 이미 트랜잭션 안이면 바깥 트랜잭션에 묶는다(바깥이 실패하면 함께 되돌린다).
     public func transaction<T>(_ body: () throws -> T) throws -> T {
+        guard sqlite3_get_autocommit(handle) != 0 else { return try body() }
         try execute("BEGIN IMMEDIATE")
         do {
             let result = try body()

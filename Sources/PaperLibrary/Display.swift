@@ -201,3 +201,54 @@ extension Settings {
         }
     }
 }
+
+/// 표에서 논문을 우클릭했을 때 보이는 항목. 보이는 항목과 순서는 설정(Settings.itemMenu)에 둔다.
+/// 순서상 묶음(group)이 바뀌는 곳에 구분선을 넣는다.
+enum ItemMenuAction: String, CaseIterable {
+    case openPDF, showInFinder, openWeb, copyCitationKey, copyDOI, moveTo, addReference, removeFromCollection, regenerateCitationKey
+
+    static let defaults = allCases
+
+    var title: String {
+        switch self {
+        case .openPDF: "Open PDF"
+        case .showInFinder: "Show in Finder"
+        case .openWeb: "Open DOI / URL"
+        case .copyCitationKey: "Copy Citation Key"
+        case .copyDOI: "Copy DOI"
+        case .moveTo: "Move to ▸"
+        case .addReference: "Add Reference to ▸"
+        case .removeFromCollection: "Remove from Collection"
+        case .regenerateCitationKey: "Regenerate Citation Key"
+        }
+    }
+
+    var group: Int {
+        switch self {
+        case .openPDF, .showInFinder, .openWeb: 0
+        case .copyCitationKey, .copyDOI: 1
+        case .moveTo, .addReference, .removeFromCollection: 2
+        case .regenerateCitationKey: 3
+        }
+    }
+}
+
+extension Settings {
+    static var itemMenu: [ItemMenuAction] {
+        get { UserDefaults.standard.stringArray(forKey: "itemMenu")?.compactMap(ItemMenuAction.init) ?? ItemMenuAction.defaults }
+        set {
+            guard newValue != itemMenu else { return }
+            UserDefaults.standard.set(newValue.map(\.rawValue), forKey: "itemMenu")
+            NotificationCenter.default.post(name: displayDidChange, object: nil)
+        }
+    }
+
+    /// 켜면 논문을 다른 컬렉션에 참조로도 넣을 수 있다(⌥ 끌기, Add Reference to). 끄면 논문은 한 컬렉션에만 속한다.
+    static var allowReferences: Bool {
+        get { UserDefaults.standard.object(forKey: "allowReferences") as? Bool ?? true }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "allowReferences")
+            NotificationCenter.default.post(name: displayDidChange, object: nil)
+        }
+    }
+}

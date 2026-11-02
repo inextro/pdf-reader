@@ -876,6 +876,109 @@ try edited.update(newID, with: aclPage, citationKey: "wang2024RecMind")
 check(try edited.item(newID).map { $0.title == aclPage.title && $0.citationKey == "wang2024RecMind" && $0.creators.count == 2
                                    && $0.attachments.count == 1 && $0.collectionIDs == [2] } == true, "서지 정보 바꾸기")
 
+// MARK: Workspace: 컬렉션 = 폴더, 원본과 참조, 옮기기, 바깥에서 고친 것 맞추기
+do {
+    let fm = FileManager.default
+    let wsRoot = libDir.appendingPathComponent("workspace", isDirectory: true)
+    try? fm.removeItem(at: wsRoot)
+    try fm.createDirectory(at: wsRoot.appendingPathComponent("archive"), withIntermediateDirectories: true)
+    for name in ["A.pdf", "B.pdf", "Stray.pdf"] { try Data("%PDF-1.4 \(name)".utf8).write(to: wsRoot.appendingPathComponent("archive/" + name)) }
+    let wsLib = try Library(url: libDir.appendingPathComponent("workspace.sqlite"))
+    let archive = try wsLib.insertCollection(name: "archive", parent: nil)
+    let mainC = try wsLib.insertCollection(name: "main", parent: nil)
+    let proj = try wsLib.insertCollection(name: "Proj", parent: mainC)
+    var meta = PaperMetadata()
+    meta.title = "Paper A"
+    let a = try wsLib.add(meta, citationKey: "a", collectionID: proj)
+    try wsLib.addAttachment("archive/A.pdf", to: a)
+    meta.title = "Paper B"
+    let b = try wsLib.add(meta, citationKey: "b", collectionID: archive)
+    try wsLib.addAttachment("archive/B.pdf", to: b)
+    meta.title = "Paper C"
+    let c = try wsLib.add(meta, citationKey: "c", collectionID: mainC)
+    var ws = Workspace(library: wsLib, root: wsRoot)
+    ws.trash = { try fm.removeItem(at: $0) }
+    func entry(_ id: Int64) throws -> LibraryEntry { try wsLib.item(id)! }
+    func paths() throws -> [Int64: String] { Workspace.paths(of: try wsLib.collections()) }
+
+    let first = try ws.reconcile(createMissingFolders: true)
+    check(first.createdFolders == 2 && first.newFiles == ["archive/Stray.pdf"] && first.homesAdded == 1
+          && fm.fileExists(atPath: wsRoot.appendingPathComponent("main/Proj").path), "처음 맞추기: 없는 폴더 만들기, 새 PDF, 원본 자리 소속 (\(first))")
+    check(try Workspace.home(of: entry(a), paths: paths()) == .collection(archive)
+          && Workspace.isReference(try entry(a), in: proj, paths: try paths())
+          && !Workspace.isReference(try entry(a), in: archive, paths: try paths())
+          && Workspace.home(of: try entry(c), paths: try paths()) == .none, "원본 자리와 참조")
+    check(try ws.reconcile() == Workspace.Report(newFiles: ["archive/Stray.pdf"]), "다시 맞춰도 바뀌는 것이 없다")
+
+    // 원본 옮기기: PDF도 옮기고 원래 컬렉션에서 뺀다.
+    let moveA = try ws.planMove([a], viewing: archive, to: mainC)
+    check(moveA.count == 1 && moveA[0].file?.to == "main/A.pdf" && moveA[0].removeFrom == archive && !moveA[0].conflict, "원본 옮기기 계획")
+    try ws.perform(moveA) { _ in .skip }
+    check(try entry(a).attachments == ["main/A.pdf"] && entry(a).collectionIDs == [mainC, proj]
+          && fm.fileExists(atPath: wsRoot.appendingPathComponent("main/A.pdf").path)
+          && !fm.fileExists(atPath: wsRoot.appendingPathComponent("archive/A.pdf").path), "원본 옮기기: 파일과 소속")
+    // 참조 옮기기: 소속만. 원본 자리로 옮기면 참조만 빠진다.
+    let refMove = try ws.planMove([a], viewing: proj, to: mainC)
+    check(refMove == [Workspace.Move(itemID: a, removeFrom: proj, addTo: nil, file: nil, conflict: false)], "참조를 원본 자리로: 참조만 빠진다")
+    try ws.addReferences([b], to: proj)
+    check(try ws.removeReferences([a, b], from: proj) == 2 && entry(b).collectionIDs == [archive] && entry(a).collectionIDs == [mainC]
+      && ws.removeReferences([a], from: mainC) == 0, "참조 넣고 빼기, 원본 자리는 빼지 않는다")
+try ws.addReferences([a], to: proj)
+    // PDF 없는 논문은 소속만.
+    let moveC = try ws.planMove([c], viewing: nil, to: proj)
+    check(moveC == [Workspace.Move(itemID: c, removeFrom: mainC, addTo: proj, file: nil, conflict: false)], "PDF 없는 논문 옮기기")
+    // 같은 이름이 있으면 고른 대로.
+    try Data("%PDF-1.4 other".utf8).write(to: wsRoot.appendingPathComponent("main/B.pdf"))
+    let moveB = try ws.planMove([b], viewing: nil, to: mainC)
+    check(moveB.first?.conflict == true, "같은 이름 파일 알아채기")
+    try ws.perform(moveB) { _ in .keepBoth }
+    check(try entry(b).attachments == ["main/B (2).pdf"] && entry(b).collectionIDs == [mainC], "둘 다 유지: 번호 붙이기")
+    try Data("%PDF-1.4 other".utf8).write(to: wsRoot.appendingPathComponent("archive/B (2).pdf"))
+    try ws.perform(try ws.planMove([b], viewing: mainC, to: archive)) { _ in .replace }
+    check(try entry(b).attachments == ["archive/B (2).pdf"]
+          && String(decoding: try Data(contentsOf: wsRoot.appendingPathComponent("archive/B (2).pdf")), as: UTF8.self) == "%PDF-1.4 B.pdf",
+          "교체: 있던 파일을 버리고 옮기기")
+    try ws.perform(try ws.planMove([b], viewing: archive, to: mainC)) { _ in .skip }
+
+    // 앱에서 이름 바꾸기, 만들기
+    try ws.renameCollection(mainC, to: "Main2")
+    check(try entry(a).attachments == ["Main2/A.pdf"] && fm.fileExists(atPath: wsRoot.appendingPathComponent("Main2/Proj").path)
+          && paths()[proj] == "Main2/Proj", "컬렉션 이름 바꾸기: 폴더와 PDF 경로")
+    try ws.createCollection("Agent", parent: nil)
+    var taken = false
+    do { try ws.createCollection("agent", parent: nil) } catch Workspace.Failure.nameTaken { taken = true }
+    check(taken && fm.fileExists(atPath: wsRoot.appendingPathComponent("Agent").path), "컬렉션 만들기, 같은 이름 막기")
+
+    // Finder에서 고친 것 맞추기: 폴더 이름 바꾸기, 새 폴더, 폴더 지우기, PDF 옮기기
+    try fm.moveItem(at: wsRoot.appendingPathComponent("Main2"), to: wsRoot.appendingPathComponent("Projects"))
+    let renamed = try ws.reconcile()
+    try fm.removeItem(at: wsRoot.appendingPathComponent("Agent"))
+    let removed = try ws.reconcile()
+    try fm.createDirectory(at: wsRoot.appendingPathComponent("New/Sub"), withIntermediateDirectories: true)
+    try fm.moveItem(at: wsRoot.appendingPathComponent("archive/Stray.pdf"), to: wsRoot.appendingPathComponent("New/Stray.pdf"))
+    let added = try ws.reconcile()
+    check(renamed.renamedCollections == 1 && renamed.relinked == 2 && removed.deletedCollections == 1 && removed.renamedCollections == 0
+          && added.createdCollections == 2 && added.newFiles == ["New/Stray.pdf", "Projects/B.pdf"], "바깥 변경 맞추기 (\(renamed), \(removed), \(added))")
+    check(try paths()[mainC] == "Projects" && paths()[proj] == "Projects/Proj" && !paths().values.contains("Agent")
+          && entry(a).attachments == ["Projects/A.pdf"] && entry(c).collectionIDs == [mainC] && entry(a).collectionIDs == [mainC, proj],
+          "이름 바뀐 폴더를 따라가고 소속은 그대로")
+    // PDF를 Finder로 다른 컬렉션 폴더에 옮기면 원본 자리도 따라간다.
+    try fm.moveItem(at: wsRoot.appendingPathComponent("Projects/A.pdf"), to: wsRoot.appendingPathComponent("archive/A.pdf"))
+    _ = try ws.reconcile()
+    check(try entry(a).attachments == ["archive/A.pdf"] && entry(a).collectionIDs == [archive, proj], "Finder로 옮긴 PDF의 원본 자리")
+
+    // 지우기: 폴더째, 원본 자리가 그 안인 논문도.
+    let summary = try ws.deletionSummary(mainC)
+    try ws.deleteCollection(mainC)
+    check(summary.pdfs == 2 && summary.items == 1 && (try? wsLib.item(b)) == nil && (try? entry(a)) != nil && (try? entry(c))?.collectionIDs == []
+          && !fm.fileExists(atPath: wsRoot.appendingPathComponent("Projects").path), "컬렉션 지우기 (\(summary))")
+
+    // workspace가 없으면 아무것도 바꾸지 않는다.
+    var gone = false
+    do { _ = try Workspace(library: wsLib, root: wsRoot.appendingPathComponent("nope")).reconcile() } catch Workspace.Failure.missingRoot { gone = true }
+    check(try gone && wsLib.collections().count == 3, "workspace가 없으면 그대로")
+}
+
 // 실제 CrossRef·arXiv(네트워크가 될 때만)
 final class Box<T> { var value: T?; init() {} }
 let online = Box<(PaperMetadata, [String])>()

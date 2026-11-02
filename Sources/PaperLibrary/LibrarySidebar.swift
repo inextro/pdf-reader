@@ -7,6 +7,8 @@ private final class LibraryNode: NSObject {
     let symbol: String?
     let filter: LibraryFilter?
     var children: [LibraryNode]
+    /// Unlinked PDFs: 고르지 않고 누르면 추가할 파일 목록을 연다.
+    var isNewFiles = false
 
     init(_ title: String, symbol: String? = nil, filter: LibraryFilter? = nil, children: [LibraryNode] = []) {
         self.title = title
@@ -15,7 +17,8 @@ private final class LibraryNode: NSObject {
         self.children = children
     }
 
-    var isGroup: Bool { filter == nil }
+    var isGroup: Bool { filter == nil && !isNewFiles }
+    var collectionID: Int64? { if case .collection(let id)? = filter { id } else { nil } }
 }
 
 /// 머리글 글자. 소스 목록은 머리글의 글자 칸(NSTextField)을 흐리게 그리므로 글자를 직접 그려 검정으로 둔다.
@@ -33,9 +36,12 @@ private final class HeaderLabel: NSView {
     }
 }
 
-/// 라이브러리 창 사이드바: All Items, Unfiled, 컬렉션 트리, 태그. 고르면 onSelect로 표를 거른다.
-final class LibrarySidebarView: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate {
+/// 라이브러리 창 사이드바: All Items, Unfiled, 컬렉션 트리(= workspace 폴더), 태그. 고르면 onSelect로 표를 거른다.
+/// 우클릭으로 컬렉션을 만들고 이름을 바꾸고 지우며, 표에서 끌어 온 논문을 컬렉션에 놓으면 옮긴다(⌥: 참조 넣기).
+final class LibrarySidebarView: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate, NSMenuDelegate {
     var onSelect: ((LibraryFilter) -> Void)?
+    /// Unlinked PDFs를 눌렀을 때.
+    var onNewFiles: (() -> Void)?
     private(set) var selection: LibraryFilter = .all
 
     private let outline = NSOutlineView()
@@ -55,6 +61,13 @@ final class LibrarySidebarView: NSView, NSOutlineViewDataSource, NSOutlineViewDe
         outline.backgroundColor = .clear
         outline.dataSource = self
         outline.delegate = self
+        outline.target = self
+        outline.action = #selector(clicked(_:))
+        outline.menu = NSMenu()
+        outline.menu?.font = Style.font
+        outline.menu?.delegate = self
+        outline.registerForDraggedTypes([.libraryItem])
+        outline.setDraggingSourceOperationMask([], forLocal: false)
         let scroll = NSScrollView()
         scroll.documentView = outline
         scroll.hasVerticalScroller = true
@@ -69,6 +82,8 @@ final class LibrarySidebarView: NSView, NSOutlineViewDataSource, NSOutlineViewDe
         ])
         NotificationCenter.default.addObserver(self, selector: #selector(reload),
                                                name: LibraryStore.didChange, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(reload),
+                                               name: LibraryStore.newFilesDidChange, object: nil)
         reload()
     }
 
@@ -82,14 +97,16 @@ final class LibrarySidebarView: NSView, NSOutlineViewDataSource, NSOutlineViewDe
                 LibraryNode($0.name, symbol: "folder", filter: .collection($0.id), children: nodes(under: $0.id))
             }
         }
-        groups = [
-            LibraryNode("Library", children: [
-                LibraryNode("All Items", symbol: "books.vertical", filter: .all),
-                LibraryNode("Unfiled", symbol: "tray", filter: .unfiled),
-            ]),
-        ]
-        let collections = nodes(under: nil)
-        if !collections.isEmpty { groups.append(LibraryNode("Collections", children: collections)) }
+        let library = LibraryNode("Library", children: [
+            LibraryNode("All Items", symbol: "books.vertical", filter: .all),
+            LibraryNode("Unfiled", symbol: "tray", filter: .unfiled),
+        ])
+        // 늘 보인다. 라이브러리에 없는 PDF가 workspace에 생기면 수가 늘어난다.
+        let newFiles = LibraryNode("Unlinked PDFs (\(store.newFiles.count))", symbol: "doc.badge.plus")
+        newFiles.isNewFiles = true
+        library.children.append(newFiles)
+        // 비어 있어도 둔다: 우클릭으로 첫 컬렉션을 만든다.
+        groups = [library, LibraryNode("Collections", children: nodes(under: nil))]
         if !store.tags.isEmpty {
             groups.append(LibraryNode("Tags", children: store.tags.map { LibraryNode(TagColor.displayName($0), symbol: "tag", filter: .tag($0)) }))
         }
@@ -159,7 +176,129 @@ final class LibrarySidebarView: NSView, NSOutlineViewDataSource, NSOutlineViewDe
     }
 
     func outlineView(_ outlineView: NSOutlineView, shouldSelectItem item: Any) -> Bool {
-        !((item as? LibraryNode)?.isGroup ?? true)
+        guard let node = item as? LibraryNode else { return false }
+        return !node.isGroup && !node.isNewFiles
+    }
+
+    @objc private func clicked(_ sender: Any?) {
+        if (outline.item(atRow: outline.clickedRow) as? LibraryNode)?.isNewFiles == true { onNewFiles?() }
+    }
+
+    // MARK: 우클릭: 컬렉션 만들기·이름 바꾸기·지우기
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+        let node = outline.item(atRow: outline.clickedRow) as? LibraryNode
+        func add(_ title: String, _ action: Selector) {
+            let item = menu.addItem(withTitle: title, action: action, keyEquivalent: "")
+            item.target = self
+            item.representedObject = node?.collectionID.map(NSNumber.init(value:))
+        }
+        guard let id = node?.collectionID, let name = node?.title else {
+            add("New Collection…", #selector(newCollection(_:)))
+            return
+        }
+        add("New Subcollection in “\(name)”…", #selector(newCollection(_:)))
+        add("Rename “\(name)”…", #selector(renameCollection(_:)))
+        if LibraryStore.shared.folderURL(of: id) != nil { add("Show in Finder", #selector(showCollectionInFinder(_:))) }
+        menu.addItem(.separator())
+        add("Delete “\(name)”…", #selector(deleteCollection(_:)))
+    }
+
+    private func collection(of sender: NSMenuItem) -> Int64? { (sender.representedObject as? NSNumber)?.int64Value }
+
+    @objc private func newCollection(_ sender: NSMenuItem) {
+        let parent = collection(of: sender)
+        askName(title: parent == nil ? "New Collection" : "New Subcollection", initial: "", button: "Create") { name in
+            let id = try LibraryStore.shared.createCollection(name, parent: parent)
+            self.selection = .collection(id)
+            self.select(.collection(id))
+            self.onSelect?(.collection(id))
+        }
+    }
+
+    @objc private func renameCollection(_ sender: NSMenuItem) {
+        guard let id = collection(of: sender), let current = LibraryStore.shared.collections.first(where: { $0.id == id }) else { return }
+        askName(title: "Rename Collection", initial: current.name, button: "Rename") { name in
+            try LibraryStore.shared.renameCollection(id, to: name)
+        }
+    }
+
+    @objc private func showCollectionInFinder(_ sender: NSMenuItem) {
+        if let url = collection(of: sender).flatMap(LibraryStore.shared.folderURL(of:)) { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+    }
+
+    @objc private func deleteCollection(_ sender: NSMenuItem) {
+        let store = LibraryStore.shared
+        guard let id = collection(of: sender), let name = store.collections.first(where: { $0.id == id })?.name,
+              let summary = try? store.workspace?.deletionSummary(id) else { return }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Delete “\(name)”?"
+        var lines = ["The folder and its subcollections move to the Trash."]
+        if summary.pdfs > 0 { lines.append("\(summary.pdfs) PDF\(summary.pdfs == 1 ? "" : "s") inside will go to the Trash too.") }
+        if summary.items > 0 { lines.append("\(summary.items) paper\(summary.items == 1 ? "" : "s") stored there will be removed from the library.") }
+        lines.append("References to papers stored elsewhere are only removed from this collection.")
+        alert.informativeText = lines.joined(separator: " ")
+        alert.addButton(withTitle: "Delete")
+        alert.addButton(withTitle: "Cancel")
+        alert.buttons.first?.hasDestructiveAction = true
+        let run = { (response: NSApplication.ModalResponse) in
+            guard response == .alertFirstButtonReturn else { return }
+            do { try store.deleteCollection(id) } catch { store.presentError(error, in: self.window) }
+        }
+        if let window { alert.beginSheetModal(for: window, completionHandler: run) } else { run(alert.runModal()) }
+    }
+
+    /// 이름을 묻는 창. done이 실패하면 오류를 보이고 다시 묻는다.
+    private func askName(title: String, initial: String, button: String, done: @escaping (String) throws -> Void) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = "The folder in your workspace changes too."
+        let field = NSTextField(string: initial)
+        field.font = Style.font
+        field.frame = NSRect(x: 0, y: 0, width: 300, height: 24)
+        alert.accessoryView = field
+        alert.addButton(withTitle: button)
+        alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = field
+        let run = { (response: NSApplication.ModalResponse) in
+            guard response == .alertFirstButtonReturn else { return }
+            let name = field.stringValue.trimmingCharacters(in: .whitespaces)
+            guard !name.isEmpty, name != initial else { return }
+            do { try done(name) } catch {
+                LibraryStore.shared.presentError(error, in: nil)
+            }
+        }
+        if let window { alert.beginSheetModal(for: window, completionHandler: run) } else { run(alert.runModal()) }
+    }
+
+    // MARK: 끌어 놓기: 표의 논문을 컬렉션(또는 Unfiled)에
+
+    func outlineView(_ outlineView: NSOutlineView, validateDrop info: NSDraggingInfo, proposedItem item: Any?,
+                     proposedChildIndex index: Int) -> NSDragOperation {
+        guard let node = item as? LibraryNode, index == NSOutlineViewDropOnItemIndex else { return [] }
+        switch node.filter {
+        case .collection?:
+            // ⌥를 누르면 끄는 쪽이 복사만 허용한다.
+            return info.draggingSourceOperationMask == .copy && Settings.allowReferences ? .copy : .move
+        case .unfiled?: return .move
+        default: return []
+        }
+    }
+
+    func outlineView(_ outlineView: NSOutlineView, acceptDrop info: NSDraggingInfo, item: Any?, childIndex index: Int) -> Bool {
+        guard let node = item as? LibraryNode else { return false }
+        let ids = (info.draggingPasteboard.pasteboardItems ?? []).compactMap { $0.string(forType: .libraryItem).flatMap(Int64.init) }
+        guard !ids.isEmpty else { return false }
+        let store = LibraryStore.shared
+        let viewing: Int64? = if case .collection(let c) = selection { c } else { nil }
+        if let target = node.collectionID, info.draggingSourceOperationMask == .copy, Settings.allowReferences {
+            store.addReferences(ids, to: target, in: window)
+        } else {
+            store.move(ids, viewing: viewing, to: node.collectionID, in: window)
+        }
+        return true
     }
 
     func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
@@ -177,7 +316,7 @@ final class LibrarySidebarView: NSView, NSOutlineViewDataSource, NSOutlineViewDe
         case .all?: cell.imageView?.contentTintColor = .systemIndigo
         case .unfiled?: cell.imageView?.contentTintColor = .systemOrange
         case .collection?: cell.imageView?.contentTintColor = .systemBlue
-        case nil: break
+        case nil: cell.imageView?.contentTintColor = .systemGreen
         }
         return cell
     }

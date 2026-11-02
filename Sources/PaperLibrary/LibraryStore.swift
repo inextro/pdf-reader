@@ -1,4 +1,5 @@
 import AppKit
+import CoreServices
 import PaperMarkLibrary
 
 /// 앱 전체가 같이 쓰는 라이브러리. 항목은 한 번에 읽어 두고, 가져오기가 끝나면 다시 읽어 didChange를 알린다.
@@ -15,6 +16,10 @@ final class LibraryStore {
     /// 첫 PDF가 디스크에 없는 항목.
     private(set) var missingPDF: Set<Int64> = []
     private(set) var isImporting = false
+    /// workspace 안에 있지만 라이브러리에 없는 PDF(workspace 기준 경로). 사이드바 Unlinked PDFs에 보인다.
+    var newFiles: [String] = []
+    var watcher: FSEventStreamRef?
+    var reconcileTimer: Timer?
 
     /// PDF가 있는 폴더(Drive). DB의 PDF 경로는 이 폴더 기준이다. 처음 가져올 때 Zotero 첨부 폴더로 정한다.
     var folder: URL? {
@@ -22,6 +27,8 @@ final class LibraryStore {
         set {
             UserDefaults.standard.set(newValue?.path, forKey: Self.folderKey)
             reload()
+            reconcileWorkspace()
+            watchWorkspace()
         }
     }
 
