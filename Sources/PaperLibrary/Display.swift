@@ -6,7 +6,7 @@ enum LibraryColumn: String, CaseIterable {
     case title, authors, year, venue, added, modified, type, citationKey, doi, arxiv, publisher, pages, tags
 
     /// 처음 구성(Restore Default Columns).
-    static let defaults: [LibraryColumn] = [.title, .authors, .year, .venue, .added]
+    static let defaults: [LibraryColumn] = [.year, .title, .authors, .citationKey, .tags]
 
     var title: String {
         switch self {
@@ -250,5 +250,31 @@ extension Settings {
             UserDefaults.standard.set(newValue, forKey: "allowReferences")
             NotificationCenter.default.post(name: displayDidChange, object: nil)
         }
+    }
+}
+
+/// 사이드바 컬렉션 순서. Custom은 사용자가 끌어 놓은 순서(같은 부모 안에서만)를 컬렉션 key로 기억한다.
+enum CollectionSort: String, CaseIterable {
+    case nameAscending, nameDescending, custom
+
+    var title: String {
+        switch self {
+        case .nameAscending: "Name A → Z"
+        case .nameDescending: "Name Z → A"
+        case .custom: "Custom Order"
+        }
+    }
+}
+
+extension Settings {
+    static var collectionSort: CollectionSort {
+        get { UserDefaults.standard.string(forKey: "collectionSort").flatMap(CollectionSort.init) ?? .nameAscending }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: "collectionSort") }
+    }
+
+    /// Custom 순서의 컬렉션 key들. 여기 없는 컬렉션(새로 만든 것)은 형제들 뒤에 이름순으로 붙는다.
+    static var collectionOrder: [String] {
+        get { UserDefaults.standard.stringArray(forKey: "collectionOrder") ?? [] }
+        set { UserDefaults.standard.set(newValue, forKey: "collectionOrder") }
     }
 }

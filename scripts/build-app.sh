@@ -3,18 +3,21 @@
 #   --library  PaperMark 대신 라이브러리 앱 PaperLibrary.app을 만든다(Resources/PaperLibrary/의 Info.plist와 아이콘).
 #   --install  ~/Applications 에 설치한다. --library면 Chrome 확장도 ~/Library/Application Support/PaperLibrary/ChromeExtension에 둔다.
 #   --zip      배포용 build/<앱>-<버전>.zip 을 만든다(GitHub Releases에 올리는 파일).
+#   --dev      확인용: arm64만, debug로 빌드한다(빠르고 CPU를 덜 쓴다). 배포에는 쓰지 않는다.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 NAME=PaperMark
 RES=Resources
+CONFIG=release
+ARCHS=(--arch arm64 --arch x86_64)
 for arg in "$@"; do
   if [ "$arg" = --library ]; then NAME=PaperLibrary; RES=Resources/PaperLibrary; fi
+  if [ "$arg" = --dev ]; then CONFIG=debug; ARCHS=(--arch arm64); fi
 done
 
-ARCHS=(--arch arm64 --arch x86_64)
-swift build -c release --product "$NAME" "${ARCHS[@]}"
-BIN="$(swift build -c release "${ARCHS[@]}" --show-bin-path)/$NAME"
+swift build -c "$CONFIG" --product "$NAME" "${ARCHS[@]}"
+BIN="$(swift build -c "$CONFIG" "${ARCHS[@]}" --show-bin-path)/$NAME"
 APP="build/$NAME.app"
 
 rm -rf "$APP"

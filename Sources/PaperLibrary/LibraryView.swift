@@ -50,7 +50,7 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSM
         }
         table.style = .inset
         table.rowSizeStyle = .custom
-        table.rowHeight = Style.rowHeight
+        table.rowHeight = Style.rowHeight + 5  // 논문 표는 줄 사이를 넉넉히 둔다.
         table.usesAlternatingRowBackgroundColors = true
         table.allowsMultipleSelection = true
         table.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
