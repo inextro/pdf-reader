@@ -824,14 +824,15 @@ for (title, expected) in [
 let named = PaperMetadata.sentenceCase(merged.title)
 var namedMeta = merged
 namedMeta.title = named
-check(Naming.citationKey(pattern: Naming.defaultCitationKey, metadata: namedMeta, taken: []) == "he2020LightGCN"
-      && Naming.citationKey(pattern: Naming.defaultCitationKey, metadata: namedMeta, taken: ["he2020LightGCN", "he2020LightGCNa"]) == "he2020LightGCNb"
+check(Naming.citationKey(pattern: Naming.defaultCitationKey, metadata: namedMeta, taken: []) == "he2020lightgcn"
+      && Naming.citationKey(pattern: Naming.defaultCitationKey, metadata: namedMeta, taken: ["he2020lightgcn", "he2020lightgcna"]) == "he2020lightgcnb"
       && Naming.citationKey(pattern: "{Auth}_{title2}", metadata: namedMeta, taken: []) == "He_lightgcnsimplifying",
       "citation key 패턴과 겹칠 때 a, b")
 var scoreMeta = PaperMetadata()
 (scoreMeta.title, scoreMeta.date, scoreMeta.creators) = ("Score-based generative modeling", "2020", [Creator.author("Yang Song")])
-check(Naming.citationKey(pattern: Naming.defaultCitationKey, metadata: scoreMeta, taken: []) == "song2020ScoreBased",
-      "기존 Zotero key와 같은 모양(song2020ScoreBased)")
+check(Naming.citationKey(pattern: "{auth}{year}{Title1}", metadata: scoreMeta, taken: []) == "song2020ScoreBased"
+      && Naming.citationKey(pattern: Naming.defaultCitationKey, metadata: scoreMeta, taken: []) == "song2020scorebased",
+      "하이픈 낱말(song2020ScoreBased, song2020scorebased)")
 check(Naming.fileName(pattern: Naming.defaultFileName, metadata: namedMeta)
       == "LightGCN Simplifying and powering graph convolution network for recommendation"
       && Naming.fileName(pattern: "{year} - {authors} - {title}", metadata: namedMeta).hasPrefix("2020 - He et al. - LightGCN Simplifying"),
@@ -858,7 +859,7 @@ check(PaperID.pdfCandidates(for: acmPage, pageURL: "https://dl.acm.org/doi/10.11
 
 let edited = try Library(url: libDir.appendingPathComponent("edited.sqlite"))
 try edited.db.run("INSERT INTO collections (key, name) VALUES ('c1', 'Inbox'), ('c2', 'Read')")
-let newID = try edited.add(namedMeta, citationKey: "he2020LightGCN", collectionID: 1)
+let newID = try edited.add(namedMeta, citationKey: "he2020lightgcn", collectionID: 1)
 try edited.addAttachment("archive/LightGCN.pdf", to: newID)
 try edited.moveItem(newID, from: 1, to: 2)
 let added = try edited.item(newID)

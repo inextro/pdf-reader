@@ -57,6 +57,10 @@ extension Library {
         }
     }
 
+    public func setCitationKey(_ key: String?, of id: Int64) throws {
+        try db.run("UPDATE items SET citation_key = ?, modified_at = ? WHERE id = ?", [SQLValue(key), .text(Library.now()), .int(id)])
+    }
+
     public func addAttachment(_ path: String, to id: Int64) throws {
         try db.transaction {
             try db.run("INSERT INTO attachments (item_id, path) VALUES (?,?)", [.int(id), .text(path)])

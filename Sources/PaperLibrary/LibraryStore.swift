@@ -55,6 +55,18 @@ final class LibraryStore {
         return (try library.add(metadata, citationKey: key, collectionID: collection), false)
     }
 
+    /// 지금 패턴으로 citation key를 새로 짓는다(Zotero에서 가져온 key 등).
+    func regenerateCitationKeys(of items: [LibraryEntry]) throws {
+        guard let library else { throw loadError ?? CocoaError(.fileReadUnknown) }
+        var taken = try library.citationKeys().subtracting(items.compactMap(\.citationKey))
+        for item in items {
+            let key = Naming.citationKey(pattern: Settings.citationKeyPattern, metadata: PaperMetadata(item), taken: taken)
+            taken.insert(key)
+            try library.setCitationKey(key, of: item.id)
+        }
+        didModify()
+    }
+
     /// 알림 없이 읽는다. init 중에 알리면 받는 쪽이 아직 다 만들어지지 않은 `shared`를 다시 불러 멈춘다.
     private func load() {
         guard let library else { return }

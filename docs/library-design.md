@@ -266,6 +266,7 @@ PaperLibrary를 켜면 라이브러리 창 하나가 뜬다. 논문을 더블클
 - 오른쪽 클릭: Open PDF, Show in Finder, Copy Citation Key, Copy DOI, Open DOI/URL.
 - 선택한 항목의 상세(초록, 전체 저자, 노트)는 오른쪽 정보 패널(inspector)에 보인다(2026-11-02). 툴바 오른쪽 버튼이나 View > Show Inspector(⌥⌘I)로 접고 편다. 지금은 읽기만 하고 편집은 아직 없다.
 - 열: 머리글을 끌어 순서를 바꾸고, 머리글을 오른쪽 클릭해 켜고 끈다(Modified, Item Type, Citation Key, DOI, arXiv, Publisher, Pages, Tags를 더할 수 있다). 순서·너비·켜짐은 저장되고, 같은 메뉴의 Restore Default Columns로 처음 구성으로 돌린다.
+- 설정 창의 Display 탭에서 표의 열과 정보 패널 칸을 체크박스로 켜고 끄고, 끌어서 순서를 바꾼다. 표 머리글에서 바꾼 것과 같은 설정(`libraryColumns`, `infoFields`)이라 어느 쪽에서 바꿔도 바로 따라간다.
 
 ### 6.4 리더와의 연결
 
@@ -327,7 +328,7 @@ Chrome 확장 (Extension/Chrome)                     PaperLibrary (127.0.0.1:231
 |---|---|---|
 | 새 PDF 폴더 | 라이브러리 폴더의 `archive` | 지금은 `My Drive/zotero/archive`. 나중에 PaperLibrary 전용 폴더로 바꾼다(사용자 결정) |
 | PDF 파일 이름 | `{title}` | 지금 Zotero 폴더의 이름 규칙(콜론을 뺀 제목) |
-| citation key | `{auth}{year}{Title1}` | 지금 라이브러리의 `wang2026Rethinking`, `song2020ScoreBased`와 같은 모양. 겹치면 a, b, … |
+| citation key | `{auth}{year}{title1}` | `kostric2026standardized`처럼 모두 소문자. 겹치면 a, b, …. 표에서 우클릭 > Regenerate Citation Key로 고른 항목의 key를 지금 패턴으로 다시 짓는다 |
 | CrossRef·arXiv 우선 | 켬 | 끄면 페이지 메타태그가 이기고 빈 칸만 채운다 |
 | arXiv 논문은 출판본 | 켬 | |
 | 제목 sentence case | 켬 | 지금 라이브러리 제목들의 표기. 약어·대문자 섞인 낱말(LightGCN, BERT)과 콜론 뒤 첫 낱말은 그대로 |

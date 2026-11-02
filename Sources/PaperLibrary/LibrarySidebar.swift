@@ -76,7 +76,7 @@ final class LibrarySidebarView: NSView, NSOutlineViewDataSource, NSOutlineViewDe
         let collections = nodes(under: nil)
         if !collections.isEmpty { groups.append(LibraryNode("Collections", children: collections)) }
         if !store.tags.isEmpty {
-            groups.append(LibraryNode("Tags", children: store.tags.map { LibraryNode($0, symbol: "tag", filter: .tag($0)) }))
+            groups.append(LibraryNode("Tags", children: store.tags.map { LibraryNode(TagColor.displayName($0), symbol: "tag", filter: .tag($0)) }))
         }
         outline.reloadData()
         restoring = true
@@ -153,6 +153,13 @@ final class LibrarySidebarView: NSView, NSOutlineViewDataSource, NSOutlineViewDe
         let cell = outlineView.makeView(withIdentifier: id, owner: nil) as? NSTableCellView ?? makeCell(id, icon: !node.isGroup)
         cell.textField?.stringValue = node.isGroup ? node.title.uppercased() : node.title
         if let symbol = node.symbol { cell.imageView?.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil) }
+        // 태그는 표·정보 패널의 알약과 같은 색으로.
+        if case .tag(let name)? = node.filter {
+            cell.imageView?.image = NSImage(systemSymbolName: "tag.fill", accessibilityDescription: nil)
+            cell.imageView?.contentTintColor = TagColor.color(for: name)
+        } else {
+            cell.imageView?.contentTintColor = .secondaryLabelColor
+        }
         return cell
     }
 

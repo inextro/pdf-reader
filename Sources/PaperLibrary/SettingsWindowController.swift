@@ -14,6 +14,8 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
                                             target: nil, action: nil)
     private let sentenceCase = NSButton(checkboxWithTitle: "Write titles in sentence case (only the first word capitalized)", target: nil, action: nil)
     private let connectorLabel = NSTextField(labelWithString: "")
+    private let columnList = ChecklistView()
+    private let infoList = ChecklistView()
 
     /// 미리보기에 쓰는 예시 논문.
     private static let sample: PaperMetadata = {
@@ -84,8 +86,26 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
             grid.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 20),
             grid.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -20),
         ])
-        window.contentView = content
         Style.enlarge(content)
+
+        // 탭 두 개: 논문 넣기(지금까지의 설정), 보기(표의 열, 정보 패널 칸).
+        let tabs = NSTabViewController()
+        tabs.tabStyle = .toolbar
+        for (view, title, symbol) in [(content, "Adding Papers", "square.and.arrow.down"),
+                                      (makeDisplayTab(), "Display", "rectangle.split.3x1")] {
+            let controller = NSViewController()
+            controller.view = view
+            controller.title = title
+            view.layoutSubtreeIfNeeded()
+            controller.preferredContentSize = view.fittingSize
+            let item = NSTabViewItem(viewController: controller)
+            item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
+            tabs.addTabViewItem(item)
+        }
+        window.contentViewController = tabs
+        window.toolbarStyle = .preference
+        NotificationCenter.default.addObserver(self, selector: #selector(reloadLists), name: Settings.displayDidChange, object: nil)
+        reloadLists()
 
         NotificationCenter.default.addObserver(self, selector: #selector(refresh), name: Connector.statusDidChange, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(refresh), name: LibraryStore.didChange, object: nil)
@@ -96,6 +116,56 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    private func makeDisplayTab() -> NSView {
+        columnList.onChange = { Settings.columns = $0.compactMap(LibraryColumn.init) }
+        infoList.onChange = { Settings.infoFields = $0.compactMap(InfoField.init) }
+        let columns = Self.listColumn("Library columns", "Columns shown in the paper list. You can also drag column headers and right-click them.",
+                                      columnList, restore: #selector(restoreColumns(_:)), target: self)
+        let info = Self.listColumn("Info panel", "Fields shown on the right when you select a paper. The title is always shown.",
+                                   infoList, restore: #selector(restoreInfoFields(_:)), target: self)
+        let row = NSStackView(views: [columns, info])
+        row.alignment = .top
+        row.spacing = 28
+        row.translatesAutoresizingMaskIntoConstraints = false
+        let view = NSView()
+        view.addSubview(row)
+        NSLayoutConstraint.activate([
+            row.topAnchor.constraint(equalTo: view.topAnchor, constant: 20),
+            row.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -20),
+            row.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
+            row.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
+        ])
+        return view
+    }
+
+    private static func listColumn(_ title: String, _ hint: String, _ list: ChecklistView, restore: Selector, target: AnyObject) -> NSView {
+        let heading = NSTextField(labelWithString: title)
+        heading.font = .boldSystemFont(ofSize: Style.fontSize)
+        let note = NSTextField(wrappingLabelWithString: hint + " Check to show, drag to reorder.")
+        note.font = .systemFont(ofSize: Style.fontSize - 2)
+        note.textColor = .secondaryLabelColor
+        note.preferredMaxLayoutWidth = 300
+        let button = NSButton(title: "Restore Defaults", target: target, action: restore)
+        button.font = .systemFont(ofSize: Style.fontSize - 2)
+        list.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([list.widthAnchor.constraint(equalToConstant: 300), list.heightAnchor.constraint(equalToConstant: CGFloat(InfoField.allCases.count) * (Style.rowHeight + 2) + 4)])
+        let stack = NSStackView(views: [heading, note, list, button])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 8
+        stack.setCustomSpacing(12, after: note)
+        return stack
+    }
+
+    @objc private func reloadLists() {
+        columnList.set(all: LibraryColumn.allCases.map { ($0.rawValue, $0.title) }, shown: Settings.columns.map(\.rawValue),
+                       locked: [LibraryColumn.title.rawValue])
+        infoList.set(all: InfoField.allCases.map { ($0.rawValue, $0.title) }, shown: Settings.infoFields.map(\.rawValue))
+    }
+
+    @objc private func restoreColumns(_ sender: Any?) { Settings.columns = LibraryColumn.defaults }
+    @objc private func restoreInfoFields(_ sender: Any?) { Settings.infoFields = InfoField.defaults }
 
     private static func header(_ text: String) -> NSTextField {
         let label = NSTextField(labelWithString: text)

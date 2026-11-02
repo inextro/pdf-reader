@@ -15,9 +15,6 @@ final class ItemInfoView: NSView {
     private var shownKey: String?
     private var shownModified: String?
 
-    private static let typeNames = ["journalArticle": "Journal Article", "conferencePaper": "Conference Paper",
-                                    "preprint": "Preprint", "book": "Book", "webpage": "Web Page", "other": "Other"]
-
     override init(frame: NSRect) {
         super.init(frame: frame)
         stack.orientation = .vertical
@@ -53,6 +50,14 @@ final class ItemInfoView: NSView {
             placeholder.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
         show([])
+        NotificationCenter.default.addObserver(self, selector: #selector(fieldsChanged), name: Settings.displayDidChange, object: nil)
+    }
+
+    /// 설정에서 보일 칸을 바꾸면 지금 항목을 다시 그린다.
+    @objc private func fieldsChanged() {
+        guard let item = store.items.first(where: { $0.key == shownKey }) else { return }
+        shownKey = nil
+        show([item])
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
@@ -78,44 +83,60 @@ final class ItemInfoView: NSView {
     }
 
     private func build(_ item: LibraryEntry) {
+        let fields = Settings.infoFields
         let title = wrapping(item.title.isEmpty ? "Untitled" : item.title, font: .systemFont(ofSize: Style.fontSize + 3, weight: .semibold))
-        let type = wrapping(Self.typeNames[item.type] ?? item.type, font: .systemFont(ofSize: Style.fontSize - 2))
-        type.textColor = .secondaryLabelColor
-        let header = NSStackView(views: [type, title])
+        let header = NSStackView(views: [title])
         header.orientation = .vertical
         header.alignment = .leading
         header.spacing = 4
+        if fields.contains(.type) {
+            let type = wrapping(itemTypeName(item.type), font: .systemFont(ofSize: Style.fontSize - 2))
+            type.textColor = .secondaryLabelColor
+            header.insertArrangedSubview(type, at: 0)
+        }
         add(header)
 
         let name = { (c: Creator) in [c.given, c.family].compactMap { $0 }.joined(separator: " ") }
-        let authors = item.creators.filter { $0.role == "author" }.map(name)
-        let editors = item.creators.filter { $0.role == "editor" }.map(name)
-        field(authors.count == 1 ? "Author" : "Authors", authors.joined(separator: "\n"))
-        field(editors.count == 1 ? "Editor" : "Editors", editors.joined(separator: "\n"))
-        field("Venue", item.venue)
-        field("Date", item.date ?? item.year.map(String.init))
-        let issue = [item.fields["volume"].map { "Vol. \($0)" }, item.fields["issue"].map { "No. \($0)" },
-                     item.fields["pages"].map { "pp. \($0)" }].compactMap { $0 }.joined(separator: ", ")
-        field("Volume · Issue · Pages", issue)
-        field("Publisher", [item.fields["publisher"], item.fields["place"]].compactMap { $0 }.joined(separator: ", "))
-        field("Citation Key", item.citationKey)
-        if let doi = item.doi { field("DOI", doi, link: URL(string: "https://doi.org/\(doi)")) }
-        if let arxiv = item.arxivID { field("arXiv", arxiv, link: URL(string: "https://arxiv.org/abs/\(arxiv)")) }
-        if let url = item.url, url != item.doi.map({ "https://doi.org/\($0)" }) { field("URL", url, link: URL(string: url)) }
-
-        let collections = store.collections.filter { item.collectionIDs.contains($0.id) }.map { path(of: $0) }.sorted()
-        field("Collections", collections.joined(separator: "\n"))
-        field("Tags", item.tags.joined(separator: ", "))
-        pdfField(item)
-        field("Added", Self.displayDate(item.addedAt))
-        field("Modified", Self.displayDate(item.modifiedAt))
-
-        if let abstract = item.abstract, !abstract.isEmpty {
-            add(section("Abstract", wrapping(abstract, font: Style.font)))
-        }
-        let notes = store.notes(of: item).map(Self.plainText).filter { !$0.isEmpty }
-        if !notes.isEmpty {
-            add(section(notes.count == 1 ? "Note" : "Notes", wrapping(notes.joined(separator: "\n\n"), font: Style.font)))
+        for info in fields {
+            switch info {
+            case .type: break
+            case .authors:
+                let authors = item.creators.filter { $0.role == "author" }.map(name)
+                field(authors.count == 1 ? "Author" : "Authors", authors.joined(separator: "\n"))
+            case .editors:
+                let editors = item.creators.filter { $0.role == "editor" }.map(name)
+                field(editors.count == 1 ? "Editor" : "Editors", editors.joined(separator: "\n"))
+            case .venue: field("Venue", item.venue)
+            case .date: field("Date", item.date ?? item.year.map(String.init))
+            case .volumeIssuePages:
+                field(info.title, [item.fields["volume"].map { "Vol. \($0)" }, item.fields["issue"].map { "No. \($0)" },
+                                   item.fields["pages"].map { "pp. \($0)" }].compactMap { $0 }.joined(separator: ", "))
+            case .publisher: field("Publisher", [item.fields["publisher"], item.fields["place"]].compactMap { $0 }.joined(separator: ", "))
+            case .citationKey: field("Citation Key", item.citationKey)
+            case .doi: field("DOI", item.doi, link: item.doi.flatMap { URL(string: "https://doi.org/\($0)") })
+            case .arxiv: field("arXiv", item.arxivID, link: item.arxivID.flatMap { URL(string: "https://arxiv.org/abs/\($0)") })
+            case .url:
+                if let url = item.url, url != item.doi.map({ "https://doi.org/\($0)" }) { field("URL", url, link: URL(string: url)) }
+            case .collections:
+                let names = store.collections.filter { item.collectionIDs.contains($0.id) }.map { path(of: $0) }.sorted()
+                field("Collections", names.joined(separator: "\n"))
+            case .tags:
+                if !item.tags.isEmpty {
+                    let pills = TagPillsView()
+                    pills.tags = item.tags
+                    add(section(item.tags.count == 1 ? "Tag" : "Tags", pills))
+                }
+            case .pdf: pdfField(item)
+            case .added: field("Added", Self.displayDate(item.addedAt))
+            case .modified: field("Modified", Self.displayDate(item.modifiedAt))
+            case .abstract:
+                if let abstract = item.abstract, !abstract.isEmpty { add(section("Abstract", wrapping(abstract, font: Style.font))) }
+            case .notes:
+                let notes = store.notes(of: item).map(Self.plainText).filter { !$0.isEmpty }
+                if !notes.isEmpty {
+                    add(section(notes.count == 1 ? "Note" : "Notes", wrapping(notes.joined(separator: "\n\n"), font: Style.font)))
+                }
+            }
         }
     }
 

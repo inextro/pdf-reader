@@ -28,70 +28,7 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSM
     private var rows: [LibraryEntry] = []
     private var store: LibraryStore { .shared }
 
-    /// 표의 열. 머리글을 끌어 순서를 바꾸고, 머리글을 오른쪽 클릭해 켜고 끈다(순서·너비·켜짐은 저장된다).
-    private enum Column: String, CaseIterable {
-        case title, authors, year, venue, added, modified, type, citationKey, doi, arxiv, publisher, pages, tags
-
-        var title: String {
-            switch self {
-            case .title: "Title"
-            case .authors: "Authors"
-            case .year: "Year"
-            case .venue: "Venue"
-            case .added: "Added"
-            case .modified: "Modified"
-            case .type: "Item Type"
-            case .citationKey: "Citation Key"
-            case .doi: "DOI"
-            case .arxiv: "arXiv"
-            case .publisher: "Publisher"
-            case .pages: "Pages"
-            case .tags: "Tags"
-            }
-        }
-        var width: CGFloat {
-            switch self {
-            case .title: 360
-            case .authors: 140
-            case .year: 56
-            case .venue, .publisher: 180
-            case .added, .modified: 100
-            case .type: 130
-            case .citationKey, .doi, .tags: 160
-            case .arxiv, .pages: 100
-            }
-        }
-        /// 처음에 보이는 열. 나머지는 머리글 메뉴에서 켠다.
-        var shownByDefault: Bool { [.title, .authors, .year, .venue, .added].contains(self) }
-
-        func text(_ item: LibraryEntry) -> String {
-            switch self {
-            case .title: item.title
-            case .authors: item.authorSummary
-            case .year: item.year.map(String.init) ?? ""
-            case .venue: item.venue ?? ""
-            case .added: String(item.addedAt.prefix(10))
-            case .modified: String(item.modifiedAt.prefix(10))
-            case .type: ["journalArticle": "Journal Article", "conferencePaper": "Conference Paper", "preprint": "Preprint",
-                         "book": "Book", "webpage": "Web Page"][item.type] ?? "Other"
-            case .citationKey: item.citationKey ?? ""
-            case .doi: item.doi ?? ""
-            case .arxiv: item.arxivID ?? ""
-            case .publisher: item.fields["publisher"] ?? ""
-            case .pages: item.fields["pages"] ?? ""
-            case .tags: item.tags.joined(separator: ", ")
-            }
-        }
-
-        func sortValue(_ item: LibraryEntry) -> String {
-            switch self {
-            case .year: item.year.map { String(format: "%04d", $0) } ?? ""
-            case .added: item.addedAt
-            case .modified: item.modifiedAt
-            default: text(item)
-            }
-        }
-    }
+    private typealias Column = LibraryColumn
 
     private static let sortKey = "librarySort"
 
@@ -101,8 +38,8 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSM
             let c = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(column.rawValue))
             c.title = column.title
             c.width = column.width
-            c.minWidth = 40
-            c.isHidden = !column.shownByDefault
+            c.minWidth = column.minWidth
+            if column == .pdf { c.maxWidth = 60; c.headerCell.alignment = .center }
             c.headerCell.font = .systemFont(ofSize: Style.fontSize - 2)
             c.sortDescriptorPrototype = NSSortDescriptor(key: column.rawValue, ascending: column != .added && column != .year)
             table.addTableColumn(c)
@@ -115,6 +52,7 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSM
         table.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
         table.autosaveName = "LibraryTable"
         table.autosaveTableColumns = true
+        applyColumns()
         table.dataSource = self
         table.delegate = self
         table.target = self
@@ -136,6 +74,8 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSM
         }
         scroll.documentView = table
         scroll.hasVerticalScroller = true
+        scroll.hasHorizontalScroller = true
+        scroll.autohidesScrollers = true
 
         emptyLabel.font = Style.font
         emptyLabel.alignment = .center
@@ -165,6 +105,8 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSM
         ])
         NotificationCenter.default.addObserver(self, selector: #selector(storeChanged),
                                                name: LibraryStore.didChange, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(applyColumns),
+                                               name: Settings.displayDidChange, object: nil)
         refresh()
     }
 
@@ -255,6 +197,13 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSM
         menu.addItem(.separator())
         if item.citationKey != nil { add(menu, "Copy Citation Key", #selector(copyCitationKey(_:)), item) }
         if item.doi != nil { add(menu, "Copy DOI", #selector(copyDOI(_:)), item) }
+        menu.addItem(.separator())
+        // 우클릭한 줄이 고른 줄 가운데 하나면 고른 줄 전부, 아니면 그 줄만.
+        let targets = table.selectedRowIndexes.contains(table.clickedRow) ? selectedItems : [item]
+        let regenerate = menu.addItem(withTitle: targets.count > 1 ? "Regenerate Citation Keys (\(targets.count))" : "Regenerate Citation Key",
+                                      action: #selector(regenerateCitationKeys(_:)), keyEquivalent: "")
+        regenerate.target = self
+        regenerate.representedObject = targets.map(\.id)
     }
 
     // MARK: 열 고르기
@@ -273,23 +222,58 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSM
     @objc private func toggleColumn(_ sender: NSMenuItem) {
         guard let column = sender.representedObject as? NSTableColumn else { return }
         column.isHidden.toggle()
-        // 정렬하던 열을 숨기면 추가한 순서로 돌아간다.
-        if column.isHidden, table.sortDescriptors.first?.key == column.identifier.rawValue {
-            table.sortDescriptors = [NSSortDescriptor(key: Column.added.rawValue, ascending: false)]
-        }
+        if !column.isHidden { makeRoom() }
+        saveColumns()
     }
 
-    /// 처음 열 구성(Title, Authors, Year, Venue, Added 순서와 너비)으로 되돌린다.
+    /// 처음 열 구성(Title, Authors, Year, Venue, Added)과 너비로 되돌린다.
     @objc private func restoreColumns(_ sender: Any?) {
-        for (index, column) in Column.allCases.enumerated() {
-            let id = NSUserInterfaceItemIdentifier(column.rawValue)
-            let current = table.column(withIdentifier: id)
+        for column in table.tableColumns { column.width = Column(rawValue: column.identifier.rawValue)?.width ?? column.width }
+        Settings.columns = Column.defaults
+    }
+
+    private var applyingColumns = false
+
+    /// 설정의 열 구성(보이는 열과 순서)을 표에 맞춘다. 설정 창에서 바꾸면 바로 따라간다.
+    @objc private func applyColumns() {
+        applyingColumns = true
+        defer { applyingColumns = false }
+        let shown = Settings.columns
+        let wasHidden = Set(table.tableColumns.filter(\.isHidden).map(\.identifier.rawValue))
+        for (index, column) in shown.enumerated() {
+            let current = table.column(withIdentifier: NSUserInterfaceItemIdentifier(column.rawValue))
             guard current >= 0 else { continue }
-            table.moveColumn(current, toColumn: index)
-            let tableColumn = table.tableColumns[index]
-            tableColumn.isHidden = !column.shownByDefault
-            tableColumn.width = column.width
+            if current != index { table.moveColumn(current, toColumn: index) }
+            table.tableColumns[index].isHidden = false
         }
+        for column in table.tableColumns where !shown.contains(where: { $0.rawValue == column.identifier.rawValue }) {
+            column.isHidden = true
+        }
+        // 정렬하던 열을 숨기면 추가한 순서로 돌아간다.
+        if let key = table.sortDescriptors.first?.key, !shown.contains(where: { $0.rawValue == key }) {
+            table.sortDescriptors = [NSSortDescriptor(key: Column.added.rawValue, ascending: false)]
+        }
+        if shown.contains(where: { wasHidden.contains($0.rawValue) }) { makeRoom() }
+    }
+
+    /// 새로 켠 열이 창 밖으로 밀리지 않게 Title 열을 줄인다. Title이 240보다 좁아져야 하면 가로로 스크롤한다.
+    private func makeRoom() {
+        let available = scroll.contentView.bounds.width
+        guard available > 0, let title = table.tableColumns.first(where: { $0.identifier.rawValue == Column.title.rawValue }) else { return }
+        let visible = table.tableColumns.filter { !$0.isHidden }
+        let used = visible.reduce(0) { $0 + $1.width } + table.intercellSpacing.width * CGFloat(visible.count) + 20
+        let overflow = used - available
+        if overflow > 0 { title.width = max(240, title.width - overflow) }
+    }
+
+    /// 머리글을 끌거나 켜고 끄면 그 구성을 설정에 적는다.
+    private func saveColumns() {
+        guard !applyingColumns else { return }
+        Settings.columns = table.tableColumns.filter { !$0.isHidden }.compactMap { Column(rawValue: $0.identifier.rawValue) }
+    }
+
+    func tableViewColumnDidMove(_ notification: Notification) {
+        saveColumns()
     }
 
     private func add(_ menu: NSMenu, _ title: String, _ action: Selector, _ item: LibraryEntry) {
@@ -315,6 +299,11 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSM
     @objc private func copyCitationKey(_ sender: NSMenuItem) { copy(item(of: sender)?.citationKey) }
     @objc private func copyDOI(_ sender: NSMenuItem) { copy(item(of: sender)?.doi) }
 
+    @objc private func regenerateCitationKeys(_ sender: NSMenuItem) {
+        let ids = Set(sender.representedObject as? [Int64] ?? [])
+        do { try store.regenerateCitationKeys(of: rows.filter { ids.contains($0.id) }) } catch { NSApp.presentError(error) }
+    }
+
     private func copy(_ text: String?) {
         guard let text else { return }
         NSPasteboard.general.clearContents()
@@ -339,9 +328,27 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSM
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         guard let id = tableColumn?.identifier, let column = Column(rawValue: id.rawValue) else { return nil }
         let item = rows[row]
+        if column == .pdf {
+            let cell = tableView.makeView(withIdentifier: id, owner: nil) as? NSTableCellView ?? makeIconCell(id)
+            let missing = store.missingPDF.contains(item.id)
+            cell.imageView?.image = item.attachments.isEmpty ? nil : NSImage(
+                systemSymbolName: missing ? "exclamationmark.triangle.fill" : "doc.fill",
+                accessibilityDescription: missing ? "PDF missing" : "PDF")
+            cell.imageView?.contentTintColor = missing ? .systemOrange : .controlAccentColor
+            return cell
+        }
+        if column == .tags {
+            let cell = tableView.makeView(withIdentifier: id, owner: nil) as? TagPillsView ?? {
+                let pills = TagPillsView()
+                pills.identifier = id
+                pills.wraps = false
+                return pills
+            }()
+            cell.tags = item.tags
+            return cell
+        }
         let cell = tableView.makeView(withIdentifier: id, owner: nil) as? NSTableCellView ?? makeCell(id, icon: column == .title)
         cell.textField?.stringValue = column.text(item)
-        cell.toolTip = toolTip(for: item)
         // PDF가 없는 항목은 흐리게.
         cell.textField?.textColor = item.attachments.isEmpty ? .secondaryLabelColor : .labelColor
         if column == .title {
@@ -354,12 +361,29 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSM
         return cell
     }
 
+    private func makeIconCell(_ id: NSUserInterfaceItemIdentifier) -> NSTableCellView {
+        let cell = NSTableCellView()
+        cell.identifier = id
+        let image = NSImageView()
+        image.symbolConfiguration = .init(pointSize: Style.fontSize - 1, weight: .regular)
+        image.translatesAutoresizingMaskIntoConstraints = false
+        cell.addSubview(image)
+        cell.imageView = image
+        NSLayoutConstraint.activate([
+            image.centerXAnchor.constraint(equalTo: cell.centerXAnchor),
+            image.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+        ])
+        return cell
+    }
+
     private func makeCell(_ id: NSUserInterfaceItemIdentifier, icon: Bool) -> NSTableCellView {
         let cell = NSTableCellView()
         cell.identifier = id
         let field = NSTextField(labelWithString: "")
         field.font = Style.font
         field.lineBreakMode = .byTruncatingTail
+        // 열을 좁히면 글자를 줄인다. 글자 폭이 칸을 밀어내 옆 열을 덮지 않게.
+        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         field.translatesAutoresizingMaskIntoConstraints = false
         cell.addSubview(field)
         cell.textField = field
@@ -384,21 +408,5 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSM
         }
         NSLayoutConstraint.activate(constraints)
         return cell
-    }
-
-    /// 행에 올리면 전체 제목, 저자, 출처, citation key, 초록 앞부분을 보인다.
-    private func toolTip(for item: LibraryEntry) -> String {
-        var lines = [item.title]
-        let names = item.creators.map { [$0.given, $0.family].compactMap { $0 }.joined(separator: " ") }
-        if !names.isEmpty { lines.append(names.joined(separator: ", ")) }
-        let source = [item.venue, item.date].compactMap { $0 }.joined(separator: ", ")
-        if !source.isEmpty { lines.append(source) }
-        if let key = item.citationKey { lines.append("@\(key)") }
-        if let abstract = item.abstract, !abstract.isEmpty {
-            lines.append("")
-            lines.append(abstract.count > 600 ? abstract.prefix(600) + "…" : abstract)
-        }
-        if item.noteCount > 0 { lines.append("\n\(item.noteCount) note\(item.noteCount == 1 ? "" : "s")") }
-        return lines.joined(separator: "\n")
     }
 }

@@ -12,7 +12,7 @@ import Foundation
 /// | `{title1}`…`{title3}` | lightgcn, lightgcnsimplifying … |
 /// | `{venue}` | 학회·저널 이름 |
 public enum Naming {
-    public static let defaultCitationKey = "{auth}{year}{Title1}"
+    public static let defaultCitationKey = "{auth}{year}{title1}"
     public static let defaultFileName = "{title}"
     public static let tokens = ["{auth}", "{Auth}", "{authors}", "{year}", "{title}", "{Title1}", "{title1}", "{venue}"]
 
