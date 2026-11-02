@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.2
+
+- New: Translations keep the equations. Math in the selected text is cut out of the PDF as an image and placed
+  where it belongs in the translation, sized to match the text around it. In dark mode the equation follows the
+  text color. **Copy** puts the original equation text instead of the image.
+- Improved: The translation popover uses larger text and is wider, so longer passages are easier to read.
+
 ## 0.8.1
 
 - Fix: You can drag from linked text, such as `Figure 3` or a citation number, to highlight or select it.
