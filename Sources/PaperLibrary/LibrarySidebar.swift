@@ -472,8 +472,9 @@ final class LibrarySidebarView: NSView, NSOutlineViewDataSource, NSOutlineViewDe
         // 아이콘마다 색을 둔다. 태그는 표·정보 패널의 알약과 같은 색으로.
         switch node.filter {
         case .tag(let name)?:
-            cell.imageView?.image = NSImage(systemSymbolName: "tag.fill", accessibilityDescription: nil)
-            cell.imageView?.contentTintColor = TagColor.color(for: name)
+            // 표·정보 패널의 알약과 같은 옅은 채움과 테두리.
+            cell.imageView?.image = TagColor.icon(for: name, pointSize: Style.fontSize - 1)
+            cell.imageView?.contentTintColor = nil
         case .all?: cell.imageView?.contentTintColor = .systemIndigo
         case .unfiled?: cell.imageView?.contentTintColor = .systemOrange
         case .collection?: cell.imageView?.contentTintColor = .systemBlue

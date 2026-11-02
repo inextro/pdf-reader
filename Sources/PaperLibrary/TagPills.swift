@@ -22,6 +22,32 @@ enum TagColor {
         return palette[Int(hash % UInt32(palette.count))]
     }
 
+    /// 알약의 채움·테두리 진하기. 사이드바 태그 아이콘도 같은 값으로 그려 색을 맞춘다.
+    static let fillAlpha: CGFloat = 0.22
+    static let strokeAlpha: CGFloat = 0.55
+
+    /// 사이드바의 태그 아이콘: 알약처럼 옅게 채우고 조금 진한 테두리를 두른 태그 모양.
+    /// 사이드바 바탕은 회색이라 반투명으로 그리면 흐려지므로, 알약이 표(흰 바탕) 위에서 보이는 색을 불투명하게 쓴다.
+    static func icon(for tag: String, pointSize: CGFloat) -> NSImage? {
+        let color = color(for: tag)
+        let size = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .regular)
+        func symbol(_ name: String, _ alpha: CGFloat) -> NSImage? {
+            let shown = NSColor(name: nil) { appearance in
+                var base = NSColor.white
+                appearance.performAsCurrentDrawingAppearance { base = NSColor.textBackgroundColor.usingColorSpace(.sRGB) ?? .white }
+                return base.blended(withFraction: alpha, of: color) ?? color
+            }
+            return NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+                .withSymbolConfiguration(size.applying(.init(paletteColors: [shown])))
+        }
+        guard let fill = symbol("tag.fill", fillAlpha), let outline = symbol("tag", strokeAlpha) else { return nil }
+        return NSImage(size: outline.size, flipped: false) { rect in
+            fill.draw(in: rect)
+            outline.draw(in: rect)
+            return true
+        }
+    }
+
     /// 보이는 이름. Zotero에서 위로 올리려고 붙인 앞의 "/"를 뗀다("/To Do" → "To Do").
     static func displayName(_ tag: String) -> String {
         let name = tag.drop { $0 == "/" }.trimmingCharacters(in: .whitespaces)
@@ -100,9 +126,9 @@ final class TagPillsView: NSView {
             }
             let color = TagColor.color(for: tag)
             let pill = NSBezierPath(roundedRect: rect, xRadius: rect.height / 2, yRadius: rect.height / 2)
-            color.withAlphaComponent(0.22).setFill()
+            color.withAlphaComponent(TagColor.fillAlpha).setFill()
             pill.fill()
-            color.withAlphaComponent(0.55).setStroke()
+            color.withAlphaComponent(TagColor.strokeAlpha).setStroke()
             pill.lineWidth = 1
             pill.stroke()
             (TagColor.displayName(tag) as NSString).draw(

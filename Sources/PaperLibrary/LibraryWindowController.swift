@@ -186,8 +186,10 @@ final class LibraryWindowController: NSWindowController, NSToolbarDelegate, NSSe
     // MARK: NSToolbar
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        // 정보 버튼은 검색 칸 바로 옆에 둔다. 정보 패널 위로 툴바를 나누면(inspectorTrackingSeparator)
+        // 패널이 열렸을 때 버튼만 패널 위 빈 줄에 따로 남는다.
         [.toggleSidebar, .sidebarTrackingSeparator, .flexibleSpace, addItem.itemIdentifier, searchItem.itemIdentifier,
-         .inspectorTrackingSeparator, .flexibleSpace, infoToggleItem.itemIdentifier]
+         infoToggleItem.itemIdentifier]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {

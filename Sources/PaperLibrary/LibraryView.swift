@@ -43,7 +43,9 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSM
             let c = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(column.rawValue))
             c.title = column.title
             c.width = column.width
-            c.minWidth = column.minWidth
+            c.minWidth = column == .title ? 160 : column.minWidth
+            // 표 너비에 맞추는 일은 fitColumns가 한다.
+            c.resizingMask = .userResizingMask
             c.headerCell.font = .systemFont(ofSize: Style.fontSize - 2)
             c.sortDescriptorPrototype = NSSortDescriptor(key: column.rawValue, ascending: column != .added && column != .year)
             table.addTableColumn(c)
@@ -53,10 +55,20 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSM
         table.rowHeight = Style.rowHeight + 5  // 논문 표는 줄 사이를 넉넉히 둔다.
         table.usesAlternatingRowBackgroundColors = true
         table.allowsMultipleSelection = true
-        table.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
+        table.columnAutoresizingStyle = .noColumnAutoresizing
         table.autosaveName = "LibraryTable"
         table.autosaveTableColumns = true
         applyColumns()
+        resetOversizedColumns()
+        // 정보 패널을 연 채 끄면 줄인 너비가 표에 저장되므로, 사용자가 정한 너비는 따로 기억한다.
+        let savedWidths = UserDefaults.standard.dictionary(forKey: Self.widthsKey) as? [String: Double] ?? [:]
+        for column in table.tableColumns {
+            preferredWidths[column.identifier.rawValue] = savedWidths[column.identifier.rawValue].map { CGFloat($0) } ?? column.width
+        }
+        savePreferredWidths()
+        scroll.contentView.postsFrameChangedNotifications = true
+        NotificationCenter.default.addObserver(self, selector: #selector(fitColumns),
+                                               name: NSView.frameDidChangeNotification, object: scroll.contentView)
         table.dataSource = self
         table.delegate = self
         table.target = self
@@ -313,13 +325,17 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSM
     @objc private func toggleColumn(_ sender: NSMenuItem) {
         guard let column = sender.representedObject as? NSTableColumn else { return }
         column.isHidden.toggle()
-        if !column.isHidden { makeRoom() }
+        fitColumns()
         saveColumns()
     }
 
     /// 처음 열 구성(Title, Authors, Year, Venue, Added)과 너비로 되돌린다.
     @objc private func restoreColumns(_ sender: Any?) {
-        for column in table.tableColumns { column.width = Column(rawValue: column.identifier.rawValue)?.width ?? column.width }
+        for column in table.tableColumns {
+            column.width = Column(rawValue: column.identifier.rawValue)?.width ?? column.width
+            preferredWidths[column.identifier.rawValue] = column.width
+        }
+        savePreferredWidths()
         Settings.columns = Column.defaults
     }
 
@@ -344,17 +360,64 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSM
         if let key = table.sortDescriptors.first?.key, !shown.contains(where: { $0.rawValue == key }) {
             table.sortDescriptors = [NSSortDescriptor(key: Column.added.rawValue, ascending: false)]
         }
-        if shown.contains(where: { wasHidden.contains($0.rawValue) }) { makeRoom() }
+        if shown.contains(where: { wasHidden.contains($0.rawValue) }) { fitColumns() }
     }
 
-    /// 새로 켠 열이 창 밖으로 밀리지 않게 Title 열을 줄인다. Title이 240보다 좁아져야 하면 가로로 스크롤한다.
-    private func makeRoom() {
+    /// 예전 방식(마지막 열이 남는 너비를 모두 가짐)으로 저장된, 지나치게 넓은 열을 기본 너비로 되돌린다.
+    private func resetOversizedColumns() {
+        for column in table.tableColumns {
+            guard let kind = Column(rawValue: column.identifier.rawValue), kind != .title, column.width > max(400, kind.width * 3) else { continue }
+            column.width = kind.width
+        }
+    }
+
+    /// Title 밖의 열이 사용자가 정한 너비. 자리가 모자라 줄였다가도 자리가 나면 이 너비로 돌아간다.
+    private var preferredWidths: [String: CGFloat] = [:]
+    private static let widthsKey = "libraryColumnWidths"
+    private var fitting = false
+
+    private func savePreferredWidths() {
+        UserDefaults.standard.set(preferredWidths.mapValues(Double.init), forKey: Self.widthsKey)
+    }
+
+    /// 보이는 열이 모두 표 안에 들어가도록 너비를 정한다(정보 패널을 열어 표가 좁아져도 Tags까지 보인다).
+    /// Title이 남는 자리를 갖고, 모자라면 Title을 최소 너비까지 줄인 뒤 나머지 열을 같은 비율로 줄인다.
+    @objc private func fitColumns() {
         let available = scroll.contentView.bounds.width
-        guard available > 0, let title = table.tableColumns.first(where: { $0.identifier.rawValue == Column.title.rawValue }) else { return }
-        let visible = table.tableColumns.filter { !$0.isHidden }
-        let used = visible.reduce(0) { $0 + $1.width } + table.intercellSpacing.width * CGFloat(visible.count) + 20
-        let overflow = used - available
-        if overflow > 0 { title.width = max(240, title.width - overflow) }
+        guard available > 0, !fitting, let title = table.tableColumns.first(where: { $0.identifier.rawValue == Column.title.rawValue }) else { return }
+        fitting = true
+        defer { fitting = false }
+        let others = table.tableColumns.filter { !$0.isHidden && $0 !== title }
+        for column in others { column.width = preferredWidths[column.identifier.rawValue] ?? column.width }
+        // 표 너비에는 열 사이 간격과 inset 스타일의 좌우 여백이 들어 있어, 맞춘 뒤 남는 만큼 다시 고친다.
+        // 첫 열 왼쪽 여백만큼 마지막 열 오른쪽에도 여백을 둔다.
+        func excess() -> CGFloat {
+            table.tile()
+            let shown = table.tableColumns.indices.filter { !table.tableColumns[$0].isHidden }
+            guard let first = shown.first, let last = shown.last else { return 0 }
+            return table.rect(ofColumn: last).maxX + table.rect(ofColumn: first).minX - available
+        }
+        for _ in 0..<2 {
+            let over = excess()
+            guard abs(over) > 0.5 else { return }
+            title.width = max(title.minWidth, title.width - over)
+        }
+        let over = excess()
+        let shrinkable = others.reduce(0) { $0 + $1.width - $1.minWidth }
+        guard over > 0.5, shrinkable > 0 else { return }
+        let ratio = min(1, over / shrinkable)
+        for column in others { column.width -= (column.width - column.minWidth) * ratio }
+        table.tile()
+    }
+
+    func tableViewColumnDidResize(_ notification: Notification) {
+        // 사용자가 머리글 경계를 끌어 바꾼 것만 기억한다(fitColumns가 바꾼 것은 알림이 늦게 와도 무시).
+        guard !fitting, (table.headerView?.resizedColumn ?? -1) >= 0,
+              let column = notification.userInfo?["NSTableColumn"] as? NSTableColumn,
+              column.identifier.rawValue != Column.title.rawValue else { return }
+        preferredWidths[column.identifier.rawValue] = column.width
+        savePreferredWidths()
+        fitColumns()
     }
 
     /// 머리글을 끌거나 켜고 끄면 그 구성을 설정에 적는다.
