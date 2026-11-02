@@ -973,6 +973,19 @@ try ws.addReferences([a], to: proj)
     check(summary.pdfs == 2 && summary.items == 1 && (try? wsLib.item(b)) == nil && (try? entry(a)) != nil && (try? entry(c))?.collectionIDs == []
           && !fm.fileExists(atPath: wsRoot.appendingPathComponent("Projects").path), "컬렉션 지우기 (\(summary))")
 
+    // 논문 지우기: PDF는 휴지통으로, 다른 논문도 쓰는 PDF는 남긴다.
+    meta.title = "Paper D"
+    let d = try wsLib.add(meta, citationKey: "d", collectionID: archive)
+    try wsLib.addAttachment("archive/A.pdf", to: d)
+    meta.title = "Paper E"
+    let e = try wsLib.add(meta, citationKey: "e", collectionID: archive)
+    try Data("%PDF-1.4 E".utf8).write(to: wsRoot.appendingPathComponent("archive/E.pdf"))
+    try wsLib.addAttachment("archive/E.pdf", to: e)
+    try ws.deleteItems([d, e])
+    check((try? wsLib.item(d)) == nil && (try? wsLib.item(e)) == nil && (try? entry(a)) != nil
+          && fm.fileExists(atPath: wsRoot.appendingPathComponent("archive/A.pdf").path)
+          && !fm.fileExists(atPath: wsRoot.appendingPathComponent("archive/E.pdf").path), "논문 지우기: PDF는 휴지통, 같이 쓰는 PDF는 남기기")
+
     // workspace가 없으면 아무것도 바꾸지 않는다.
     var gone = false
     do { _ = try Workspace(library: wsLib, root: wsRoot.appendingPathComponent("nope")).reconcile() } catch Workspace.Failure.missingRoot { gone = true }

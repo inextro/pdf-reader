@@ -75,7 +75,10 @@ final class LibraryWindowController: NSWindowController, NSToolbarDelegate, NSSe
         addPopover.contentViewController = adder
         addPopover.behavior = .transient
 
-        sidebar.onSelect = { [weak self] in self?.libraryView.filter = $0 }
+        sidebar.onSelect = { [weak self] in
+            self?.libraryView.filter = $0
+            LibraryStore.shared.selectedCollection = if case .collection(let id) = $0 { id } else { nil }
+        }
         sidebar.onNewFiles = { [weak self] in self?.showNewFiles() }
         libraryView.onSelectionChange = { [weak self] in
             self?.infoView.show($0)
@@ -85,6 +88,7 @@ final class LibraryWindowController: NSWindowController, NSToolbarDelegate, NSSe
             window?.subtitle = "\(count) item\(count == 1 ? "" : "s")"
         }
         libraryView.filter = sidebar.selection
+        LibraryStore.shared.selectedCollection = if case .collection(let id) = sidebar.selection { id } else { nil }
         window.subtitle = "\(LibraryStore.shared.items.count) items"
         updateInfoPanel(hasSelection: !libraryView.selectedItems.isEmpty)
 

@@ -39,12 +39,6 @@ enum Settings {
         }
     }
 
-    /// 확장으로 마지막에 고른 컬렉션. 다음 논문도 여기에 넣는다(Zotero Connector와 같다). nil이면 Unfiled.
-    static var lastCollection: Int64? {
-        get { (defaults.object(forKey: "connectorCollection") as? NSNumber)?.int64Value }
-        set { defaults.set(newValue.map(NSNumber.init(value:)), forKey: "connectorCollection") }
-    }
-
     /// 확장이 찾아오는 포트. 확장의 background.js와 맞춰야 한다. 숨은 설정 `connectorPort`는 시험용.
     static var connectorPort: UInt16 {
         UInt16(exactly: defaults.integer(forKey: "connectorPort")).flatMap { $0 == 0 ? nil : $0 } ?? 23120

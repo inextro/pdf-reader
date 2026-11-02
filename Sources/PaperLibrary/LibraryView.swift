@@ -16,7 +16,7 @@ private final class LibraryTableView: NSTableView {
 
 /// 라이브러리 창 본문: 서지 표. 사이드바에서 고른 범위(filter)와 툴바 검색어(query)로 거른다.
 /// 더블클릭하면 PDF를 PaperMark로 열고, PDF가 없으면 DOI/URL을 브라우저로 연다.
-final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSMenuDelegate {
+final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSMenuDelegate, NSMenuItemValidation {
     var filter: LibraryFilter = .all { didSet { if filter != oldValue { refresh() } } }
     var query = "" { didSet { if query != oldValue { refresh() } } }
     /// 표에 보이는 항목 수가 바뀔 때(창 부제목에 보인다).
@@ -245,6 +245,10 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSM
                                         action: #selector(regenerateCitationKeys(_:)), keyEquivalent: "")
                 menuItem?.target = self
                 menuItem?.representedObject = ids
+            case .delete:
+                menuItem = menu.addItem(withTitle: "Delete" + count + "…", action: #selector(deleteFromMenu(_:)), keyEquivalent: "")
+                menuItem?.target = self
+                menuItem?.representedObject = ids
             }
             guard let menuItem else { continue }
             if let lastGroup, lastGroup != action.group {
@@ -458,6 +462,38 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSM
     @objc private func regenerateCitationKeys(_ sender: NSMenuItem) {
         let ids = Set(sender.representedObject as? [Int64] ?? [])
         do { try store.regenerateCitationKeys(of: rows.filter { ids.contains($0.id) }) } catch { NSApp.presentError(error) }
+    }
+
+    @objc private func deleteFromMenu(_ sender: NSMenuItem) {
+        let ids = Set(sender.representedObject as? [Int64] ?? [])
+        confirmDelete(rows.filter { ids.contains($0.id) })
+    }
+
+    /// Edit > Delete (⌘⌫). 표가 키 입력을 받을 때만 켜진다.
+    @objc func deletePapers(_ sender: Any?) { confirmDelete(selectedItems) }
+
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        menuItem.action == #selector(deletePapers(_:)) ? !selectedItems.isEmpty : true
+    }
+
+    /// 확인을 받고 라이브러리에서 지운다. PDF는 휴지통으로 간다.
+    private func confirmDelete(_ items: [LibraryEntry]) {
+        guard !items.isEmpty else { return }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = items.count == 1 ? "Delete “\(items[0].title)”?" : "Delete \(items.count) papers?"
+        let pdfs = items.filter { !$0.attachments.isEmpty }.count
+        alert.informativeText = "The paper\(items.count == 1 ? "" : "s") will be removed from the library"
+            + (pdfs == 0 ? "." : ", and \(pdfs == 1 && items.count == 1 ? "its PDF" : "\(pdfs) PDF\(pdfs == 1 ? "" : "s")") will go to the Trash.")
+        alert.addButton(withTitle: "Delete")
+        alert.addButton(withTitle: "Cancel")
+        // ⌘⌫ 다음 Return으로 바로 지운다. hasDestructiveAction을 켜면 Return이 버튼에서 빠지므로 쓰지 않는다.
+        let ids = items.map(\.id)
+        let run = { (response: NSApplication.ModalResponse) in
+            guard response == .alertFirstButtonReturn else { return }
+            do { try self.store.deleteItems(ids) } catch { self.store.presentError(error, in: self.window) }
+        }
+        if let window { alert.beginSheetModal(for: window, completionHandler: run) } else { run(alert.runModal()) }
     }
 
     private func copy(_ text: String?) {

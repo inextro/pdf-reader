@@ -114,6 +114,12 @@ extension LibraryStore {
         didModify()
     }
 
+    func deleteItems(_ ids: [Int64]) throws {
+        guard let workspace else { return }
+        try workspace.deleteItems(ids)
+        didModify()
+    }
+
     // MARK: 옮기기와 참조
 
     /// 논문들을 target(nil이면 Unfiled)으로 옮긴다. 같은 이름의 파일이 있으면 alert로 묻는다.

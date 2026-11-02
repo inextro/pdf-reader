@@ -172,6 +172,22 @@ public struct Workspace {
         }
     }
 
+    /// 논문들을 라이브러리에서 지우고 PDF를 휴지통으로 보낸다. 지우지 않는 다른 논문도 쓰는 PDF와 없는 파일은 건너뛴다.
+    public func deleteItems(_ ids: [Int64]) throws {
+        guard isDirectory(root) else { throw Failure.missingRoot(root) }
+        let items = try library.items()
+        let doomed = Set(ids)
+        let kept = Set(items.filter { !doomed.contains($0.id) }.flatMap(\.attachments).map(Self.key))
+        let files = items.filter { doomed.contains($0.id) }.flatMap(\.attachments).filter { !kept.contains(Self.key($0)) }
+        for path in Set(files) {
+            let file = Library.resolve(path, in: root)
+            if fm.fileExists(atPath: file.path) { try trash(file) }
+        }
+        try library.db.transaction {
+            for id in ids { try library.deleteItem(id) }
+        }
+    }
+
     private func homeItems(under path: String) throws -> [Int64] {
         let prefix = Self.key(path) + "/"
         return try library.items().filter { item in

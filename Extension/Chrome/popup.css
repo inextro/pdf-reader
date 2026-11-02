@@ -45,6 +45,7 @@ header {
 
 .status { margin: 10px 0; font-weight: 600; }
 .status.ok { color: var(--ok); }
+.status.warn { color: var(--warn); }
 .status.error { color: var(--error); }
 
 section {
@@ -74,7 +75,9 @@ h1 { margin: 0 0 6px; font-size: 16px; line-height: 1.35; }
   border-radius: 6px;
 }
 
+.where { margin: 10px 0 0; font-size: 14px; }
 .pdf { margin: 10px 0 0; font-size: 14px; }
+.pdf:empty { display: none; }
 .pdf.ok { color: var(--ok); }
 .pdf.warn { color: var(--warn); }
 
@@ -91,3 +94,7 @@ button {
   border-radius: 6px;
   cursor: pointer;
 }
+
+.buttons { display: flex; justify-content: flex-end; gap: 8px; }
+button.secondary { color: var(--text); background: var(--card); border: 1px solid var(--line); }
+button[hidden], .buttons[hidden] { display: none; }

@@ -5,8 +5,9 @@ import PaperMarkLibrary
 /// Chrome 확장(Extension/Chrome)의 요청을 받아 라이브러리에 논문을 넣는다. Zotero Connector처럼 동작한다.
 ///
 /// 1. `POST /save`: 확장이 보낸 페이지 정보(주소, 메타태그, PDF 링크)로 서지 정보를 채워 항목을 만들고,
-///    받아 볼 PDF 주소들을 돌려준다. 같은 논문이 이미 있으면 새로 만들지 않는다.
-/// 2. `POST /attach?id=`: 확장이 브라우저 로그인 상태로 받은 PDF를 새 PDF 폴더에 저장하고 항목에 붙인다.
+///    받아 볼 PDF 주소들을 돌려준다. 새 논문은 사이드바에서 고른 컬렉션에 넣는다.
+///    같은 논문이 이미 있으면 아무것도 바꾸지 않고 알린다. 팝업에서 진행하면(`proceed`) 그 논문을 고친다.
+/// 2. `POST /attach?id=`: 확장이 브라우저 로그인 상태로 받은 PDF를 논문의 컬렉션 폴더(없으면 새 PDF 폴더)에 저장하고 항목에 붙인다.
 /// 3. `POST /collection`: 확장 팝업에서 고른 컬렉션으로 옮긴다. `GET /collections`: 고를 목록.
 final class Connector {
     static let shared = Connector()
@@ -59,7 +60,7 @@ final class Connector {
             case ("GET", "/ping"):
                 return .json(["app": "PaperLibrary", "version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] ?? "dev"])
             case ("GET", "/collections"):
-                return .json(["collections": collectionList(), "selected": Settings.lastCollection.map { $0 as Any } ?? NSNull()])
+                return .json(["collections": collectionList(), "selected": LibraryStore.shared.selectedCollection.map { $0 as Any } ?? NSNull()])
             case ("POST", "/save"):
                 return try await save(request.body)
             case ("POST", "/attach"):
@@ -82,6 +83,9 @@ final class Connector {
         var meta: [[String]]?
         var links: [String]?
         var isPDF: Bool?
+        /// 이미 있던 논문(id)을 이 페이지의 정보로 고치고 collection으로 옮긴다.
+        var proceed: Int64?
+        var collection: Int64?
     }
 
     @MainActor
@@ -97,18 +101,45 @@ final class Connector {
             metadata.title = URL(string: page.url)?.deletingPathExtension().lastPathComponent ?? page.url
         }
 
-        _ = try openLibrary()
-        let target = Settings.lastCollection.flatMap { c in store.collections.contains { $0.id == c } ? c : nil }
-        let (id, existing) = try store.addPaper(metadata, to: target)
-        let collection = existing ? nil : target
+        let library = try openLibrary()
+        let id: Int64
+        var target = store.selectedCollection
+        if let proceed = page.proceed {
+            guard let entry = store.items.first(where: { $0.id == proceed }) else {
+                throw Failure(status: 404, message: "The paper is no longer in the library.")
+            }
+            // 웹 페이지로만 저장됐거나 저자가 없는 빈약한 항목만 새 정보로 덮어쓴다.
+            if entry.type == "webpage" || entry.creators.isEmpty, !metadata.creators.isEmpty {
+                var taken = try library.citationKeys()
+                if let old = entry.citationKey { taken.remove(old) }
+                try library.update(proceed, with: metadata,
+                                   citationKey: Naming.citationKey(pattern: Settings.citationKeyPattern, metadata: metadata, taken: taken))
+            }
+            target = page.collection
+            store.move([proceed], viewing: nil, to: target, in: nil)
+            id = proceed
+        } else if let existing = try library.existingItem(for: metadata), let entry = store.items.first(where: { $0.id == existing }) {
+            var json = itemJSON(entry)
+            NSLog("PaperLibrary connector: \(page.url) is already in the library as \(existing)")
+            json["existing"] = true
+            json["in"] = entry.collectionIDs.compactMap { c in store.collections.first { $0.id == c }?.name }
+            json["collection"] = target.map { $0 as Any } ?? NSNull()
+            json["pdfCandidates"] = []
+            json["warnings"] = warnings
+            return .json(json)
+        } else {
+            id = try store.addPaper(metadata, to: target).id
+        }
         store.didModify()
         guard let entry = store.items.first(where: { $0.id == id }) else { throw Failure(status: 500, message: "The paper was not saved.") }
         if Settings.pdfFolder == nil { warnings.append("Choose a folder for new PDFs in PaperLibrary Settings.") }
         var json = itemJSON(entry)
-        json["existing"] = existing
-        json["collection"] = collection.map { $0 as Any } ?? NSNull()
-        json["pdfCandidates"] = entry.attachments.isEmpty
+        json["existing"] = false
+        json["collection"] = target.map { $0 as Any } ?? NSNull()
+        let candidates = entry.attachments.isEmpty
             ? PaperID.pdfCandidates(for: metadata, pageURL: page.url, isPDF: isPDF, links: page.links ?? []) : []
+        json["pdfCandidates"] = candidates
+        NSLog("PaperLibrary connector: saved \(id) from \(page.url) (\(meta.count) meta tags, \(candidates.count) PDF links, proceed: \(page.proceed.map(String.init) ?? "no"))")
         json["warnings"] = warnings
         return .json(json)
     }
@@ -121,7 +152,7 @@ final class Connector {
             throw Failure(status: 404, message: "The paper is no longer in the library.")
         }
         guard request.body.starts(with: Data("%PDF-".utf8)) else { throw Failure(message: "The downloaded file is not a PDF.") }
-        guard let folder = Settings.pdfFolder else { throw Failure(message: "Choose a folder for new PDFs in PaperLibrary Settings.") }
+        guard let pdfFolder = Settings.pdfFolder else { throw Failure(message: "Choose a folder for new PDFs in PaperLibrary Settings.") }
 
         // PDF만 보고 저장한 경우(PDF 탭): 첫 페이지의 DOI·arXiv 번호로 서지 정보를 다시 채운다.
         if entry.doi == nil && entry.arxivID == nil, let found = Self.identify(request.body) {
@@ -148,6 +179,8 @@ final class Connector {
             }
         }
 
+        // 논문이 든 컬렉션의 폴더에 저장한다. 컬렉션이 없으면(Unfiled) 새 PDF 폴더에.
+        let folder = entry.collectionIDs.lazy.compactMap(store.folderURL(of:)).first ?? pdfFolder
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let name = Naming.fileName(pattern: Settings.fileNamePattern, metadata: PaperMetadata(entry))
         var file = folder.appendingPathComponent(name + ".pdf")
@@ -172,13 +205,12 @@ final class Connector {
         var to: Int64?
     }
 
+    /// 팝업에서 컬렉션을 바꿨을 때. PDF가 이미 붙었으면 파일도 그 컬렉션 폴더로 옮긴다.
     @MainActor
     private func move(_ body: Data) throws -> ConnectorServer.Response {
-        let library = try openLibrary()
+        _ = try openLibrary()
         let move = try JSONDecoder().decode(Move.self, from: body)
-        try library.moveItem(move.id, from: move.from, to: move.to)
-        Settings.lastCollection = move.to
-        LibraryStore.shared.didModify()
+        LibraryStore.shared.move([move.id], viewing: nil, to: move.to, in: nil)
         return .json(["ok": true])
     }
 

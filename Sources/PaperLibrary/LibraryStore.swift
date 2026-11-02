@@ -18,6 +18,12 @@ final class LibraryStore {
     private(set) var isImporting = false
     /// workspace 안에 있지만 라이브러리에 없는 PDF(workspace 기준 경로). 사이드바 Unlinked PDFs에 보인다.
     var newFiles: [String] = []
+    /// 사이드바에서 고른 컬렉션(All Items 등이면 nil). 확장으로 저장한 논문은 여기에 들어간다.
+    var selectedCollection: Int64? {
+        get { _selectedCollection.flatMap { c in collections.contains { $0.id == c } ? c : nil } }
+        set { _selectedCollection = newValue }
+    }
+    private var _selectedCollection: Int64?
     var watcher: FSEventStreamRef?
     var reconcileTimer: Timer?
 
