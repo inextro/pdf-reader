@@ -452,13 +452,14 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
               let page = selection.pages.first else { return }
         pdfView.setCurrentSelection(selection, animate: false)
         let rect = pdfView.convert(selection.bounds(for: page), from: page)
-        Translator.present(PDFText.cleaned(selection.string ?? ""), at: rect, in: pdfView)
+        Translator.present(selection, at: rect, in: pdfView)
     }
 
     @objc private func translateHighlight(_ sender: NSMenuItem) {
-        guard let h = (sender.representedObject as? HighlightAction)?.highlight else { return }
+        guard let h = (sender.representedObject as? HighlightAction)?.highlight,
+              let selection = PDFText.selection(of: h.annotation, on: h.page) else { return }
         let rect = pdfView.convert(h.annotation.bounds, from: h.page)
-        Translator.present(PDFText.text(of: h.annotation, on: h.page), at: rect, in: pdfView)
+        Translator.present(selection, at: rect, in: pdfView)
     }
 
     private func selectionMenuItems() -> [NSMenuItem] {
