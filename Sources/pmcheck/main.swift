@@ -205,6 +205,24 @@ func makeTextPDF(_ attr: NSAttributedString, at url: URL) -> PDFDocument {
     ctx.closePDF()
     return PDFDocument(url: url)!
 }
+// 번역할 글의 수식: 자리표로 바꾸고 PDF에서 잘라 낼 자리를 찾는다. 원문에 "X2"가 있으면 자리표는 다른 글자(Q)로 한다.
+check(["pθ(x0)", "x1,...,xT", "dx1:T,", "q(x0).", "T", "I):", "0,I", "∼", "β1"].allSatisfy(PDFMath.looksLikeMath)
+      && !["a", "A", "the", "models", "[53]", "(1)", "ResNet50", "e.g.,", "Figure"].contains(where: PDFMath.looksLikeMath),
+      "수식 낱말 알아보기")
+let mathDoc = makeTextPDF("We define pθ(x0) := pθ(x0:T) dx1:T, where x1,...,xT are latents of the same dimensionality as the data x0 ∼ q(x0). The X2 model is not math.",
+                          at: outDir.appendingPathComponent("math.pdf"))
+let mathPage = mathDoc.page(at: 0)!
+let mathSplit = PDFMath.split(mathPage.selection(for: mathPage.bounds(for: .cropBox))!)
+check(mathSplit.marker == "Q"
+      && mathSplit.text == "We define Q1, where Q2 are latents of the same dimensionality as the data Q3. The Q4 model is not math."
+      && mathSplit.spans.map(\.text) == ["pθ(x0) := pθ(x0:T) dx1:T", "x1,...,xT", "x0 ∼ q(x0)", "X2"]
+      && mathSplit.spans.allSatisfy { $0.rects.count == 1 && $0.rects[0].width > 10 && $0.rects[0].height > 10 },
+      "수식을 자리표로 바꾸기: \(mathSplit.text)")
+check(mathSplit.pieces(of: "Q 2는 Q1의 잠재 변수이고 Q9는 아니다")
+      == [.math(1), .text("는 "), .math(0), .text("의 잠재 변수이고 Q9는 아니다")]
+      && mathSplit.plain.hasPrefix("We define pθ(x0) := pθ(x0:T) dx1:T, where x1,...,xT are"),
+      "번역문의 자리표를 수식으로 되돌리기")
+
 // 페이지는 문서를 약하게 참조하므로 문서를 변수로 붙잡아 둔다.
 let wordsDoc = makeTextPDF("The quick brown fox saw results.In this case don't stop. See (word). Also [f(x)] here. The users' data and ‘replay’ too. Named ‘t-SNE’ here.",
                           at: outDir.appendingPathComponent("words.pdf"))
