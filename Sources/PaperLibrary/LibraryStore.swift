@@ -7,7 +7,7 @@ final class LibraryStore {
     static let didChange = Notification.Name("LibraryStoreDidChange")
     private static let folderKey = "libraryFolder"
 
-    private var library: Library?
+    private(set) var library: Library?
     private(set) var loadError: Error?
     private(set) var items: [LibraryEntry] = []
     private(set) var collections: [LibraryCollection] = []
@@ -38,6 +38,21 @@ final class LibraryStore {
     func reload() {
         load()
         NotificationCenter.default.post(name: Self.didChange, object: self)
+    }
+
+    /// PaperLibrary에서 항목을 고친 뒤: 다시 읽어 알리고 Drive의 백업을 새로 쓴다.
+    func didModify() {
+        reload()
+        guard let library, let folder else { return }
+        do { try LibraryBackup.write(library, to: folder) } catch { NSLog("PaperLibrary backup failed: \(error)") }
+    }
+
+    /// 서지 정보로 항목을 만든다. 같은 논문이 이미 있으면 만들지 않고 그 항목을 돌려준다. 다시 읽기·백업은 부르는 쪽이 한다.
+    func addPaper(_ metadata: PaperMetadata, to collection: Int64?) throws -> (id: Int64, existing: Bool) {
+        guard let library else { throw loadError ?? CocoaError(.fileReadUnknown) }
+        if let id = try library.existingItem(for: metadata) { return (id, true) }
+        let key = Naming.citationKey(pattern: Settings.citationKeyPattern, metadata: metadata, taken: try library.citationKeys())
+        return (try library.add(metadata, citationKey: key, collectionID: collection), false)
     }
 
     /// 알림 없이 읽는다. init 중에 알리면 받는 쪽이 아직 다 만들어지지 않은 `shared`를 다시 불러 멈춘다.

@@ -1,4 +1,5 @@
-// PaperLibrary 앱 아이콘(Resources/PaperLibrary/AppIcon.icns)을 그린다. 사용법: swift scripts/make-library-icon.swift
+// PaperLibrary 앱 아이콘(Resources/PaperLibrary/AppIcon.icns)과 Chrome 확장 아이콘(Extension/Chrome/icons)을 그린다.
+// 사용법: swift scripts/make-library-icon.swift
 // PaperMark 아이콘과 같은 둥근 사각형에 바탕색만 바꾸고, 형광펜 색 책등이 꽂힌 책장을 그린다.
 import AppKit
 
@@ -100,6 +101,11 @@ try FileManager.default.createDirectory(at: iconset, withIntermediateDirectories
 for points in [16, 32, 128, 256, 512] {
     try png(size: points).write(to: iconset.appendingPathComponent("icon_\(points)x\(points).png"))
     try png(size: points * 2).write(to: iconset.appendingPathComponent("icon_\(points)x\(points)@2x.png"))
+}
+let extensionIcons = root.appendingPathComponent("Extension/Chrome/icons")
+try FileManager.default.createDirectory(at: extensionIcons, withIntermediateDirectories: true)
+for size in [16, 32, 48, 128] {
+    try png(size: size).write(to: extensionIcons.appendingPathComponent("icon-\(size).png"))
 }
 let iconutil = Process()
 iconutil.executableURL = URL(fileURLWithPath: "/usr/bin/iconutil")

@@ -35,7 +35,7 @@ final class LibrarySidebarView: NSView, NSOutlineViewDataSource, NSOutlineViewDe
         outline.headerView = nil
         outline.style = .sourceList
         outline.rowSizeStyle = .custom
-        outline.rowHeight = 22
+        outline.rowHeight = Style.rowHeight + 2
         outline.indentationPerLevel = 10
         outline.backgroundColor = .clear
         outline.dataSource = self
@@ -160,10 +160,11 @@ final class LibrarySidebarView: NSView, NSOutlineViewDataSource, NSOutlineViewDe
         let cell = NSTableCellView()
         cell.identifier = id
         let field = NSTextField(labelWithString: "")
+        field.font = Style.font
         field.lineBreakMode = .byTruncatingTail
         field.translatesAutoresizingMaskIntoConstraints = false
         if !icon {
-            field.font = .systemFont(ofSize: 11, weight: .bold)
+            field.font = .systemFont(ofSize: Style.fontSize - 3, weight: .bold)
             field.textColor = .secondaryLabelColor
         }
         cell.addSubview(field)
@@ -174,7 +175,7 @@ final class LibrarySidebarView: NSView, NSOutlineViewDataSource, NSOutlineViewDe
         ]
         if icon {
             let image = NSImageView()
-            image.symbolConfiguration = .init(pointSize: 12, weight: .regular)
+            image.symbolConfiguration = .init(pointSize: Style.fontSize - 1, weight: .regular)
             image.contentTintColor = .secondaryLabelColor
             image.translatesAutoresizingMaskIntoConstraints = false
             cell.addSubview(image)
@@ -182,7 +183,7 @@ final class LibrarySidebarView: NSView, NSOutlineViewDataSource, NSOutlineViewDe
             constraints += [
                 image.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
                 image.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-                image.widthAnchor.constraint(equalToConstant: 18),
+                image.widthAnchor.constraint(equalToConstant: 22),
                 field.leadingAnchor.constraint(equalTo: image.trailingAnchor, constant: 4),
             ]
         } else {

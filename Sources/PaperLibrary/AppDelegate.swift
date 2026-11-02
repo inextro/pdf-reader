@@ -2,9 +2,17 @@ import AppKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var libraryWindow = LibraryWindowController()
+    private lazy var settingsWindow = SettingsWindowController()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = makeMainMenu()
+        showLibrary(nil)
+        // 브라우저 확장이 논문을 보내는 로컬 서버
+        Connector.shared.start()
+    }
+
+    /// `paperlibrary://`: 확장 팝업의 "Open PaperLibrary" 버튼이 앱을 켤 때 쓴다.
+    func application(_ application: NSApplication, open urls: [URL]) {
         showLibrary(nil)
     }
 
@@ -16,6 +24,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func showLibrary(_ sender: Any?) {
         libraryWindow.showWindow(nil)
+    }
+
+    @objc private func addByIdentifier(_ sender: Any?) {
+        showLibrary(nil)
+        libraryWindow.addByIdentifier(sender)
+    }
+
+    @objc private func showSettings(_ sender: Any?) {
+        settingsWindow.showWindow(nil)
     }
 
     @objc private func importFromZotero(_ sender: Any?) {
@@ -42,6 +59,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let app = submenu(of: main, title: "PaperLibrary")
         app.addItem(withTitle: "About PaperLibrary", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         app.addItem(.separator())
+        app.addItem(withTitle: "Settings…", action: #selector(showSettings(_:)), keyEquivalent: ",").target = self
+        app.addItem(.separator())
         app.addItem(withTitle: "Hide PaperLibrary", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         app.addItem(withTitle: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
             .keyEquivalentModifierMask = [.command, .option]
@@ -50,6 +69,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         app.addItem(withTitle: "Quit PaperLibrary", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
         let file = submenu(of: main, title: "File")
+        file.addItem(withTitle: "Add by Identifier…", action: #selector(addByIdentifier(_:)), keyEquivalent: "N").target = self
+        file.addItem(.separator())
         file.addItem(withTitle: "Import from Zotero…", action: #selector(importFromZotero(_:)), keyEquivalent: "I").target = self
         file.addItem(withTitle: "Change PDF Folder…", action: #selector(changeFolder(_:)), keyEquivalent: "").target = self
         file.addItem(.separator())
@@ -69,6 +90,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let view = submenu(of: main, title: "View")
         view.addItem(withTitle: "Show Sidebar", action: #selector(NSSplitViewController.toggleSidebar(_:)), keyEquivalent: "s")
             .keyEquivalentModifierMask = [.command, .control]
+        view.addItem(withTitle: "Show Inspector", action: #selector(NSSplitViewController.toggleInspector(_:)), keyEquivalent: "i")
+            .keyEquivalentModifierMask = [.command, .option]
 
         let window = submenu(of: main, title: "Window")
         window.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")

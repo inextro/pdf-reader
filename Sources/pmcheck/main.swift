@@ -705,5 +705,173 @@ if FileManager.default.fileExists(atPath: ZoteroImport.defaultDatabase.path), le
     print("SKIP 실제 Zotero 라이브러리 없음")
 }
 
+// MARK: 브라우저 확장으로 추가하기: 메타태그·CrossRef·arXiv 읽기, 이름 짓기, 항목 만들기
+
+// 실제 페이지(2026-11-02)의 citation_* 메타태그
+let arxivPage = PaperMetadata.page(meta: [
+    ("citation_title", "LightGCN: Simplifying and Powering Graph Convolution Network for Recommendation"),
+    ("citation_author", "He, Xiangnan"), ("citation_author", "Deng, Kuan"), ("citation_author", "Wang, Xiang"),
+    ("citation_date", "2020/02/06"), ("citation_online_date", "2020/07/07"),
+    ("citation_pdf_url", "https://arxiv.org/pdf/2002.02126"), ("citation_arxiv_id", "2002.02126"),
+    ("citation_abstract", "Graph Convolution Network (GCN) has become new state-of-the-art   for collaborative filtering."),
+], url: "https://arxiv.org/abs/2002.02126", title: "[2002.02126] LightGCN")
+check(arxivPage.type == "preprint" && arxivPage.venue == "arXiv" && arxivPage.arxivID == "2002.02126"
+      && arxivPage.date == "2020-02-06" && arxivPage.creators.first == Creator(role: "author", family: "He", given: "Xiangnan")
+      && arxivPage.abstract == "Graph Convolution Network (GCN) has become new state-of-the-art for collaborative filtering."
+      && arxivPage.pdfURL == "https://arxiv.org/pdf/2002.02126", "arXiv 페이지 메타태그")
+let neuripsPage = PaperMetadata.page(meta: [
+    ("citation_title", "Training language models to follow instructions with human feedback"),
+    ("citation_author", "Ouyang, Long"), ("citation_journal_title", "Advances in Neural Information Processing Systems"),
+    ("citation_volume", "35"), ("citation_firstpage", "27730"), ("citation_lastpage", "27744"),
+    ("citation_publication_date", "2022-12-06"), ("citation_doi", "10.52202/068431-2011"),
+], url: "https://proceedings.neurips.cc/paper_files/paper/2022/hash/b1ef-Abstract-Conference.html", title: nil)
+check(neuripsPage.type == "conferencePaper" && neuripsPage.fields["pages"] == "27730-27744"
+      && neuripsPage.fields["volume"] == "35" && neuripsPage.doi == "10.52202/068431-2011" && neuripsPage.year == 2022,
+      "NeurIPS 페이지: journal 메타태그여도 학회 논문")
+let aclPage = PaperMetadata.page(meta: [
+    ("citation_title", "RecMind: Large Language Model Powered Agent For Recommendation"),
+    ("citation_author", "Yancheng Wang"), ("citation_author", "Ziyan Jiang"),
+    ("citation_conference_title", "Findings of the Association for Computational Linguistics: NAACL 2024"),
+    ("citation_publication_date", "2024/6"), ("citation_doi", "10.18653/v1/2024.findings-naacl.271"),
+], url: "https://aclanthology.org/2024.findings-naacl.271/", title: nil)
+check(aclPage.type == "conferencePaper" && aclPage.date == "2024-06"
+      && aclPage.creators.first == Creator(role: "author", family: "Wang", given: "Yancheng")
+      && aclPage.venue == "Findings of the Association for Computational Linguistics: NAACL 2024", "ACL Anthology 페이지")
+let blankPage = PaperMetadata.page(meta: [("og:site_name", "Some Blog")], url: "https://example.com/post", title: " A Post ")
+check(blankPage.type == "webpage" && blankPage.title == "A Post" && blankPage.venue == "Some Blog", "논문이 아닌 페이지는 webpage")
+
+let crossrefJSON = """
+{"status":"ok","message":{"type":"proceedings-article","DOI":"10.1145/3397271.3401063",
+ "title":["LightGCN: Simplifying and Powering Graph Convolution Network for Recommendation"],
+ "author":[{"given":"Xiangnan","family":"He","sequence":"first"},{"given":"Kuan","family":"Deng"},{"name":"ACM Team"}],
+ "container-title":["Proceedings of the 43rd International ACM SIGIR Conference on Research and Development in Information Retrieval"],
+ "issued":{"date-parts":[[2020,7,25]]},"page":"639-648","publisher":"ACM","publisher-location":"New York, NY, USA",
+ "ISBN":["9781450380164"],"event":{"name":"SIGIR '20: The 43rd International ACM SIGIR conference"},
+ "abstract":"<jats:title>Abstract</jats:title><jats:p>Graph Convolution Network (GCN) has become\\n new state-of-the-art.</jats:p>"}}
+"""
+let crossref = PaperMetadata.crossref(Data(crossrefJSON.utf8))
+check(crossref?.type == "conferencePaper" && crossref?.date == "2020-07-25" && crossref?.creators.count == 3
+      && crossref?.creators[2] == Creator(role: "author", family: "ACM Team", given: nil)
+      && crossref?.fields["pages"] == "639-648" && crossref?.fields["place"] == "New York, NY, USA"
+      && crossref?.fields["conferenceName"]?.hasPrefix("SIGIR '20") == true
+      && crossref?.abstract == "Graph Convolution Network (GCN) has become new state-of-the-art.", "CrossRef 응답 읽기")
+
+let arxivAtom = """
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:arxiv="http://arxiv.org/schemas/atom">
+  <title>ArXiv Query</title><id>http://arxiv.org/api/xyz</id>
+  <entry>
+    <id>http://arxiv.org/abs/2002.02126v4</id>
+    <published>2020-02-06T08:45:58Z</published>
+    <title>LightGCN: Simplifying and Powering Graph
+      Convolution Network for Recommendation</title>
+    <summary>  Graph Convolution Network (GCN) has become new state-of-the-art. </summary>
+    <author><name>Xiangnan He</name></author>
+    <author><name>Kuan Deng</name><arxiv:affiliation>USTC</arxiv:affiliation></author>
+    <arxiv:doi>10.1145/3397271.3401063</arxiv:doi>
+  </entry>
+</feed>
+"""
+let arxivEntry = PaperMetadata.arxiv(Data(arxivAtom.utf8))
+check(arxivEntry?.metadata.arxivID == "2002.02126" && arxivEntry?.publishedDOI == "10.1145/3397271.3401063"
+      && arxivEntry?.metadata.title == "LightGCN: Simplifying and Powering Graph Convolution Network for Recommendation"
+      && arxivEntry?.metadata.creators.map(\.family) == ["He", "Deng"] && arxivEntry?.metadata.date == "2020-02-06"
+      && arxivEntry?.metadata.fields["archiveID"] == "arXiv:2002.02126", "arXiv 응답 읽기")
+check(PaperMetadata.arxiv(Data("<feed><entry><id>http://arxiv.org/api/errors#bad</id><title>Error</title></entry></feed>".utf8)) == nil,
+      "arXiv에 없는 번호")
+
+let merged = arxivPage.merged(with: crossref!, preferOther: true)
+check(merged.type == "conferencePaper" && merged.venue == crossref?.venue && merged.arxivID == "2002.02126"
+      && merged.doi == "10.1145/3397271.3401063" && merged.url == "https://arxiv.org/abs/2002.02126"
+      && merged.creators.count == 3 && merged.pdfURL == "https://arxiv.org/pdf/2002.02126", "페이지 + CrossRef 합치기(온라인 우선)")
+let pageFirst = neuripsPage.merged(with: crossref!, preferOther: false)
+check(pageFirst.title == neuripsPage.title && pageFirst.fields["pages"] == "27730-27744" && pageFirst.fields["place"] == "New York, NY, USA",
+      "페이지 우선이면 빈 칸만 채운다")
+
+for (title, expected) in [
+    ("LightGCN: Simplifying and Powering Graph Convolution Network for Recommendation",
+     "LightGCN: Simplifying and powering graph convolution network for recommendation"),
+    ("Score-Based Generative Modeling through Stochastic Differential Equations",
+     "Score-based generative modeling through stochastic differential equations"),
+    ("Rethinking Semantic–Collaborative Integration: Why Alignment Is Not Enough",
+     "Rethinking semantic–collaborative integration: Why alignment is not enough"),
+    ("A Survey on 3D Vision with BERT and Q-Learning", "A survey on 3D vision with BERT and Q-learning"),
+    ("DEEP LEARNING FOR RECOMMENDER SYSTEMS", "Deep learning for recommender systems"),
+    ("Neural collaborative filtering", "Neural collaborative filtering"),
+] {
+    let got = PaperMetadata.sentenceCase(title)
+    check(got == expected, "첫 글자만 대문자: \(got)")
+}
+
+let named = PaperMetadata.sentenceCase(merged.title)
+var namedMeta = merged
+namedMeta.title = named
+check(Naming.citationKey(pattern: Naming.defaultCitationKey, metadata: namedMeta, taken: []) == "he2020LightGCN"
+      && Naming.citationKey(pattern: Naming.defaultCitationKey, metadata: namedMeta, taken: ["he2020LightGCN", "he2020LightGCNa"]) == "he2020LightGCNb"
+      && Naming.citationKey(pattern: "{Auth}_{title2}", metadata: namedMeta, taken: []) == "He_lightgcnsimplifying",
+      "citation key 패턴과 겹칠 때 a, b")
+var scoreMeta = PaperMetadata()
+(scoreMeta.title, scoreMeta.date, scoreMeta.creators) = ("Score-based generative modeling", "2020", [Creator.author("Yang Song")])
+check(Naming.citationKey(pattern: Naming.defaultCitationKey, metadata: scoreMeta, taken: []) == "song2020ScoreBased",
+      "기존 Zotero key와 같은 모양(song2020ScoreBased)")
+check(Naming.fileName(pattern: Naming.defaultFileName, metadata: namedMeta)
+      == "LightGCN Simplifying and powering graph convolution network for recommendation"
+      && Naming.fileName(pattern: "{year} - {authors} - {title}", metadata: namedMeta).hasPrefix("2020 - He et al. - LightGCN Simplifying"),
+      "PDF 파일 이름 패턴")
+
+check(PaperID.doi(in: "https://dl.acm.org/doi/pdf/10.1145/3397271.3401063?download=true") == "10.1145/3397271.3401063"
+      && PaperID.doi(in: "doi:10.18653/v1/2024.findings-naacl.271.") == "10.18653/v1/2024.findings-naacl.271"
+      && PaperID.doi(in: "https://doi.org/10.1016%2Fj.knosys.2023.110364") == "10.1016/j.knosys.2023.110364"
+      && PaperID.arxiv(in: "https://arxiv.org/pdf/2002.02126v4") == "2002.02126"
+      && PaperID.arxiv(in: "10.48550/arXiv.2310.20453") == "2310.20453"
+      && PaperID.arxiv(in: "arXiv:2310.20453v2 [cs.LG] 31 Oct 2023") == "2310.20453", "DOI, arXiv 번호 찾기")
+let wand = PaperID.identifiers(in: "10.1145/3397271.3401063, https://doi.org/10.1145/3397271.3401063\n2002.02126v2 arXiv:2310.20453 "
+                                + "https://arxiv.org/abs/1706.03762 10.48550/arXiv.2401.00001 hello 2024")
+check(wand.map { $0.doi ?? "arxiv:" + ($0.arxivID ?? "") }
+      == ["10.1145/3397271.3401063", "arxiv:2002.02126", "arxiv:2310.20453", "arxiv:1706.03762", "arxiv:2401.00001"],
+      "마술 지팡이 입력에서 DOI·arXiv 번호 찾기")
+var acmPage = PaperMetadata()
+acmPage.doi = "10.1145/3397271.3401063"
+check(PaperID.pdfCandidates(for: acmPage, pageURL: "https://dl.acm.org/doi/10.1145/3397271.3401063", isPDF: false,
+                            links: ["https://dl.acm.org/doi/pdf/10.1145/3397271.3401063", "https://x.org/a.pdf"])
+      == ["https://dl.acm.org/doi/pdf/10.1145/3397271.3401063", "https://x.org/a.pdf"]
+      && PaperID.pdfCandidates(for: PaperMetadata(), pageURL: "https://openreview.net/forum?id=PxTIG12RRHS", isPDF: false, links: [])
+      == ["https://openreview.net/pdf?id=PxTIG12RRHS"], "PDF 주소 후보")
+
+let edited = try Library(url: libDir.appendingPathComponent("edited.sqlite"))
+try edited.db.run("INSERT INTO collections (key, name) VALUES ('c1', 'Inbox'), ('c2', 'Read')")
+let newID = try edited.add(namedMeta, citationKey: "he2020LightGCN", collectionID: 1)
+try edited.addAttachment("archive/LightGCN.pdf", to: newID)
+try edited.moveItem(newID, from: 1, to: 2)
+let added = try edited.item(newID)
+check(added?.title == named && added?.type == "conferencePaper" && added?.year == 2020 && added?.arxivID == "2002.02126"
+      && added?.creators.count == 3 && added?.attachments == ["archive/LightGCN.pdf"] && added?.collectionIDs == [2]
+      && added?.fields["proceedingsTitle"] == crossref?.venue, "항목 추가, PDF 붙이기, 컬렉션 옮기기")
+var sameByArxiv = PaperMetadata()
+sameByArxiv.arxivID = "2002.02126"
+var sameByTitle = PaperMetadata()
+sameByTitle.title = "LIGHTGCN — simplifying and powering graph convolution network for recommendation"
+check(try edited.existingItem(for: acmPage) == newID && edited.existingItem(for: sameByArxiv) == newID
+      && edited.existingItem(for: sameByTitle) == newID && edited.existingItem(for: aclPage) == nil, "이미 있는 논문 찾기")
+try edited.update(newID, with: aclPage, citationKey: "wang2024RecMind")
+check(try edited.item(newID).map { $0.title == aclPage.title && $0.citationKey == "wang2024RecMind" && $0.creators.count == 2
+                                   && $0.attachments.count == 1 && $0.collectionIDs == [2] } == true, "서지 정보 바꾸기")
+
+// 실제 CrossRef·arXiv(네트워크가 될 때만)
+final class Box<T> { var value: T?; init() {} }
+let online = Box<(PaperMetadata, [String])>()
+let done = DispatchSemaphore(value: 0)
+Task.detached {
+    online.value = await MetadataLookup.complete(arxivPage, options: LookupOptions())
+    done.signal()
+}
+if done.wait(timeout: .now() + 30) == .timedOut || online.value?.1.isEmpty == false {
+    print("SKIP 실제 CrossRef·arXiv 조회:", online.value?.1 ?? ["시간 초과"])
+} else if let (live, _) = online.value {
+    check(live.type == "conferencePaper" && live.doi?.lowercased() == "10.1145/3397271.3401063" && live.arxivID == "2002.02126"
+          && live.title.hasPrefix("LightGCN: Simplifying and powering") && live.venue?.contains("SIGIR") == true,
+          "실제 조회: arXiv → 출판본(SIGIR) (\(live.venue ?? "-"))")
+}
+
 print(failures == 0 ? "ALL PASS" : "\(failures) FAILED", "→", outDir.path)
 exit(failures == 0 ? 0 : 1)

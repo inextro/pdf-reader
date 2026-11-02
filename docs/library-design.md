@@ -264,7 +264,8 @@ PaperLibrary를 켜면 라이브러리 창 하나가 뜬다. 논문을 더블클
 - PDF가 없는 항목은 글자를 흐리게 보이고, 더블클릭하면 DOI/URL을 브라우저로 연다.
 - PDF 파일이 디스크에 없으면 경고 아이콘을 보이고 열 때 알린다.
 - 오른쪽 클릭: Open PDF, Show in Finder, Copy Citation Key, Copy DOI, Open DOI/URL.
-- 선택한 항목의 상세(초록, 전체 저자, 노트)는 P1에서 툴팁으로만 보인다. 상세 패널은 P2.
+- 선택한 항목의 상세(초록, 전체 저자, 노트)는 오른쪽 정보 패널(inspector)에 보인다(2026-11-02). 툴바 오른쪽 버튼이나 View > Show Inspector(⌥⌘I)로 접고 편다. 지금은 읽기만 하고 편집은 아직 없다.
+- 열: 머리글을 끌어 순서를 바꾸고, 머리글을 오른쪽 클릭해 켜고 끈다(Modified, Item Type, Citation Key, DOI, arXiv, Publisher, Pages, Tags를 더할 수 있다). 순서·너비·켜짐은 저장되고, 같은 메뉴의 Restore Default Columns로 처음 구성으로 돌린다.
 
 ### 6.4 리더와의 연결
 
@@ -288,12 +289,68 @@ XCTest 대신 지금처럼 `pmcheck`에 라이브러리 검사를 더한다(GUI 
 
 
 1. ~~**Library 자리:** PaperMark 안의 탭으로 둘지, 별도 라이브러리 창을 둘지.~~ → 별도 앱 PaperLibrary(§6.1).
-2. **다시 가져오기 규칙:** P1은 Zotero가 이긴다. P2에서 PaperLibrary 편집이 생기면 (a) 그 시점에 Zotero 가져오기를 끝내고 PaperLibrary만 쓴다, (b) PaperLibrary에서 고친 항목은 다시 가져올 때 건너뛴다 중 하나를 골라야 한다. Zotero를 완전히 떠나는 시점을 정하면 (a)가 가장 단순하다.
+2. ~~**다시 가져오기 규칙:**~~ → (a) 확장을 쓰기 시작하면 Zotero 가져오기를 끝낸다(§9.4). P1은 Zotero가 이긴다. P2에서 PaperLibrary 편집이 생기면 (a) 그 시점에 Zotero 가져오기를 끝내고 PaperLibrary만 쓴다, (b) PaperLibrary에서 고친 항목은 다시 가져올 때 건너뛴다 중 하나를 골라야 한다. Zotero를 완전히 떠나는 시점을 정하면 (a)가 가장 단순하다.
 3. **라이브러리 폴더:** Zotero base 폴더(`My Drive/zotero`)를 그대로 라이브러리 폴더로 쓸지, 새 폴더를 만들지. 새 PDF를 넣을 곳(P2)도 여기로 정해진다.
 4. **노트:** Zotero 노트 19개를 HTML 그대로 가져와 두기만 하고 표시는 P2로 미루는 것으로 충분한지.
 5. **앱 이름:** 개발 중에는 PaperLibrary를 쓴다. 정식 이름은 v1.0.0 때 정하고, DB 폴더 이름(`Application Support/PaperLibrary`)과 백업 파일 이름도 그때 함께 옮긴다. 리더는 PaperMark 그대로.
 
-## 9. 작업 순서
+## 9. 브라우저 확장 (2026-11-02, P3에서 앞당김)
+
+Zotero Connector처럼 논문 페이지(ACM DL, ScienceDirect, ACL Anthology, NeurIPS, OpenReview, arXiv 등)에서 확장 아이콘을 한 번 누르면 서지 정보와 PDF가 PaperLibrary에 들어간다. 사용자 요청으로 P2의 "항목 추가"와 P3의 "브라우저 확장"을 먼저 만들었다.
+
+### 9.1 구조
+
+```
+Chrome 확장 (Extension/Chrome)                     PaperLibrary (127.0.0.1:23120)
+  페이지의 meta 태그·PDF 링크 읽기  ── POST /save ──▶  메타태그 → CrossRef(DOI) / arXiv API → 항목 만들기
+  PDF 받기(브라우저 로그인 상태)    ◀── PDF 주소들 ──
+                                  ── POST /attach ─▶  새 PDF 폴더에 저장, 항목에 붙이기, 백업
+  팝업에서 컬렉션 고르기           ── POST /collection ▶ 컬렉션 옮기기
+```
+
+- PDF는 확장이 받는다. 학교 구독으로만 열리는 논문(ACM, Elsevier)은 브라우저 쿠키가 있어야 받을 수 있기 때문이다(Zotero도 같다).
+- 서지 정보를 채우는 판단은 모두 PaperLibrary(`PaperMarkLibrary`)에 둔다. 확장은 페이지의 원자료만 보낸다. 그래야 `pmcheck`로 확인할 수 있고, 규칙을 바꿔도 확장을 다시 설치할 필요가 없다.
+- 서버는 loopback 인터페이스에서만 받는다. 웹 페이지의 스크립트가 보낸 요청은 `Origin`이 `chrome-extension://`가 아니어서 거절하고, `X-PaperLibrary: 1` 헤더가 없는 요청도 거절한다.
+- PaperLibrary가 꺼져 있으면 팝업이 알리고 "Open PaperLibrary"(`paperlibrary://`)로 켤 수 있다.
+
+### 9.2 서지 정보 채우기
+
+1. 페이지 메타태그(Highwire `citation_*`, Dublin Core, PRISM)를 읽는다. NeurIPS처럼 학회 논문집이 journal 태그로 오면 이름으로 학회 논문으로 고친다.
+2. DOI가 있으면 CrossRef, arXiv 번호가 있으면 arXiv API에서 받아 합친다.
+3. arXiv 논문은 출판본을 찾는다: arXiv에 적힌 DOI, 없으면 CrossRef에서 제목(대소문자·문장부호 무시)과 첫 저자가 같은 학회·저널 논문.
+4. 같은 논문(DOI, arXiv 번호, 제목)이 이미 있으면 새로 만들지 않고, PDF가 없을 때만 붙인다.
+5. PDF 탭에서 누르면 PDF 첫 쪽의 DOI·arXiv 번호로 찾는다. 논문 페이지에서 PDF를 못 받아 PDF 탭에서 다시 누른 경우 원래 항목에 붙인다.
+
+설정(PaperLibrary > Settings…)에서 고르는 것:
+
+| 설정 | 기본값 | 비고 |
+|---|---|---|
+| 새 PDF 폴더 | 라이브러리 폴더의 `archive` | 지금은 `My Drive/zotero/archive`. 나중에 PaperLibrary 전용 폴더로 바꾼다(사용자 결정) |
+| PDF 파일 이름 | `{title}` | 지금 Zotero 폴더의 이름 규칙(콜론을 뺀 제목) |
+| citation key | `{auth}{year}{Title1}` | 지금 라이브러리의 `wang2026Rethinking`, `song2020ScoreBased`와 같은 모양. 겹치면 a, b, … |
+| CrossRef·arXiv 우선 | 켬 | 끄면 페이지 메타태그가 이기고 빈 칸만 채운다 |
+| arXiv 논문은 출판본 | 켬 | |
+| 제목 sentence case | 켬 | 지금 라이브러리 제목들의 표기. 약어·대문자 섞인 낱말(LightGCN, BERT)과 콜론 뒤 첫 낱말은 그대로 |
+
+패턴 이름: `{auth}` `{Auth}` `{authors}` `{year}` `{title}` `{Title1}`–`{Title3}` `{title1}`–`{title3}` `{venue}`.
+
+### 9.3 마술 지팡이: 식별자로 추가하기
+
+PDF 없이 서지 정보만 넣을 때 쓴다(2026-11-02, 사용자 결정: 확장은 항상 PDF까지, 지팡이는 항상 서지 정보만).
+
+- 툴바의 지팡이 버튼 또는 File > Add by Identifier…(⇧⌘N). 입력창에 DOI·arXiv 번호를 넣는다. 공백으로 여러 개, 주소(`https://doi.org/…`, `arxiv.org/abs/…`)도 된다.
+- 서지 정보는 확장과 같은 방식(§9.2, 설정 포함)으로 채운다. 사이드바에서 컬렉션을 고르고 있으면 그 컬렉션에 넣는다.
+- 찾지 못한 식별자는 입력창에 남기고 이유를 보인다. 이미 있는 논문은 새로 만들지 않는다.
+
+### 9.4 Zotero와의 관계 (§8 질문 2의 결정)
+
+(a)로 정했다(2026-11-02, 사용자 결정): 확장을 쓰기 시작하면 Zotero 가져오기는 끝낸다. 가져오기는 `zotero_key`가 있는 항목만 고치고 지우므로, 확장으로 넣은 항목은 다시 가져와도 그대로 남는다. 다만 같은 논문을 Zotero에도 넣었다면 두 개가 된다.
+
+### 9.5 설치
+
+Chrome 웹 스토어에 올리지 않고 개발자 모드로 쓴다: `chrome://extensions` → 개발자 모드 켜기 → "압축해제된 확장 프로그램 로드" → `~/Library/Application Support/PaperLibrary/ChromeExtension`. 이 폴더는 `./scripts/build-app.sh --library --install`이 `Extension/Chrome`을 복사해 만든다(저장소 폴더를 바로 불러오면 브랜치를 바꿀 때 확장이 사라진다). 확장을 고친 뒤에는 설치하고 `chrome://extensions`에서 새로고침한다. 단축키는 ⌘⇧S. 아이콘은 `scripts/make-library-icon.swift`가 앱 아이콘과 함께 그린다.
+
+## 10. 작업 순서
 
 1. `PaperMarkLibrary` 타깃, SQLite 래퍼, 스키마 v1, `pmcheck` 마이그레이션 검사
 2. Zotero 가져오기와 `pmcheck` 검사(합성 DB, 실제 DB)

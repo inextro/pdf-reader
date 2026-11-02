@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # PaperMark.app 번들(Apple Silicon + Intel 유니버설)을 build/에 만든다.
 #   --library  PaperMark 대신 라이브러리 앱 PaperLibrary.app을 만든다(Resources/PaperLibrary/의 Info.plist와 아이콘).
-#   --install  ~/Applications 에 설치한다.
+#   --install  ~/Applications 에 설치한다. --library면 Chrome 확장도 ~/Library/Application Support/PaperLibrary/ChromeExtension에 둔다.
 #   --zip      배포용 build/<앱>-<버전>.zip 을 만든다(GitHub Releases에 올리는 파일).
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -39,6 +39,14 @@ for arg in "$@"; do
       /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
         -f "$HOME/Applications/$NAME.app"
       echo "installed: $HOME/Applications/$NAME.app"
+      # Chrome 확장은 브랜치를 바꿔도 사라지지 않는 곳에 둔다. Chrome에서는 이 폴더를 불러온다.
+      if [ "$NAME" = PaperLibrary ]; then
+        EXT="$HOME/Library/Application Support/PaperLibrary/ChromeExtension"
+        rm -rf "${EXT:?}"
+        mkdir -p "$(dirname "$EXT")"
+        cp -R Extension/Chrome "$EXT"
+        echo "installed: $EXT (Chrome: chrome://extensions → Reload)"
+      fi
       ;;
     --zip)
       VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$RES/Info.plist")"
