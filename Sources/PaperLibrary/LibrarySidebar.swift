@@ -14,7 +14,7 @@ private final class LibraryNode: NSObject {
     var children: [LibraryNode]
     /// Unlinked PDFs: 고르지 않고 누르면 추가할 파일 목록을 연다.
     var isNewFiles = false
-    /// 오른쪽에 흐리게 보이는 논문 수(Zotero처럼). 컬렉션은 하위 컬렉션까지 합쳐 센다(참조 포함, 겹치는 논문은 한 번).
+    /// 오른쪽에 흐리게 보이는 논문 수(Zotero처럼). 컬렉션은 자기 논문 수(참조 포함)에 하위 컬렉션의 수를 그대로 더한다(사용자 선택: 겹치는 논문도 따로 센다).
     var count: Int?
 
     init(_ title: String, symbol: String? = nil, filter: LibraryFilter? = nil, children: [LibraryNode] = []) {
@@ -200,24 +200,21 @@ final class LibrarySidebarView: NSView, NSOutlineViewDataSource, NSOutlineViewDe
             }
         }
         // 논문 수는 한 번 훑어 센다.
-        var members: [Int64: Set<Int64>] = [:], tagCounts: [String: Int] = [:], unfiled = 0
+        var collectionCounts: [Int64: Int] = [:], tagCounts: [String: Int] = [:], unfiled = 0
         for item in store.items {
             if item.collectionIDs.isEmpty { unfiled += 1 }
-            for id in item.collectionIDs { members[id, default: []].insert(item.id) }
+            for id in item.collectionIDs { collectionCounts[id, default: 0] += 1 }
             for tag in item.tags { tagCounts[tag, default: 0] += 1 }
         }
         func counted(_ node: LibraryNode, _ count: Int) -> LibraryNode { node.count = count; return node }
-        /// 하위 컬렉션의 논문까지 모은 집합을 돌려준다.
-        func nodes(under parent: Int64?, into papers: inout Set<Int64>) -> [LibraryNode] {
+        func nodes(under parent: Int64?) -> [LibraryNode] {
             sorted(byParent[parent] ?? []).map {
-                var inside = members[$0.id] ?? []
-                let children = nodes(under: $0.id, into: &inside)
-                papers.formUnion(inside)
-                return counted(LibraryNode($0.name, symbol: "folder", filter: .collection($0.id), children: children), inside.count)
+                let children = nodes(under: $0.id)
+                let count = (collectionCounts[$0.id] ?? 0) + children.reduce(0) { $0 + ($1.count ?? 0) }
+                return counted(LibraryNode($0.name, symbol: "folder", filter: .collection($0.id), children: children), count)
             }
         }
-        var filed = Set<Int64>()
-        let collectionNodes = nodes(under: nil, into: &filed)
+        let collectionNodes = nodes(under: nil)
         let library = LibraryNode("Library", children: [
             counted(LibraryNode("All Items", symbol: "books.vertical", filter: .all), store.items.count),
             counted(LibraryNode("Unfiled", symbol: "tray", filter: .unfiled), unfiled),
