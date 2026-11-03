@@ -184,7 +184,34 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // 스크립트의 요청을 막는 사이트(Taylor & Francis의 Cloudflare, ScienceDirect의 봇 확인)는 PDF 주소를 뒤쪽 탭에서
 // 사람이 여는 것처럼 연다. 확인을 통과해 PDF가 뜨면 그 주소를 받고, 그래도 막히면 Chrome의 다운로드로 받는다.
 // 결과는 { data } 또는 { file }(내려받은 파일 경로)이고, 못 받으면 null.
-async function downloadViaTab(url, log) {
+// ScienceDirect의 PDF 주소(/pdfft?md5=…)는 스크립트로 받으면 봇 확인 페이지가 오고, 그 시도로 md5가 쓸모없어져
+// 주소를 탭에서 바로 열어도 “There was a problem providing the content you requested”가 뜬다.
+// 이런 주소는 스크립트로 받아 보지 않고, 뒤쪽 탭에 논문 페이지를 연 뒤 그 페이지의 새 PDF 링크로 넘어간다(사람이 View PDF를 누르는 것과 같다).
+function opensFromPage(url) {
+  try {
+    return new URL(url).pathname.endsWith('/pdfft');
+  } catch {
+    return false;
+  }
+}
+
+// 페이지 안에서 실행된다. 같은 경로의 링크를 찾아(md5는 페이지를 열 때마다 새로 붙는다) 그 주소로 넘어간다.
+function followLink(url) {
+  const target = new URL(url, location.href).pathname;
+  const link = [...document.querySelectorAll('a[href]')].find((a) => {
+    try {
+      return new URL(a.href).pathname === target;
+    } catch {
+      return false;
+    }
+  });
+  if (!link) return null;
+  location.assign(link.href);
+  return link.href;
+}
+
+// page가 있으면 탭에 그 페이지를 먼저 열고, 그 페이지의 링크로 url에 들어간다.
+async function downloadViaTab(url, log, page = null) {
   // ?download=true처럼 내려받기로 응답하는 주소는 탭에 뜨지 않고 바로 다운로드가 된다. 그 다운로드를 잡는다.
   const host = new URL(url).host;
   const started = [];
@@ -196,10 +223,11 @@ async function downloadViaTab(url, log) {
     }
   };
   chrome.downloads.onCreated.addListener(onCreated);
-  const tab = await chrome.tabs.create({ url, active: false });
+  const tab = await chrome.tabs.create({ url: page || url, active: false });
   try {
     const deadline = Date.now() + 30_000;
     let last = null;
+    let followed = !page;
     while (Date.now() < deadline) {
       await sleep(800);
       if (started.length) {
@@ -209,6 +237,20 @@ async function downloadViaTab(url, log) {
       last = await chrome.tabs.get(tab.id).catch(() => null);
       if (!last) return null;
       if (last.status !== 'complete' || !last.url || last.url.startsWith('chrome')) continue;
+      if (!followed) {
+        // 봇 확인을 거치는 동안에는 링크가 없다. 논문 페이지가 뜨고 링크가 생기면 넘어간다.
+        try {
+          const [{ result }] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: followLink, args: [url] });
+          if (result) {
+            followed = true;
+            log.push(`tab: opened the PDF link on the page — ${result}`);
+          }
+        } catch (error) {
+          log.push(`tab: ${error} — ${last.url}`);
+          followed = true;
+        }
+        continue;
+      }
       // Chrome의 PDF 보기에는 스크립트를 넣을 수 없다. 넣을 수 있으면 문서 형식을 본다.
       let pdfShown = false;
       try {
@@ -276,13 +318,20 @@ async function savePDF(tab, item) {
       : await api(`/attach?id=${item.id}`, { method: 'POST', headers: { 'Content-Type': 'application/pdf' }, body: got.data });
     update(tabId, { phase: 'done', item: { ...item, ...attached }, pdf: 'attached' });
   };
+  const page = /^https?:/.test(tab.url || '') ? tab.url : null;
   for (const url of item.pdfCandidates) {
+    if (page && opensFromPage(url)) continue;
     const data = await download(url, tab, log);
     if (data) return attach({ data });
   }
+  // 논문 페이지에서 열어야 하는 주소는 하나만 시도한다(같은 PDF의 링크가 여러 개 있다).
+  let fromPageTried = false;
   for (const url of item.pdfCandidates) {
+    const fromPage = page && opensFromPage(url);
+    if (fromPage && fromPageTried) continue;
+    fromPageTried ||= fromPage;
     update(tabId, { phase: 'saving', step: 'Opening the PDF in a background tab…', item });
-    const got = await downloadViaTab(url, log);
+    const got = await downloadViaTab(url, log, fromPage ? page : null);
     if (got) return attach(got);
   }
   update(tabId, { phase: 'done', item, pdf: 'failed', log });
