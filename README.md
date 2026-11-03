@@ -6,6 +6,9 @@ PaperMark is a small, native Mac app for reading and marking up papers. Drag ove
 highlighted in your current color. Your highlights are saved into the PDF itself as standard
 annotations, so they show up in PDF Expert on iPad and in other PDF readers too.
 
+It comes with **PaperLibrary**, a companion app that keeps your papers' bibliographic data, collections, and tags,
+and opens each paper in PaperMark. See [PaperLibrary](#paperlibrary) below.
+
 ## Why
 
 Highlighting a PDF on a Mac should be simple, but the common options each come with a catch:
@@ -56,6 +59,31 @@ palette, then keep going on another device.
   **Install and Relaunch** to update in place, or use **PaperMark → Check for Updates…** any time. Turn off the
   daily check in Settings (`⌘,`).
 
+## PaperLibrary
+
+PaperLibrary is a paper library app, built as a lighter replacement for Zotero. It keeps the bibliographic data
+in a local database and leaves the PDFs as plain files in a folder you choose (for example in Google Drive).
+Double-click a paper to read it in PaperMark.
+
+- **Collections are folders.** Your workspace is a folder, and each collection is a folder inside it. A paper
+  lives in one folder with its PDF, and can also appear in other collections as a reference (`⌥`-drag or
+  **Add Reference**). Changes you make in Finder show up in the library.
+- **Save from Chrome.** The **Save to PaperLibrary** extension adds the paper on the current page, with its PDF, to the
+  collection selected in the sidebar. It reads the page's metadata and fills in the rest from CrossRef and arXiv.
+  If the paper is already in the library, it asks before updating it.
+- **Add by DOI or arXiv ID** (`⇧⌘N`).
+- **Import from Zotero**, including collections, tags, notes, and Better BibTeX citation keys.
+- **Reading status.** Click the status pill in the Tags column to switch between To Do, In Process, Verified, and
+  Completed. New papers start as To Do. Change the list in **Settings → Menu → Status tags**. Create, rename,
+  and delete tags by right-clicking them in the sidebar.
+- **Fix metadata in place.** Click any field in the info panel to edit it, like in Zotero. Fields you edit are
+  remembered and not overwritten when the paper is saved again from the browser.
+- **Copy citations** in APA, ACM, or IEEE style (`⇧⌘C`), or copy the citation key or DOI.
+- **Backup.** The library is also written as `PaperLibrary.json` in your workspace folder.
+
+To install the Chrome extension, choose **PaperLibrary → Install Chrome Extension…** and follow the steps. The
+extension is not in the Chrome Web Store; it is loaded unpacked from a folder PaperLibrary keeps up to date.
+
 ## Release notes
 
 See [CHANGELOG.md](CHANGELOG.md) for what changed in each version.
@@ -76,20 +104,23 @@ you have no unsaved edits, PaperMark reloads it.
 Requires macOS 14 (Sonoma) or later. Runs natively on Apple Silicon and Intel Macs.
 
 1. Download `PaperMark-<version>.zip` from the [latest release](https://github.com/inextro/pdf-reader/releases/latest).
-2. Unzip it and move `PaperMark.app` to your Applications folder.
-3. The app is not notarized by Apple, so macOS blocks it the first time. Open it once, then go to
+   For the library app, also download `PaperLibrary-<version>.zip`.
+2. Unzip it and move `PaperMark.app` (and `PaperLibrary.app`) to your Applications folder.
+3. The apps are not notarized by Apple, so macOS blocks them the first time. Open each one once, then go to
    **System Settings → Privacy & Security** and click **Open Anyway**.
    Alternatively, run `xattr -dr com.apple.quarantine /Applications/PaperMark.app` in Terminal.
 
-To make it the default PDF app, select a PDF in Finder, press `⌘I`, choose PaperMark under
-**Open with**, and click **Change All…**.
+### Default PDF app
 
-### Companion app: PDFRouter
+If you use PaperLibrary, PaperMark asks once whether to become your default PDF app. If you agree, PDFs inside
+your PaperLibrary workspace open in PaperMark, and every other PDF opens in Preview. This is handy for
+launchers like Raycast or Alfred, which always use the system default app. Change it later with
+**PaperMark → Default PDF App…**.
 
-[PDFRouter](https://github.com/inextro/pdf-router) takes the default PDF app slot and opens each PDF
-in an app chosen by where the file lives: PDFs in your Zotero attachment folders or in folders you
-choose go to PaperMark, and everything else goes to Preview. This is handy for launchers like Raycast or Alfred, which always use
-the system default app.
+This replaces the separate [PDFRouter](https://github.com/inextro/pdf-router) app, which you can delete.
+
+Without PaperLibrary, make PaperMark the default PDF app the usual way: select a PDF in Finder, press `⌘I`,
+choose PaperMark under **Open with**, and click **Change All…**.
 
 ## Keyboard shortcuts
 
@@ -123,6 +154,8 @@ Mouse:
 - There is no annotation-level merge. If you edit the same file on two devices before the sync
   finishes, the sync service decides which version wins (Google Drive keeps both as a conflict copy).
 - macOS only. On iPad, use any reader that supports standard PDF annotations.
+- When PaperMark is the default PDF app with a PaperLibrary workspace, a PDF outside the workspace goes to
+  Preview even if you choose **Open With → PaperMark** in Finder. Open it from PaperMark's **File → Open…** instead.
 
 ## Build from source
 
@@ -132,25 +165,29 @@ Needs the Xcode Command Line Tools (`xcode-select --install`). Full Xcode is not
 ./scripts/build-app.sh                  # build/PaperMark.app (universal)
 ./scripts/build-app.sh --install        # also copy it to ~/Applications
 ./scripts/build-app.sh --zip            # also create build/PaperMark-<version>.zip
+./scripts/build-app.sh --library        # build/PaperLibrary.app (takes the same --install and --zip)
+./scripts/build-app.sh --dev --install  # quick arm64 debug build for trying changes
 swift run pmcheck /tmp/pmcheck          # run the annotation round-trip checks
 swift scripts/make-icon.swift .         # redraw Resources/AppIcon.icns
 ```
 
-To publish a release, bump `CFBundleShortVersionString` in `Resources/Info.plist`, add a matching
-`### <version>` entry under Release notes, commit and push, then run `./scripts/release.sh`.
+To publish a release, bump `CFBundleShortVersionString` to the same version in `Resources/Info.plist` and
+`Resources/PaperLibrary/Info.plist`, add a matching `## <version>` entry at the top of `CHANGELOG.md`, commit and
+push, then run `./scripts/release.sh`. It uploads both apps' zips to one GitHub release.
 Versions follow [Semantic Versioning](https://semver.org).
 
 The code is Swift and PDFKit, organized as:
 
-- `Sources/PaperMarkCore`: highlight geometry, merging, annotation hit testing, and shortcut parsing.
+- `Sources/PaperMarkCore`: highlight geometry, merging, annotation hit testing, shortcut parsing, and
+  default-app routing.
   This target has no UI, so `pmcheck` can test it.
 - `Sources/PaperMarkLibrary`: the paper library (SQLite database, Zotero import, JSON backup).
   No UI either, so `pmcheck` tests it, including an import of `~/Zotero/zotero.sqlite` into a temporary database when it exists.
 - `Sources/PaperMark`: the app (document, window, toolbar, palette, settings).
-- `Sources/PaperLibrary`: PaperLibrary, a separate paper library app (in development on `feature/library`).
-- `Extension/Chrome`: the "Save to PaperLibrary" Chrome extension. Load it unpacked from `chrome://extensions` (Developer mode).
-  It lists the library by collection and tag, and opens PDFs in PaperMark.
-  Build it with `./scripts/build-app.sh --library [--install]`.
+- `Sources/PaperLibrary`: the PaperLibrary app (library window, info panel, workspace sync, and the local server
+  the Chrome extension talks to). It opens PDFs in PaperMark.
+- `Extension/Chrome`: the "Save to PaperLibrary" Chrome extension. `build-app.sh --library` puts it inside
+  PaperLibrary.app.
 - `Sources/pmcheck`: a command-line check that creates PDFs, annotates them, saves, and reloads.
 
 ## License
