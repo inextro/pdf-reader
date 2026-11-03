@@ -66,12 +66,58 @@ final class LibraryStore {
         if let id = try library.existingItem(for: metadata) { return (id, true) }
         let key = Naming.citationKey(pattern: Settings.citationKeyPattern, metadata: metadata, taken: try library.citationKeys())
         let id = try library.add(metadata, citationKey: key, collectionID: collection)
-        try library.addTag(Self.newItemTag, to: id)
+        if let tag = Self.newItemTag { try library.addTag(tag, to: id) }
         return (id, false)
     }
 
-    /// 새로 넣은 논문(확장, 식별자로 추가, Unlinked PDFs)에 붙이는 태그.
-    static let newItemTag = "/To Do"
+    /// 새로 넣은 논문(확장, 식별자로 추가, Unlinked PDFs)에 붙이는 태그: 첫 읽기 상태.
+    static var newItemTag: String? { Settings.statusTags.first }
+
+    /// 정보 패널에서 고친 서지 정보를 저장한다.
+    func editItem(_ id: Int64, to metadata: PaperMetadata, citationKey: String?) throws {
+        guard let library else { throw loadError ?? CocoaError(.fileReadUnknown) }
+        try library.edit(id, to: metadata, citationKey: citationKey)
+        didModify()
+    }
+
+    // MARK: 태그
+
+    /// 읽기 상태를 바꾼다: 다른 상태 태그를 떼고 tag를 붙인다. nil이면 상태 태그를 모두 뗀다.
+    func setStatus(_ tag: String?, of ids: [Int64]) throws {
+        guard let library else { throw loadError ?? CocoaError(.fileReadUnknown) }
+        try library.setTag(tag, of: ids, removing: Settings.statusTags)
+        didModify()
+    }
+
+    /// 이름이 이미 있으면 그 태그를 쓴다. 상태 목록에 넣으면 Status ▸에도 보인다.
+    func createTag(_ name: String, asStatus: Bool) throws {
+        guard let library else { throw loadError ?? CocoaError(.fileReadUnknown) }
+        try library.tagID(name)
+        if asStatus, !Settings.statusTags.contains(where: { Library.tagKey($0) == Library.tagKey(name) }) {
+            Settings.statusTags.append(name)
+        }
+        didModify()
+    }
+
+    /// 태그 이름을 바꾼다. Zotero에서 가져온 "/" 앞붙임은 그대로 둔다. 상태 목록의 이름도 함께 바꾼다.
+    @discardableResult
+    func renameTag(_ old: String, to name: String) throws -> String {
+        guard let library else { throw loadError ?? CocoaError(.fileReadUnknown) }
+        let new = old.hasPrefix("/") && !name.hasPrefix("/") ? "/" + name : name
+        try library.renameTag(old, to: new)
+        var statuses = Settings.statusTags.map { Library.tagKey($0) == Library.tagKey(old) ? new : $0 }
+        statuses = statuses.enumerated().filter { i, tag in !statuses[..<i].contains { Library.tagKey($0) == Library.tagKey(tag) } }.map(\.element)
+        Settings.statusTags = statuses
+        didModify()
+        return tags.first { Library.tagKey($0) == Library.tagKey(new) } ?? new
+    }
+
+    func deleteTag(_ name: String) throws {
+        guard let library else { throw loadError ?? CocoaError(.fileReadUnknown) }
+        try library.deleteTag(name)
+        Settings.statusTags.removeAll { Library.tagKey($0) == Library.tagKey(name) }
+        didModify()
+    }
 
     /// 지금 패턴으로 citation key를 새로 짓는다(Zotero에서 가져온 key 등).
     func regenerateCitationKeys(of items: [LibraryEntry]) throws {

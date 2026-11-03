@@ -1023,6 +1023,36 @@ do {
     try citeLib.addTag("/To Do", to: conf.id)
     check(try citeLib.tags() == ["/To Do"] && citeLib.item(conf.id)?.tags == ["/To Do"] && citeLib.item(journal.id)?.tags == ["/To Do"],
           "태그 붙이기: 앞의 / 와 대소문자가 달라도 같은 태그")
+    let statuses = ["/To Do", "/In Process", "/Verified"]
+    try citeLib.addTag("Reading list", to: conf.id)
+    try citeLib.setTag("/In Process", of: [conf.id, journal.id], removing: statuses)
+    check(try citeLib.item(conf.id)?.tags == ["/In Process", "Reading list"] && (try citeLib.item(journal.id)?.tags == ["/In Process"]),
+          "상태 바꾸기: 다른 상태 태그만 떼고 새 상태를 붙인다")
+    try citeLib.setTag(nil, of: [journal.id], removing: statuses)
+    check(try citeLib.item(journal.id)?.tags == [], "상태 None: 상태 태그를 모두 뗀다")
+    try citeLib.renameTag("/In Process", to: "/Reading")
+    check(try citeLib.item(conf.id)?.tags == ["/Reading", "Reading list"], "태그 이름 바꾸기")
+    try citeLib.renameTag("/Reading", to: "reading list")
+    check(try citeLib.item(conf.id)?.tags == ["Reading list"] && !(try citeLib.tags()).contains("/Reading"), "같은 이름으로 바꾸면 합친다")
+    try citeLib.deleteTag("Reading list")
+    check(try citeLib.item(conf.id)?.tags == [] && !(try citeLib.tags()).contains("Reading list") && (try citeLib.item(conf.id)) != nil,
+          "태그 지우기: 논문은 남는다")
+    // 손으로 고친 칸은 다시 채워도(확장, PDF의 DOI) 그대로
+    var fixed = PaperMetadata(try citeLib.item(journal.id)!)
+    fixed.title = "Quasi-oracle estimation (fixed)"
+    fixed.fields["pages"] = "300-320"
+    try citeLib.edit(journal.id, to: fixed, citationKey: "nie2021fixed")
+    let editedJournal = try citeLib.item(journal.id)!
+    check(Library.editedFields(of: editedJournal) == ["title", "pages", "citationKey"] && editedJournal.title == fixed.title,
+          "편집: 바뀐 칸만 기억 (\(Library.editedFields(of: editedJournal).sorted()))")
+    var refetched = PaperMetadata(journal)
+    refetched.fields["pages"] = "299-319"
+    refetched.abstract = "New abstract"
+    try citeLib.update(journal.id, with: refetched, citationKey: "nie2021")
+    let after = try citeLib.item(journal.id)!
+    check(after.title == fixed.title && after.fields["pages"] == "300-320" && after.citationKey == "nie2021fixed"
+          && after.abstract == "New abstract" && Library.editedFields(of: after) == Library.editedFields(of: editedJournal),
+          "다시 채워도 고친 칸은 지키고 나머지는 바꾼다")
     check(Citation.list([conf, journal], style: .apa).first?.first?.text.hasPrefix("He") == true
           && Citation.list([journal, conf], style: .ieee).first?.first?.text == "[1] ", "여러 편: APA는 저자순, IEEE는 번호")
 }

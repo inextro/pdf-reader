@@ -17,6 +17,7 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
     private let citationStyle = NSPopUpButton()
     private let columnList = ChecklistView()
     private let menuList = ChecklistView()
+    private let statusList = ChecklistView()
     private let allowReferences = NSButton(checkboxWithTitle: "Allow references: a paper can also appear in other collections (⌥-drag, Add Reference to)",
                                            target: nil, action: nil)
     private let infoList = ChecklistView()
@@ -128,6 +129,7 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
 
         NotificationCenter.default.addObserver(self, selector: #selector(refresh), name: Connector.statusDidChange, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(refresh), name: LibraryStore.didChange, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(reloadLists), name: LibraryStore.didChange, object: nil)
         fileNameField.stringValue = Settings.fileNamePattern
         keyField.stringValue = Settings.citationKeyPattern
         refresh()
@@ -160,8 +162,15 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
 
     private func makeMenuTab() -> NSView {
         menuList.onChange = { Settings.itemMenu = $0.compactMap(ItemMenuAction.init) }
-        let column = Self.listColumn("Right-click menu", "Items shown when you right-click a paper in the list. Items that do not apply are hidden.",
-                                     menuList, restore: #selector(restoreMenu(_:)), target: self, rows: ItemMenuAction.allCases.count)
+        let menu = Self.listColumn("Right-click menu", "Items shown when you right-click a paper in the list. Items that do not apply are hidden.",
+                                   menuList, restore: #selector(restoreMenu(_:)), target: self, rows: ItemMenuAction.allCases.count)
+        statusList.onChange = { Settings.statusTags = $0 }
+        let statuses = Self.listColumn("Status tags", "Tags offered in Status ▸. A paper has at most one of them; new papers get the first. "
+                                       + "Add, rename, or delete tags by right-clicking Tags in the sidebar.",
+                                       statusList, restore: #selector(restoreStatuses(_:)), target: self, rows: 8)
+        let column = NSStackView(views: [menu, statuses])
+        column.alignment = .top
+        column.spacing = 32
         column.translatesAutoresizingMaskIntoConstraints = false
         let view = NSView()
         view.addSubview(column)
@@ -170,12 +179,13 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
             column.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -20),
             column.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
             column.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -24),
-            view.widthAnchor.constraint(greaterThanOrEqualToConstant: 560),
+            view.widthAnchor.constraint(greaterThanOrEqualToConstant: 700),
         ])
         return view
     }
 
     @objc private func restoreMenu(_ sender: Any?) { Settings.itemMenu = ItemMenuAction.defaults }
+    @objc private func restoreStatuses(_ sender: Any?) { Settings.statusTags = Settings.defaultStatusTags }
 
     @objc private func referencesChanged(_ sender: NSButton) { Settings.allowReferences = sender.state == .on }
 
@@ -266,6 +276,9 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
                        locked: [LibraryColumn.title.rawValue])
         infoList.set(all: InfoField.allCases.map { ($0.rawValue, $0.title) }, shown: Settings.infoFields.map(\.rawValue))
         menuList.set(all: ItemMenuAction.allCases.map { ($0.rawValue, $0.title) }, shown: Settings.itemMenu.map(\.rawValue))
+        // 라이브러리의 태그 전부. 상태 목록에만 있는 이름(아직 논문에 붙인 적 없음)도 보인다.
+        let tags = Settings.statusTags + LibraryStore.shared.tags.filter { tag in !Settings.statusTags.contains { Library.tagKey($0) == Library.tagKey(tag) } }
+        statusList.set(all: tags.map { ($0, TagColor.displayName($0)) }, shown: Settings.statusTags)
         allowReferences.state = Settings.allowReferences ? .on : .off
     }
 

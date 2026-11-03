@@ -309,7 +309,7 @@ final class LibrarySidebarView: NSView, NSOutlineViewDataSource, NSOutlineViewDe
         if (outline.item(atRow: outline.clickedRow) as? LibraryNode)?.isNewFiles == true { onNewFiles?() }
     }
 
-    // MARK: 우클릭: 컬렉션 만들기·이름 바꾸기·지우기
+    // MARK: 우클릭: 컬렉션·태그 만들기·이름 바꾸기·지우기
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
@@ -318,6 +318,14 @@ final class LibrarySidebarView: NSView, NSOutlineViewDataSource, NSOutlineViewDe
             let item = menu.addItem(withTitle: title, action: action, keyEquivalent: "")
             item.target = self
             item.representedObject = node?.collectionID.map(NSNumber.init(value:))
+        }
+        if case .tag(let tag)? = node?.filter {
+            fillTagMenu(menu, tag)
+            return
+        }
+        if node?.isGroup == true, node?.title == "Tags" {
+            menu.addItem(withTitle: "New Tag…", action: #selector(newTag(_:)), keyEquivalent: "").target = self
+            return
         }
         guard let id = node?.collectionID, let name = node?.title else {
             add("New Collection…", #selector(newCollection(_:)))
@@ -328,6 +336,70 @@ final class LibrarySidebarView: NSView, NSOutlineViewDataSource, NSOutlineViewDe
         if LibraryStore.shared.folderURL(of: id) != nil { add("Show in Finder", #selector(showCollectionInFinder(_:))) }
         menu.addItem(.separator())
         add("Delete “\(name)”…", #selector(deleteCollection(_:)))
+    }
+
+    private func fillTagMenu(_ menu: NSMenu, _ tag: String) {
+        let name = TagColor.displayName(tag)
+        func add(_ title: String, _ action: Selector) -> NSMenuItem {
+            let item = menu.addItem(withTitle: title, action: action, keyEquivalent: "")
+            item.target = self
+            item.representedObject = tag
+            return item
+        }
+        _ = add("New Tag…", #selector(newTag(_:)))
+        _ = add("Rename “\(name)”…", #selector(renameTag(_:)))
+        let status = add("Use as Status", #selector(toggleStatus(_:)))
+        status.state = isStatus(tag) ? .on : .off
+        menu.addItem(.separator())
+        _ = add("Delete “\(name)”…", #selector(deleteTag(_:)))
+    }
+
+    private func isStatus(_ tag: String) -> Bool { Settings.statusTags.contains { Library.tagKey($0) == Library.tagKey(tag) } }
+
+    @objc private func newTag(_ sender: NSMenuItem) {
+        askName(title: "New Tag", initial: "", button: "Create", info: "Use it as a status (Status ▸) or add it to papers later.",
+                option: "Use as status") { name, asStatus in
+            try LibraryStore.shared.createTag(name, asStatus: asStatus)
+        }
+    }
+
+    @objc private func renameTag(_ sender: NSMenuItem) {
+        guard let tag = sender.representedObject as? String else { return }
+        let count = LibraryStore.shared.items.filter { $0.tags.contains(tag) }.count
+        askName(title: "Rename Tag", initial: TagColor.displayName(tag), button: "Rename",
+                info: count == 0 ? "" : "The tag changes on \(count) paper\(count == 1 ? "" : "s").") { name, _ in
+            let renamed = try LibraryStore.shared.renameTag(tag, to: name)
+            if self.selection == .tag(tag) {
+                self.selection = .tag(renamed)
+                self.select(.tag(renamed))
+                self.onSelect?(.tag(renamed))
+            }
+        }
+    }
+
+    @objc private func toggleStatus(_ sender: NSMenuItem) {
+        guard let tag = sender.representedObject as? String else { return }
+        if isStatus(tag) { Settings.statusTags.removeAll { Library.tagKey($0) == Library.tagKey(tag) } } else { Settings.statusTags.append(tag) }
+    }
+
+    @objc private func deleteTag(_ sender: NSMenuItem) {
+        guard let tag = sender.representedObject as? String else { return }
+        let store = LibraryStore.shared
+        let count = store.items.filter { $0.tags.contains(tag) }.count
+        let alert = NSAlert()
+        alert.messageText = "Delete the tag “\(TagColor.displayName(tag))”?"
+        alert.informativeText = count == 0 ? "No papers have this tag."
+            : "It is removed from \(count) paper\(count == 1 ? "" : "s"). The papers stay in your library."
+        alert.addButton(withTitle: "Delete")
+        alert.addButton(withTitle: "Cancel")
+        let run = { (response: NSApplication.ModalResponse) in
+            guard response == .alertFirstButtonReturn else { return }
+            do {
+                try store.deleteTag(tag)
+                if self.selection == .tag(tag) { self.selection = .all; self.select(.all); self.onSelect?(.all) }
+            } catch { store.presentError(error, in: self.window) }
+        }
+        if let window { alert.beginSheetModal(for: window, completionHandler: run) } else { run(alert.runModal()) }
     }
 
     private func collection(of sender: NSMenuItem) -> Int64? { (sender.representedObject as? NSNumber)?.int64Value }
@@ -378,13 +450,23 @@ final class LibrarySidebarView: NSView, NSOutlineViewDataSource, NSOutlineViewDe
 
     /// 이름을 묻는 창. done이 실패하면 오류를 보이고 다시 묻는다.
     private func askName(title: String, initial: String, button: String, done: @escaping (String) throws -> Void) {
+        askName(title: title, initial: initial, button: button, info: "The folder in your workspace changes too.") { name, _ in try done(name) }
+    }
+
+    /// option이 있으면 이름 칸 아래에 체크 상자를 두고 그 값을 함께 넘긴다.
+    private func askName(title: String, initial: String, button: String, info: String, option: String? = nil,
+                         done: @escaping (String, Bool) throws -> Void) {
         let alert = NSAlert()
         alert.messageText = title
-        alert.informativeText = "The folder in your workspace changes too."
+        alert.informativeText = info
         let field = NSTextField(string: initial)
         field.font = Style.font
         field.frame = NSRect(x: 0, y: 0, width: 300, height: 24)
         alert.accessoryView = field
+        if let option {
+            alert.showsSuppressionButton = true
+            alert.suppressionButton?.title = option
+        }
         alert.addButton(withTitle: button)
         alert.addButton(withTitle: "Cancel")
         alert.window.initialFirstResponder = field
@@ -392,7 +474,7 @@ final class LibrarySidebarView: NSView, NSOutlineViewDataSource, NSOutlineViewDe
             guard response == .alertFirstButtonReturn else { return }
             let name = field.stringValue.trimmingCharacters(in: .whitespaces)
             guard !name.isEmpty, name != initial else { return }
-            do { try done(name) } catch {
+            do { try done(name, alert.suppressionButton?.state == .on) } catch {
                 LibraryStore.shared.presentError(error, in: nil)
             }
         }

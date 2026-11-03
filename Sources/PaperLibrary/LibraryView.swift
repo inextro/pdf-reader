@@ -235,6 +235,7 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSM
                 menuItem?.target = self
                 menuItem?.representedObject = ids
             case .copyDOI: menuItem = item.doi == nil ? nil : add(menu, "Copy DOI", #selector(copyDOI(_:)), item)
+            case .status: menuItem = statusSubmenu(menu, "Status" + count, targets)
             case .moveTo: menuItem = collectionSubmenu(menu, "Move to" + count, #selector(moveFromMenu(_:)), ids, unfiled: true)
             case .addReference:
                 menuItem = Settings.allowReferences ? collectionSubmenu(menu, "Add Reference to" + count, #selector(referenceFromMenu(_:)), ids, unfiled: false) : nil
@@ -290,6 +291,58 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSM
         addChildren(of: nil, depth: 0)
         parent.submenu = submenu
         return parent
+    }
+
+    /// 읽기 상태 고르기. 고른 논문이 모두 그 상태면 체크, 일부만이면 대시. None은 상태 태그를 모두 뗀다.
+    private func statusSubmenu(_ menu: NSMenu, _ title: String, _ targets: [LibraryEntry]) -> NSMenuItem? {
+        guard let submenu = statusMenu(targets) else { return nil }
+        let parent = menu.addItem(withTitle: title, action: nil, keyEquivalent: "")
+        parent.submenu = submenu
+        return parent
+    }
+
+    private static func isStatus(_ tag: String) -> Bool { Settings.statusTags.contains { Library.tagKey($0) == Library.tagKey(tag) } }
+
+    /// 표의 상태 알약을 눌렀을 때. 그 줄이 고른 줄 가운데 하나면 고른 줄 전부를 바꾼다.
+    private func showStatusMenu(from pills: TagPillsView, at rect: NSRect) {
+        let row = table.row(for: pills)
+        guard rows.indices.contains(row) else { return }
+        let targets = table.selectedRowIndexes.contains(row) ? selectedItems : [rows[row]]
+        guard let menu = statusMenu(targets) else { return }
+        menu.popUp(positioning: nil, at: NSPoint(x: rect.minX, y: rect.maxY + 2), in: pills)
+    }
+
+    private func statusMenu(_ targets: [LibraryEntry]) -> NSMenu? {
+        let statuses = Settings.statusTags
+        guard !statuses.isEmpty else { return nil }
+        let submenu = NSMenu()
+        submenu.font = Style.font
+        let ids = targets.map(\.id)
+        func has(_ item: LibraryEntry, _ tag: String) -> Bool { item.tags.contains { Library.tagKey($0) == Library.tagKey(tag) } }
+        for tag in statuses {
+            let entry = submenu.addItem(withTitle: TagColor.displayName(tag), action: #selector(statusFromMenu(_:)), keyEquivalent: "")
+            entry.target = self
+            entry.image = TagColor.icon(for: tag, pointSize: Style.fontSize - 1)
+            entry.representedObject = StatusTarget(ids: ids, tag: tag)
+            let count = targets.filter { has($0, tag) }.count
+            entry.state = count == 0 ? .off : count == targets.count ? .on : .mixed
+        }
+        submenu.addItem(.separator())
+        let none = submenu.addItem(withTitle: "None", action: #selector(statusFromMenu(_:)), keyEquivalent: "")
+        none.target = self
+        none.representedObject = StatusTarget(ids: ids, tag: nil)
+        return submenu
+    }
+
+    private final class StatusTarget: NSObject {
+        let ids: [Int64]
+        let tag: String?
+        init(ids: [Int64], tag: String?) { self.ids = ids; self.tag = tag }
+    }
+
+    @objc private func statusFromMenu(_ sender: NSMenuItem) {
+        guard let target = sender.representedObject as? StatusTarget else { return }
+        do { try store.setStatus(target.tag, of: target.ids) } catch { NSApp.presentError(error) }
     }
 
     private final class MenuTarget: NSObject {
@@ -602,9 +655,15 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSM
                 let pills = TagPillsView()
                 pills.identifier = id
                 pills.wraps = false
+                pills.opensMenu = { Self.isStatus($0) }
+                pills.onPillClick = { [weak self, weak pills] _, rect in
+                    guard let self, let pills else { return }
+                    self.showStatusMenu(from: pills, at: rect)
+                }
                 return pills
             }()
-            cell.tags = item.tags
+            // 읽기 상태를 맨 앞에: 누르면 상태를 고르는 메뉴가 뜬다.
+            cell.tags = item.tags.filter(Self.isStatus) + item.tags.filter { !Self.isStatus($0) }
             return cell
         }
         let cell = tableView.makeView(withIdentifier: id, owner: nil) as? NSTableCellView ?? makeCell(id, icon: column == .title)

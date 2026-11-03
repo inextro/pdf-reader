@@ -205,7 +205,7 @@ extension Settings {
 /// 표에서 논문을 우클릭했을 때 보이는 항목. 보이는 항목과 순서는 설정(Settings.itemMenu)에 둔다.
 /// 순서상 묶음(group)이 바뀌는 곳에 구분선을 넣는다.
 enum ItemMenuAction: String, CaseIterable {
-    case openPDF, showInFinder, openWeb, copyCitationKey, copyCitation, copyDOI, moveTo, addReference, removeFromCollection, regenerateCitationKey, delete
+    case openPDF, showInFinder, openWeb, copyCitationKey, copyCitation, copyDOI, status, moveTo, addReference, removeFromCollection, regenerateCitationKey, delete
 
     static let defaults = allCases
 
@@ -217,6 +217,7 @@ enum ItemMenuAction: String, CaseIterable {
         case .copyCitationKey: "Copy Citation Key"
         case .copyCitation: "Copy Citation"
         case .copyDOI: "Copy DOI"
+        case .status: "Status ▸"
         case .moveTo: "Move to ▸"
         case .addReference: "Add Reference to ▸"
         case .removeFromCollection: "Remove from Collection"
@@ -229,9 +230,10 @@ enum ItemMenuAction: String, CaseIterable {
         switch self {
         case .openPDF, .showInFinder, .openWeb: 0
         case .copyCitationKey, .copyCitation, .copyDOI: 1
-        case .moveTo, .addReference, .removeFromCollection: 2
-        case .regenerateCitationKey: 3
-        case .delete: 4
+        case .status: 2
+        case .moveTo, .addReference, .removeFromCollection: 3
+        case .regenerateCitationKey: 4
+        case .delete: 5
         }
     }
 }
@@ -250,6 +252,17 @@ extension Settings {
     static var citationStyle: CitationStyle {
         get { UserDefaults.standard.string(forKey: "citationStyle").flatMap(CitationStyle.init) ?? .apa }
         set { UserDefaults.standard.set(newValue.rawValue, forKey: "citationStyle") }
+    }
+
+    /// 읽기 상태로 쓰는 태그(순서대로). 논문에는 이 가운데 하나만 붙인다(Status ▸). 첫 태그는 새로 넣은 논문에 붙인다.
+    static let defaultStatusTags = ["/To Do", "/In Process", "/Verified", "/Completed"]
+    static var statusTags: [String] {
+        get { UserDefaults.standard.stringArray(forKey: "statusTags") ?? defaultStatusTags }
+        set {
+            guard newValue != statusTags else { return }
+            UserDefaults.standard.set(newValue, forKey: "statusTags")
+            NotificationCenter.default.post(name: displayDidChange, object: nil)
+        }
     }
 
     /// 켜면 논문을 다른 컬렉션에 참조로도 넣을 수 있다(⌥ 끌기, Add Reference to). 끄면 논문은 한 컬렉션에만 속한다.

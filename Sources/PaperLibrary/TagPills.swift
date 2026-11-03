@@ -61,6 +61,9 @@ final class TagPillsView: NSView {
         didSet { invalidateIntrinsicContentSize(); needsDisplay = true }
     }
     var wraps = true
+    /// 누르면 메뉴가 뜨는 알약(표의 읽기 상태).
+    var opensMenu: (String) -> Bool = { _ in false }
+    var onPillClick: ((String, NSRect) -> Void)?
     private let font = NSFont.systemFont(ofSize: Style.fontSize - 2, weight: .medium)
     private let padding = NSSize(width: 8, height: 3)
     private let gap: CGFloat = 5
@@ -75,6 +78,19 @@ final class TagPillsView: NSView {
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    private var top: CGFloat { wraps ? 0 : floor((bounds.height - pillHeight) / 2) }
+
+    /// 메뉴가 있는 알약을 누르면 메뉴를 띄우고, 다른 곳은 표가 줄을 고르게 넘긴다.
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        let hit = zip(tags, frames(width: bounds.width)).first { tag, frame in opensMenu(tag) && frame.offsetBy(dx: 0, dy: top).contains(point) }
+        if let onPillClick, let (tag, frame) = hit {
+            onPillClick(tag, frame.offsetBy(dx: 0, dy: top))
+        } else {
+            super.mouseDown(with: event)
+        }
+    }
 
     private var pillHeight: CGFloat { ceil(font.ascender - font.descender + font.leading) + padding.height * 2 }
 
@@ -112,7 +128,6 @@ final class TagPillsView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        let top = wraps ? 0 : floor((bounds.height - pillHeight) / 2)
         let truncating = NSMutableParagraphStyle()
         truncating.lineBreakMode = .byTruncatingTail
         let minWidth = padding.width * 2 + 16
@@ -132,8 +147,7 @@ final class TagPillsView: NSView {
             pill.lineWidth = 1
             pill.stroke()
             (TagColor.displayName(tag) as NSString).draw(
-                in: rect.insetBy(dx: padding.width - 0.5, dy: padding.height - 0.5),
-                withAttributes: [.font: font, .foregroundColor: NSColor.labelColor, .paragraphStyle: truncating])
+                in: rect.insetBy(dx: padding.width - 0.5, dy: padding.height - 0.5), withAttributes: [.font: font, .foregroundColor: NSColor.labelColor, .paragraphStyle: truncating])
             if rect.width < frame.width - 1 { break }
         }
     }
