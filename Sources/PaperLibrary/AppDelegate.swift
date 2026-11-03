@@ -11,6 +11,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Connector.shared.start()
         // workspace 폴더와 컬렉션을 맞추고 폴더를 감시한다.
         LibraryStore.shared.startWorkspaceSync()
+        ChromeExtension.refresh()
+        DispatchQueue.main.async { ChromeExtension.offerOnFirstLaunch(in: NSApp.mainWindow ?? NSApp.windows.first { $0.isVisible }) }
     }
 
     /// `paperlibrary://`: 확장 팝업의 "Open PaperLibrary" 버튼이 앱을 켤 때 쓴다.
@@ -55,6 +57,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    @objc private func installChromeExtension(_ sender: Any?) {
+        ChromeExtension.install(in: NSApp.mainWindow)
+    }
+
     private func makeMainMenu() -> NSMenu {
         let main = NSMenu()
 
@@ -62,6 +68,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         app.addItem(withTitle: "About PaperLibrary", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         app.addItem(.separator())
         app.addItem(withTitle: "Settings…", action: #selector(showSettings(_:)), keyEquivalent: ",").target = self
+        app.addItem(withTitle: "Install Chrome Extension…", action: #selector(installChromeExtension(_:)), keyEquivalent: "").target = self
         app.addItem(.separator())
         app.addItem(withTitle: "Hide PaperLibrary", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         app.addItem(withTitle: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
@@ -85,6 +92,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
         edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
         edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: "Copy Citation", action: #selector(LibraryView.copyCitation(_:)), keyEquivalent: "C")
         edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         edit.addItem(withTitle: "Delete…", action: #selector(LibraryView.deletePapers(_:)), keyEquivalent: "\u{8}")
         edit.addItem(.separator())

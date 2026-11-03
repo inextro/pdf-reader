@@ -194,6 +194,7 @@ extension LibraryStore {
             do {
                 let id = try library.add(metadata, citationKey: nil, collectionID: nil)
                 try library.addAttachment(path, to: id)
+                try library.addTag(Self.newItemTag, to: id)
                 added.append(id)
                 fillMetadata(of: id, from: Library.resolve(path, in: folder))
             } catch {

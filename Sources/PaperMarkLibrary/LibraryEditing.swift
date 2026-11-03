@@ -61,6 +61,23 @@ extension Library {
         try db.run("UPDATE items SET citation_key = ?, modified_at = ? WHERE id = ?", [SQLValue(key), .text(Library.now()), .int(id)])
     }
 
+    /// 태그를 붙인다. 없는 태그면 만든다. 이름은 Zotero처럼 앞의 "/"를 빼고 대소문자 없이 같으면 같은 태그로 본다("/To Do" = "To Do").
+    public func addTag(_ name: String, to id: Int64) throws {
+        func plain(_ s: String) -> String { (s.hasPrefix("/") ? String(s.dropFirst()) : s).lowercased() }
+        try db.transaction {
+            let existing = try db.query("SELECT id, name FROM tags").first { plain($0["name"] ?? "") == plain(name) }?.int("id")
+            let tagID: Int64
+            if let existing {
+                tagID = existing
+            } else {
+                try db.run("INSERT INTO tags (name) VALUES (?)", [.text(name)])
+                tagID = db.lastInsertID
+            }
+            try db.run("INSERT OR IGNORE INTO item_tags (item_id, tag_id) VALUES (?,?)", [.int(id), .int(tagID)])
+            try touch(id)
+        }
+    }
+
     public func addAttachment(_ path: String, to id: Int64) throws {
         try db.transaction {
             try db.run("INSERT INTO attachments (item_id, path) VALUES (?,?)", [.int(id), .text(path)])

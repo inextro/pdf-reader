@@ -205,7 +205,7 @@ extension Settings {
 /// 표에서 논문을 우클릭했을 때 보이는 항목. 보이는 항목과 순서는 설정(Settings.itemMenu)에 둔다.
 /// 순서상 묶음(group)이 바뀌는 곳에 구분선을 넣는다.
 enum ItemMenuAction: String, CaseIterable {
-    case openPDF, showInFinder, openWeb, copyCitationKey, copyDOI, moveTo, addReference, removeFromCollection, regenerateCitationKey, delete
+    case openPDF, showInFinder, openWeb, copyCitationKey, copyCitation, copyDOI, moveTo, addReference, removeFromCollection, regenerateCitationKey, delete
 
     static let defaults = allCases
 
@@ -215,6 +215,7 @@ enum ItemMenuAction: String, CaseIterable {
         case .showInFinder: "Show in Finder"
         case .openWeb: "Open DOI / URL"
         case .copyCitationKey: "Copy Citation Key"
+        case .copyCitation: "Copy Citation"
         case .copyDOI: "Copy DOI"
         case .moveTo: "Move to ▸"
         case .addReference: "Add Reference to ▸"
@@ -227,7 +228,7 @@ enum ItemMenuAction: String, CaseIterable {
     var group: Int {
         switch self {
         case .openPDF, .showInFinder, .openWeb: 0
-        case .copyCitationKey, .copyDOI: 1
+        case .copyCitationKey, .copyCitation, .copyDOI: 1
         case .moveTo, .addReference, .removeFromCollection: 2
         case .regenerateCitationKey: 3
         case .delete: 4
@@ -243,6 +244,12 @@ extension Settings {
             UserDefaults.standard.set(newValue.map(\.rawValue), forKey: "itemMenu")
             NotificationCenter.default.post(name: displayDidChange, object: nil)
         }
+    }
+
+    /// Copy Citation(⌘⇧C)의 참고문헌 스타일.
+    static var citationStyle: CitationStyle {
+        get { UserDefaults.standard.string(forKey: "citationStyle").flatMap(CitationStyle.init) ?? .apa }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: "citationStyle") }
     }
 
     /// 켜면 논문을 다른 컬렉션에 참조로도 넣을 수 있다(⌥ 끌기, Add Reference to). 끄면 논문은 한 컬렉션에만 속한다.

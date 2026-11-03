@@ -14,6 +14,7 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
                                             target: nil, action: nil)
     private let sentenceCase = NSButton(checkboxWithTitle: "Write titles in sentence case (only the first word capitalized)", target: nil, action: nil)
     private let connectorLabel = NSTextField(labelWithString: "")
+    private let citationStyle = NSPopUpButton()
     private let columnList = ChecklistView()
     private let menuList = ChecklistView()
     private let allowReferences = NSButton(checkboxWithTitle: "Allow references: a paper can also appear in other collections (⌥-drag, Add Reference to)",
@@ -63,6 +64,11 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         tokens.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
         tokens.preferredMaxLayoutWidth = 560
 
+        citationStyle.addItems(withTitles: CitationStyle.allCases.map(\.title))
+        citationStyle.selectItem(at: CitationStyle.allCases.firstIndex(of: Settings.citationStyle) ?? 0)
+        citationStyle.target = self
+        citationStyle.action = #selector(citationStyleChanged(_:))
+        let installExtension = NSButton(title: "Install…", target: self, action: #selector(installExtension(_:)))
         let changeLibrary = NSButton(title: "Change…", target: self, action: #selector(chooseLibraryFolder(_:)))
         let changePDF = NSButton(title: "Change…", target: self, action: #selector(choosePDFFolder(_:)))
         let grid = NSGridView(views: [
@@ -77,13 +83,14 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
             [Self.header("Metadata:"), preferOnline],
             [NSGridCell.emptyContentView, publishedVersion],
             [Self.header("Titles:"), sentenceCase],
-            [Self.header("Browser extension:"), connectorLabel],
+            [Self.header("Copy Citation:"), citationStyle],
+            [Self.header("Browser extension:"), Self.row(connectorLabel, installExtension)],
         ])
         grid.rowSpacing = 8
         grid.columnSpacing = 10
         grid.column(at: 0).xPlacement = .trailing
         grid.rowAlignment = .firstBaseline
-        for row in [2, 3, 7, 8, 10, 11] { grid.row(at: row).topPadding = 10 }
+        for row in [2, 3, 7, 8, 10, 11, 12] { grid.row(at: row).topPadding = 10 }
         grid.translatesAutoresizingMaskIntoConstraints = false
 
         let content = NSView()
@@ -308,6 +315,12 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         Settings.lookup = LookupOptions(preferOnline: preferOnline.state == .on, usePublishedVersion: publishedVersion.state == .on,
                                         sentenceCase: sentenceCase.state == .on)
         updatePreviews()
+    }
+
+    @objc private func installExtension(_ sender: Any?) { ChromeExtension.install(in: window) }
+
+    @objc private func citationStyleChanged(_ sender: NSPopUpButton) {
+        Settings.citationStyle = CitationStyle.allCases[max(0, sender.indexOfSelectedItem)]
     }
 
     @objc private func chooseLibraryFolder(_ sender: Any?) {

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # PaperMark.app 번들(Apple Silicon + Intel 유니버설)을 build/에 만든다.
 #   --library  PaperMark 대신 라이브러리 앱 PaperLibrary.app을 만든다(Resources/PaperLibrary/의 Info.plist와 아이콘).
-#   --install  ~/Applications 에 설치한다. --library면 Chrome 확장도 ~/Library/Application Support/PaperLibrary/ChromeExtension에 둔다.
+#   --install  ~/Applications 에 설치한다.
+#   --library면 Chrome 확장(Extension/Chrome)을 앱의 Contents/Resources/ChromeExtension에 넣는다. 앱이 켤 때 Application Support로 복사해 둔다.
 #   --zip      배포용 build/<앱>-<버전>.zip 을 만든다(GitHub Releases에 올리는 파일).
 #   --dev      확인용: arm64만, debug로 빌드한다(빠르고 CPU를 덜 쓴다). 배포에는 쓰지 않는다.
 set -euo pipefail
@@ -30,6 +31,7 @@ vtool -set-build-version macos "$MIN_OS" "$(xcrun --sdk macosx --show-sdk-versio
   -output "$APP/Contents/MacOS/$NAME" "$APP/Contents/MacOS/$NAME" 2>/dev/null
 cp "$RES/Info.plist" "$APP/Contents/Info.plist"
 cp "$RES/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
+if [ "$NAME" = PaperLibrary ]; then cp -R Extension/Chrome "$APP/Contents/Resources/ChromeExtension"; fi
 codesign --force --sign - "$APP"
 echo "built: $APP ($(lipo -archs "$APP/Contents/MacOS/$NAME"))"
 
@@ -42,14 +44,6 @@ for arg in "$@"; do
       /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
         -f "$HOME/Applications/$NAME.app"
       echo "installed: $HOME/Applications/$NAME.app"
-      # Chrome 확장은 브랜치를 바꿔도 사라지지 않는 곳에 둔다. Chrome에서는 이 폴더를 불러온다.
-      if [ "$NAME" = PaperLibrary ]; then
-        EXT="$HOME/Library/Application Support/PaperLibrary/ChromeExtension"
-        rm -rf "${EXT:?}"
-        mkdir -p "$(dirname "$EXT")"
-        cp -R Extension/Chrome "$EXT"
-        echo "installed: $EXT (Chrome: chrome://extensions → Reload)"
-      fi
       ;;
     --zip)
       VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$RES/Info.plist")"

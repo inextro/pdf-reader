@@ -65,8 +65,13 @@ final class LibraryStore {
         guard let library else { throw loadError ?? CocoaError(.fileReadUnknown) }
         if let id = try library.existingItem(for: metadata) { return (id, true) }
         let key = Naming.citationKey(pattern: Settings.citationKeyPattern, metadata: metadata, taken: try library.citationKeys())
-        return (try library.add(metadata, citationKey: key, collectionID: collection), false)
+        let id = try library.add(metadata, citationKey: key, collectionID: collection)
+        try library.addTag(Self.newItemTag, to: id)
+        return (id, false)
     }
+
+    /// 새로 넣은 논문(확장, 식별자로 추가, Unlinked PDFs)에 붙이는 태그.
+    static let newItemTag = "/To Do"
 
     /// 지금 패턴으로 citation key를 새로 짓는다(Zotero에서 가져온 key 등).
     func regenerateCitationKeys(of items: [LibraryEntry]) throws {

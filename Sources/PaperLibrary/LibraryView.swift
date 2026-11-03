@@ -229,6 +229,11 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSM
             case .openWeb:
                 menuItem = store.webURL(of: item) == nil ? nil : add(menu, item.doi != nil ? "Open DOI" : "Open URL", #selector(openWeb(_:)), item)
             case .copyCitationKey: menuItem = item.citationKey == nil ? nil : add(menu, "Copy Citation Key", #selector(copyCitationKey(_:)), item)
+            case .copyCitation:
+                menuItem = menu.addItem(withTitle: (targets.count > 1 ? "Copy Citations" + count : "Copy Citation") + " (\(Settings.citationStyle.title))",
+                                        action: #selector(copyCitationFromMenu(_:)), keyEquivalent: "")
+                menuItem?.target = self
+                menuItem?.representedObject = ids
             case .copyDOI: menuItem = item.doi == nil ? nil : add(menu, "Copy DOI", #selector(copyDOI(_:)), item)
             case .moveTo: menuItem = collectionSubmenu(menu, "Move to" + count, #selector(moveFromMenu(_:)), ids, unfiled: true)
             case .addReference:
@@ -464,6 +469,71 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSM
         do { try store.regenerateCitationKeys(of: rows.filter { ids.contains($0.id) }) } catch { NSApp.presentError(error) }
     }
 
+    @objc private func copyCitationFromMenu(_ sender: NSMenuItem) {
+        let ids = Set(sender.representedObject as? [Int64] ?? [])
+        copyCitations(rows.filter { ids.contains($0.id) })
+    }
+
+    /// Edit > Copy Citation (⌘⇧C).
+    @objc func copyCitation(_ sender: Any?) { copyCitations(selectedItems) }
+
+    /// 참고문헌 문장을 복사한다. 서식 있는 글(기울임)과 일반 글을 함께 넣어 Word·Docs·메모 어디에 붙여도 된다.
+    private func copyCitations(_ items: [LibraryEntry]) {
+        guard !items.isEmpty else { return }
+        let lines = Citation.list(items, style: Settings.citationStyle)
+        let font = NSFont(name: "Times New Roman", size: 12) ?? .systemFont(ofSize: 12)
+        let italic = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask)
+        let rich = NSMutableAttributedString()
+        for (n, line) in lines.enumerated() {
+            if n > 0 { rich.append(NSAttributedString(string: "\n", attributes: [.font: font])) }
+            for piece in line { rich.append(NSAttributedString(string: piece.text, attributes: [.font: piece.italic ? italic : font])) }
+        }
+        NSPasteboard.general.clearContents()
+        if let rtf = rich.rtf(from: NSRange(location: 0, length: rich.length)) { NSPasteboard.general.setData(rtf, forType: .rtf) }
+        NSPasteboard.general.setString(rich.string, forType: .string)
+        let what = items.count == 1 ? "Citation" : "\(items.count) citations"
+        showToast("\(what) copied (\(Settings.citationStyle.title))")
+    }
+
+    private var toast: NSView?
+
+    /// 표 아래쪽 가운데에 잠깐 떴다 사라지는 작은 알림.
+    private func showToast(_ text: String) {
+        toast?.removeFromSuperview()
+        let box = NSVisualEffectView()
+        box.material = .hudWindow
+        box.blendingMode = .withinWindow
+        box.state = .active
+        box.wantsLayer = true
+        box.layer?.cornerRadius = 10
+        let icon = NSImageView(image: NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: nil) ?? NSImage())
+        icon.symbolConfiguration = .init(pointSize: Style.fontSize, weight: .semibold)
+        icon.contentTintColor = .systemGreen
+        let label = NSTextField(labelWithString: text)
+        label.font = Style.font
+        let stack = NSStackView(views: [icon, label])
+        stack.spacing = 8
+        stack.edgeInsets = NSEdgeInsets(top: 10, left: 16, bottom: 10, right: 18)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        box.addSubview(stack)
+        box.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(box)
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: box.topAnchor), stack.bottomAnchor.constraint(equalTo: box.bottomAnchor),
+            stack.leadingAnchor.constraint(equalTo: box.leadingAnchor), stack.trailingAnchor.constraint(equalTo: box.trailingAnchor),
+            box.centerXAnchor.constraint(equalTo: centerXAnchor),
+            box.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -24),
+        ])
+        toast = box
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { [weak self, weak box] in
+            guard let box else { return }
+            NSAnimationContext.runAnimationGroup({ $0.duration = 0.3; box.animator().alphaValue = 0 }) {
+                box.removeFromSuperview()
+                if self?.toast === box { self?.toast = nil }
+            }
+        }
+    }
+
     @objc private func deleteFromMenu(_ sender: NSMenuItem) {
         let ids = Set(sender.representedObject as? [Int64] ?? [])
         confirmDelete(rows.filter { ids.contains($0.id) })
@@ -473,7 +543,7 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSM
     @objc func deletePapers(_ sender: Any?) { confirmDelete(selectedItems) }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        menuItem.action == #selector(deletePapers(_:)) ? !selectedItems.isEmpty : true
+        menuItem.action == #selector(deletePapers(_:)) || menuItem.action == #selector(copyCitation(_:)) ? !selectedItems.isEmpty : true
     }
 
     /// 확인을 받고 라이브러리에서 지운다. PDF는 휴지통으로 간다.

@@ -14,7 +14,8 @@ final class LibraryWindowController: NSWindowController, NSToolbarDelegate, NSSe
     private var newFilesSheet: NewFilesSheet?
     private var infoItem: NSSplitViewItem!
     /// 고른 논문이 없어 정보 패널을 접었다. 다시 고르면 편다(사용자가 직접 접은 것은 그대로 둔다).
-    private var infoAutoHidden = false
+    /// 정보 패널을 펴는 것은 고른 논문이 바뀔 때만이다(내용만 바뀌었을 때는 정보 버튼으로 접은 상태를 둔다).
+    private var shownIDs: Set<Int64> = []
 
     init() {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1100, height: 700),
@@ -82,7 +83,7 @@ final class LibraryWindowController: NSWindowController, NSToolbarDelegate, NSSe
         sidebar.onNewFiles = { [weak self] in self?.showNewFiles() }
         libraryView.onSelectionChange = { [weak self] in
             self?.infoView.show($0)
-            self?.updateInfoPanel(hasSelection: !$0.isEmpty)
+            self?.updateInfoPanel(selection: Set($0.map(\.id)))
         }
         libraryView.onCountChange = { [weak window] count in
             window?.subtitle = "\(count) item\(count == 1 ? "" : "s")"
@@ -90,7 +91,7 @@ final class LibraryWindowController: NSWindowController, NSToolbarDelegate, NSSe
         libraryView.filter = sidebar.selection
         LibraryStore.shared.selectedCollection = if case .collection(let id) = sidebar.selection { id } else { nil }
         window.subtitle = "\(LibraryStore.shared.items.count) items"
-        updateInfoPanel(hasSelection: !libraryView.selectedItems.isEmpty)
+        updateInfoPanel(selection: Set(libraryView.selectedItems.map(\.id)))
 
         window.center()
         window.setFrameAutosaveName("LibraryWindow")
@@ -104,13 +105,10 @@ final class LibraryWindowController: NSWindowController, NSToolbarDelegate, NSSe
         return controller
     }
 
-    /// 고른 논문이 없으면 정보 패널을 접고, 고르면 다시 편다.
-    private func updateInfoPanel(hasSelection: Bool) {
-        if !hasSelection, !infoItem.isCollapsed {
-            infoAutoHidden = true
-            infoItem.animator().isCollapsed = true
-        } else if hasSelection, infoAutoHidden {
-            infoAutoHidden = false
+    /// 정보 패널은 늘 펴 둔다(고른 논문이 없으면 “No Item Selected”). 정보 버튼으로 접었어도 다른 논문을 고르면 다시 편다.
+    private func updateInfoPanel(selection: Set<Int64>) {
+        defer { shownIDs = selection }
+        if !selection.isEmpty, selection != shownIDs, infoItem.isCollapsed {
             infoItem.animator().isCollapsed = false
         }
     }

@@ -992,6 +992,41 @@ try ws.addReferences([a], to: proj)
     check(try gone && wsLib.collections().count == 3, "workspace가 없으면 그대로")
 }
 
+// MARK: 참고문헌 문장
+do {
+    let citeLib = try Library(url: libDir.appendingPathComponent("citation-\(UUID().uuidString).sqlite"))
+    var paper = PaperMetadata()
+    paper.type = "conferencePaper"
+    paper.title = "LightGCN: Simplifying and powering graph convolution network for recommendation"
+    paper.creators = [Creator(role: "author", family: "He", given: "Xiangnan"), Creator(role: "author", family: "Deng", given: "Kuan"),
+                      Creator(role: "author", family: "Wang", given: "Xiang")]
+    paper.date = "2020-07-25"
+    paper.venue = "Proceedings of the 43rd International ACM SIGIR Conference on Research and Development in Information Retrieval"
+    paper.doi = "10.1145/3397271.3401063"
+    paper.fields = ["pages": "639-648", "publisher": "ACM", "series": "SIGIR '20"]
+    let conf = try citeLib.item(try citeLib.add(paper, citationKey: "he2020lightgcn", collectionID: nil))!
+    var article = PaperMetadata()
+    article.type = "journalArticle"
+    article.title = "Quasi-oracle estimation of heterogeneous treatment effects"
+    article.creators = [Creator(role: "author", family: "Nie", given: "Xinkun"), Creator(role: "author", family: "Wager", given: "Stefan")]
+    article.date = "2021"
+    article.fields = ["publicationTitle": "Biometrika", "volume": "108", "issue": "2", "pages": "299-319"]
+    let journal = try citeLib.item(try citeLib.add(article, citationKey: "nie2021quasi", collectionID: nil))!
+    check(Citation.plain(conf, style: .apa) == "He, X., Deng, K., & Wang, X. (2020). LightGCN: Simplifying and powering graph convolution network for recommendation. In Proceedings of the 43rd International ACM SIGIR Conference on Research and Development in Information Retrieval (pp. 639–648). ACM. https://doi.org/10.1145/3397271.3401063"
+          && Citation.pieces(conf, style: .apa).first { $0.italic }?.text == paper.venue, "APA 학회 논문 (\(Citation.plain(conf, style: .apa)))")
+    check(Citation.plain(journal, style: .apa) == "Nie, X., & Wager, S. (2021). Quasi-oracle estimation of heterogeneous treatment effects. Biometrika, 108(2), 299–319.",
+          "APA 학술지 (\(Citation.plain(journal, style: .apa)))")
+    check(Citation.plain(conf, style: .ieee) == "X. He, K. Deng, and X. Wang, “LightGCN: Simplifying and powering graph convolution network for recommendation,” in Proceedings of the 43rd International ACM SIGIR Conference on Research and Development in Information Retrieval, 2020, pp. 639–648, doi: 10.1145/3397271.3401063.",
+          "IEEE (\(Citation.plain(conf, style: .ieee)))")
+    try citeLib.addTag("/To Do", to: conf.id)
+    try citeLib.addTag("to do", to: journal.id)
+    try citeLib.addTag("/To Do", to: conf.id)
+    check(try citeLib.tags() == ["/To Do"] && citeLib.item(conf.id)?.tags == ["/To Do"] && citeLib.item(journal.id)?.tags == ["/To Do"],
+          "태그 붙이기: 앞의 / 와 대소문자가 달라도 같은 태그")
+    check(Citation.list([conf, journal], style: .apa).first?.first?.text.hasPrefix("He") == true
+          && Citation.list([journal, conf], style: .ieee).first?.first?.text == "[1] ", "여러 편: APA는 저자순, IEEE는 번호")
+}
+
 // 실제 CrossRef·arXiv(네트워크가 될 때만)
 final class Box<T> { var value: T?; init() {} }
 let online = Box<(PaperMetadata, [String])>()
