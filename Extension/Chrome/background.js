@@ -179,20 +179,111 @@ async function finish(tab, item) {
   else await savePDF(tab, item);
 }
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// 스크립트의 요청을 막는 사이트(Taylor & Francis의 Cloudflare, ScienceDirect의 봇 확인)는 PDF 주소를 뒤쪽 탭에서
+// 사람이 여는 것처럼 연다. 확인을 통과해 PDF가 뜨면 그 주소를 받고, 그래도 막히면 Chrome의 다운로드로 받는다.
+// 결과는 { data } 또는 { file }(내려받은 파일 경로)이고, 못 받으면 null.
+async function downloadViaTab(url, log) {
+  // ?download=true처럼 내려받기로 응답하는 주소는 탭에 뜨지 않고 바로 다운로드가 된다. 그 다운로드를 잡는다.
+  const host = new URL(url).host;
+  const started = [];
+  const onCreated = (entry) => {
+    try {
+      if ([entry.url, entry.finalUrl, entry.referrer].some((u) => u && new URL(u).host === host)) started.push(entry.id);
+    } catch {
+      // 주소가 아닌 다운로드는 무시한다.
+    }
+  };
+  chrome.downloads.onCreated.addListener(onCreated);
+  const tab = await chrome.tabs.create({ url, active: false });
+  try {
+    const deadline = Date.now() + 30_000;
+    let last = null;
+    while (Date.now() < deadline) {
+      await sleep(800);
+      if (started.length) {
+        const file = await waitForDownload(started[0], url, log);
+        return file ? { file } : null;
+      }
+      last = await chrome.tabs.get(tab.id).catch(() => null);
+      if (!last) return null;
+      if (last.status !== 'complete' || !last.url || last.url.startsWith('chrome')) continue;
+      // Chrome의 PDF 보기에는 스크립트를 넣을 수 없다. 넣을 수 있으면 문서 형식을 본다.
+      let pdfShown = false;
+      try {
+        const [{ result }] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => document.contentType });
+        pdfShown = result === 'application/pdf';
+      } catch {
+        pdfShown = true;
+      }
+      if (!pdfShown) continue;
+      const data = await download(last.url, last, log, 1);
+      if (data) return { data };
+      const file = await downloadFile(last.url, log);
+      return file ? { file } : null;
+    }
+    log.push(`tab: no PDF after 30 s — ${last?.url || url}${last?.title ? ` “${last.title.slice(0, 60)}”` : ''}`);
+    return null;
+  } finally {
+    chrome.downloads.onCreated.removeListener(onCreated);
+    chrome.tabs.remove(tab.id).catch(() => {});
+  }
+}
+
+// Chrome 다운로드로 받는다(브라우저가 페이지를 여는 것과 같은 요청이라 막히지 않는다). 받은 파일 경로를 돌려준다.
+async function downloadFile(url, log) {
+  let id;
+  try {
+    id = await chrome.downloads.download({ url, conflictAction: 'uniquify', saveAs: false });
+  } catch (error) {
+    log.push(`download: ${error} — ${url}`);
+    return null;
+  }
+  return waitForDownload(id, url, log);
+}
+
+async function waitForDownload(id, url, log) {
+  const deadline = Date.now() + 60_000;
+  while (Date.now() < deadline) {
+    await sleep(500);
+    const [entry] = await chrome.downloads.search({ id });
+    if (entry?.state === 'complete') {
+      chrome.downloads.erase({ id }).catch(() => {});
+      return entry.filename;
+    }
+    if (entry?.state === 'interrupted') {
+      log.push(`download: ${entry.error} — ${url}`);
+      return null;
+    }
+  }
+  log.push(`download: timed out — ${url}`);
+  return null;
+}
+
 // PaperLibrary가 알려 준 주소를 차례로 받아 보고, 처음 받은 PDF를 붙인다.
+// 모두 막히면 각 주소를 뒤쪽 탭에서 다시 열어 본다.
 async function savePDF(tab, item) {
   const tabId = tab.id;
   update(tabId, { phase: 'saving', step: 'Downloading the PDF…', item });
   const log = [];
+  const attach = async (got) => {
+    update(tabId, { phase: 'saving', step: 'Saving the PDF…', item });
+    const attached = got.file
+      ? await api(`/attach-file?id=${item.id}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: got.file }),
+      })
+      : await api(`/attach?id=${item.id}`, { method: 'POST', headers: { 'Content-Type': 'application/pdf' }, body: got.data });
+    update(tabId, { phase: 'done', item: { ...item, ...attached }, pdf: 'attached' });
+  };
   for (const url of item.pdfCandidates) {
     const data = await download(url, tab, log);
-    if (!data) continue;
-    update(tabId, { phase: 'saving', step: 'Saving the PDF…', item });
-    const attached = await api(`/attach?id=${item.id}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/pdf' }, body: data,
-    });
-    update(tabId, { phase: 'done', item: { ...item, ...attached }, pdf: 'attached' });
-    return;
+    if (data) return attach({ data });
+  }
+  for (const url of item.pdfCandidates) {
+    update(tabId, { phase: 'saving', step: 'Opening the PDF in a background tab…', item });
+    const got = await downloadViaTab(url, log);
+    if (got) return attach(got);
   }
   update(tabId, { phase: 'done', item, pdf: 'failed', log });
 }

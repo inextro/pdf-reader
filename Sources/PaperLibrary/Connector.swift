@@ -8,6 +8,7 @@ import PaperMarkLibrary
 ///    받아 볼 PDF 주소들을 돌려준다. 새 논문은 사이드바에서 고른 컬렉션에 넣는다.
 ///    같은 논문이 이미 있으면 아무것도 바꾸지 않고 알린다. 팝업에서 진행하면(`proceed`) 그 논문을 고친다.
 /// 2. `POST /attach?id=`: 확장이 브라우저 로그인 상태로 받은 PDF를 논문의 컬렉션 폴더(없으면 새 PDF 폴더)에 저장하고 항목에 붙인다.
+///    막히면 확장이 Chrome 다운로드로 받아 `POST /attach-file?id=`로 파일 경로를 보낸다.
 /// 3. `POST /collection`: 확장 팝업에서 고른 컬렉션으로 옮긴다. `GET /collections`: 고를 목록.
 final class Connector {
     static let shared = Connector()
@@ -65,6 +66,8 @@ final class Connector {
                 return try await save(request.body)
             case ("POST", "/attach"):
                 return try await attach(request)
+            case ("POST", "/attach-file"):
+                return try await attachFile(request)
             case ("POST", "/collection"):
                 return try move(request.body)
             default:
@@ -197,6 +200,23 @@ final class Connector {
         var json = itemJSON(updated)
         json["file"] = file.lastPathComponent
         return .json(json)
+    }
+
+    /// 3. `POST /attach-file?id=`: 스크립트의 요청을 막는 사이트에서 확장이 Chrome 다운로드로 받은 파일.
+    /// 다운로드 폴더 안의 파일만 받고, 붙인 뒤(PDF가 아니어도) 받은 파일은 휴지통으로 보낸다.
+    private func attachFile(_ request: ConnectorServer.Request) async throws -> ConnectorServer.Response {
+        struct Body: Decodable { var path: String }
+        let path = try JSONDecoder().decode(Body.self, from: request.body).path
+        let file = URL(fileURLWithPath: path).resolvingSymlinksInPath()
+        let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0].resolvingSymlinksInPath()
+        guard file.path.hasPrefix(downloads.path + "/") else {
+            throw Failure(message: "Chrome saved the PDF outside the Downloads folder (\(file.path)).")
+        }
+        let data = try Data(contentsOf: file)
+        defer { try? FileManager.default.trashItem(at: file, resultingItemURL: nil) }
+        var copy = request
+        copy.body = data
+        return try await attach(copy)
     }
 
     private struct Move: Decodable {
