@@ -240,6 +240,7 @@ final class Connector {
     private func openLibrary() throws -> Library {
         let store = LibraryStore.shared
         guard !store.isImporting else { throw Failure(status: 409, message: "PaperLibrary is importing from Zotero. Try again shortly.") }
+        guard store.folder != nil else { throw Failure(status: 409, message: "Open PaperLibrary and choose your workspace folder first.") }
         guard let library = store.library else {
             throw Failure(status: 500, message: "The library could not be opened: \(store.loadError?.localizedDescription ?? "")")
         }

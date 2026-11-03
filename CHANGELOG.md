@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.1
+
+- Improved: When PaperLibrary opens for the first time, it asks you to choose your workspace folder or import your
+  Zotero library before anything else. Before, you could start without one, and PDFs saved from Chrome and new
+  collections had nowhere to go. Until a workspace is chosen, the Chrome extension asks you to open PaperLibrary
+  and choose one.
+- PaperMark has no changes in this version.
+
 ## 1.0.0
 
 - New: **PaperLibrary**, a paper library app that comes with PaperMark and replaces Zotero for everyday use.

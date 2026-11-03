@@ -164,30 +164,34 @@ final class LibraryStore {
 
     // MARK: Zotero 가져오기
 
-    func importFromZotero(in window: NSWindow?) {
+    /// finished: 가져오기를 마치거나 도중에 취소하면 부른다(처음 켤 때 workspace를 정했는지 다시 보려고).
+    func importFromZotero(in window: NSWindow?, finished: @escaping () -> Void = {}) {
         guard !isImporting else { return }
-        if let loadError { present(alert("Library could not be opened.", loadError.localizedDescription), in: window); return }
-        chooseZoteroDatabase(in: window) { zotero in
-            self.confirmZoteroQuit(in: window) {
+        if let loadError {
+            present(alert("Library could not be opened.", loadError.localizedDescription), in: window) { _ in finished() }
+            return
+        }
+        chooseZoteroDatabase(in: window, cancelled: finished) { zotero in
+            self.confirmZoteroQuit(in: window, cancelled: finished) {
                 let base = ZoteroImport.attachmentBase()
-                self.chooseFolder(default: self.folder ?? base, in: window) { folder in
-                    self.runImport(zotero: zotero, base: base, folder: folder, in: window)
+                self.chooseFolder(default: self.folder ?? base, in: window, cancelled: finished) { folder in
+                    self.runImport(zotero: zotero, base: base, folder: folder, in: window, finished: finished)
                 }
             }
         }
     }
 
-    private func chooseZoteroDatabase(in window: NSWindow?, then next: @escaping (URL) -> Void) {
+    private func chooseZoteroDatabase(in window: NSWindow?, cancelled: @escaping () -> Void, then next: @escaping (URL) -> Void) {
         let standard = ZoteroImport.defaultDatabase
         if FileManager.default.fileExists(atPath: standard.path) { next(standard); return }
         let panel = NSOpenPanel()
         panel.message = "Choose zotero.sqlite in your Zotero data folder."
         panel.allowedContentTypes = [.init(filenameExtension: "sqlite")].compactMap { $0 }
-        begin(panel, in: window) { next($0) }
+        begin(panel, in: window, cancelled: cancelled) { next($0) }
     }
 
     /// Zotero가 켜져 있으면 아직 파일에 쓰지 않은 최근 변경을 못 읽을 수 있다고 알린다.
-    private func confirmZoteroQuit(in window: NSWindow?, then next: @escaping () -> Void) {
+    private func confirmZoteroQuit(in window: NSWindow?, cancelled: @escaping () -> Void, then next: @escaping () -> Void) {
         guard !NSRunningApplication.runningApplications(withBundleIdentifier: "org.zotero.zotero").isEmpty else {
             next(); return
         }
@@ -195,21 +199,21 @@ final class LibraryStore {
                             "The most recent changes in Zotero may be missed. Quit Zotero first to import everything.")
         warning.addButton(withTitle: "Import Anyway")
         warning.addButton(withTitle: "Cancel")
-        present(warning, in: window) { if $0 == .alertFirstButtonReturn { next() } }
+        present(warning, in: window) { if $0 == .alertFirstButtonReturn { next() } else { cancelled() } }
     }
 
     /// 라이브러리 폴더를 아직 정하지 않았고 Zotero 첨부 폴더도 모르면 묻는다.
-    private func chooseFolder(default folder: URL?, in window: NSWindow?, then next: @escaping (URL) -> Void) {
+    private func chooseFolder(default folder: URL?, in window: NSWindow?, cancelled: @escaping () -> Void, then next: @escaping (URL) -> Void) {
         if let folder { next(folder); return }
         let panel = NSOpenPanel()
         panel.message = "Choose the folder that holds your PDFs (Zotero's linked attachment base directory)."
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.directoryURL = Self.googleDriveFolder()
-        begin(panel, in: window) { next($0) }
+        begin(panel, in: window, cancelled: cancelled) { next($0) }
     }
 
-    private func runImport(zotero: URL, base: URL?, folder: URL, in window: NSWindow?) {
+    private func runImport(zotero: URL, base: URL?, folder: URL, in window: NSWindow?, finished: @escaping () -> Void) {
         isImporting = true
         DispatchQueue.global(qos: .userInitiated).async {
             // 연결은 스레드마다 따로 쓴다. 다 끝나면 메인 스레드의 연결로 다시 읽는다.
@@ -234,9 +238,9 @@ final class LibraryStore {
                     }
                     if !self.missingPDF.isEmpty { lines.append("\(self.missingPDF.count) PDFs are not in \(folder.path).") }
                     if let backupError { lines.append("Backup failed: \(backupError.localizedDescription)") }
-                    self.present(self.alert("Imported from Zotero", lines.joined(separator: "\n")), in: window)
+                    self.present(self.alert("Imported from Zotero", lines.joined(separator: "\n")), in: window) { _ in finished() }
                 case .failure(let error):
-                    self.present(self.alert("Import failed.", error.localizedDescription), in: window)
+                    self.present(self.alert("Import failed.", error.localizedDescription), in: window) { _ in finished() }
                 }
             }
         }
@@ -263,9 +267,9 @@ final class LibraryStore {
         if let window { alert.beginSheetModal(for: window) { done?($0) } } else { done?(alert.runModal()) }
     }
 
-    private func begin(_ panel: NSOpenPanel, in window: NSWindow?, then next: @escaping (URL) -> Void) {
+    private func begin(_ panel: NSOpenPanel, in window: NSWindow?, cancelled: @escaping () -> Void = {}, then next: @escaping (URL) -> Void) {
         let handler = { (response: NSApplication.ModalResponse) in
-            if response == .OK, let url = panel.url { next(url) }
+            if response == .OK, let url = panel.url { next(url) } else { cancelled() }
         }
         if let window { panel.beginSheetModal(for: window, completionHandler: handler) } else { panel.begin(completionHandler: handler) }
     }

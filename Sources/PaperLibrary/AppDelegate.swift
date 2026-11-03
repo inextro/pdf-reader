@@ -12,7 +12,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // workspace 폴더와 컬렉션을 맞추고 폴더를 감시한다.
         LibraryStore.shared.startWorkspaceSync()
         ChromeExtension.refresh()
-        DispatchQueue.main.async { ChromeExtension.offerOnFirstLaunch(in: NSApp.mainWindow ?? NSApp.windows.first { $0.isVisible }) }
+        // workspace가 없으면 쓸 수 없다(컬렉션 = 그 안의 폴더, PDF도 거기 둔다). 고를 때까지 묻고, 고른 뒤에 확장 설치를 권한다.
+        DispatchQueue.main.async {
+            self.requireWorkspace { ChromeExtension.offerOnFirstLaunch(in: self.libraryWindow.window) }
+        }
+    }
+
+    /// workspace를 정하지 않았으면 고르게 한다. 폴더를 고르거나 Zotero에서 가져와야 넘어가고, 아니면 앱을 끈다.
+    private func requireWorkspace(then next: @escaping () -> Void) {
+        guard LibraryStore.shared.folder == nil else { next(); return }
+        guard let window = libraryWindow.window else { return }
+        let again = { DispatchQueue.main.async { self.requireWorkspace(then: next) } }
+        let alert = NSAlert()
+        alert.messageText = "Choose your workspace folder"
+        alert.informativeText = "PaperLibrary keeps your papers in a folder you choose, for example in Google Drive. "
+            + "Each collection is a folder inside it, and PDFs are saved there.\n\n"
+            + "Choose a folder to start, or import your Zotero library (its PDF folder becomes the workspace)."
+        alert.addButton(withTitle: "Choose Folder…")
+        alert.addButton(withTitle: "Import from Zotero…")
+        alert.addButton(withTitle: "Quit")
+        alert.beginSheetModal(for: window) { response in
+            switch response {
+            case .alertFirstButtonReturn:
+                DispatchQueue.main.async {
+                    let panel = NSOpenPanel()
+                    panel.message = "Choose your workspace folder. Its subfolders are your collections."
+                    panel.prompt = "Choose"
+                    panel.canChooseFiles = false
+                    panel.canChooseDirectories = true
+                    panel.canCreateDirectories = true
+                    panel.directoryURL = LibraryStore.googleDriveFolder()
+                    panel.beginSheetModal(for: window) { result in
+                        if result == .OK, let url = panel.url { LibraryStore.shared.folder = url }
+                        again()
+                    }
+                }
+            case .alertSecondButtonReturn:
+                DispatchQueue.main.async { LibraryStore.shared.importFromZotero(in: window, finished: again) }
+            default:
+                NSApp.terminate(nil)
+            }
+        }
     }
 
     /// `paperlibrary://`: 확장 팝업의 "Open PaperLibrary" 버튼이 앱을 켤 때 쓴다.

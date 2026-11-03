@@ -149,8 +149,8 @@ The agent can't load the Chrome extension for you, so do this once by hand. Open
 `~/Library/Application Support/PaperLibrary/ChromeExtension` (press `⌘⇧G` in the dialog and paste the path).
 Then pin **Save to PaperLibrary** from the puzzle icon.
 
-Then choose your workspace folder in PaperLibrary with **File → Change PDF Folder…** (or in Settings, `⌘,`), or
-bring in your Zotero library with **File → Import from Zotero…**. PaperMark asks once whether to become your
+When PaperLibrary opens for the first time, it asks you to choose your workspace folder or import your Zotero
+library. You can't use PaperLibrary until you do one of these. PaperMark asks once whether to become your
 default PDF app. Later updates of PaperMark install from inside the app. To update
 PaperLibrary, run the same steps again and click **Reload** on the extension in Chrome.
 
