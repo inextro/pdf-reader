@@ -109,6 +109,50 @@ Requires macOS 14 (Sonoma) or later. Runs natively on Apple Silicon and Intel Ma
 3. The apps are not notarized by Apple, so macOS blocks them the first time. Open each one once, then go to
    **System Settings → Privacy & Security** and click **Open Anyway**.
    Alternatively, run `xattr -dr com.apple.quarantine /Applications/PaperMark.app` in Terminal.
+4. For PaperLibrary's Chrome extension, choose **PaperLibrary → Install Chrome Extension…** and follow the steps.
+
+### Install with a coding agent
+
+If you use Claude Code or another coding agent, you can ask it to "install PaperMark and PaperLibrary from
+github.com/inextro/pdf-reader". These are the steps for the agent. They need only the macOS command line tools
+(`curl`, `ditto`), not `gh`.
+
+```sh
+# 1. Download the latest release and unzip it into a new, empty folder.
+DIR="$(mktemp -d)"
+cd "$DIR"
+for app in PaperMark PaperLibrary; do
+  url="$(curl -fsSL https://api.github.com/repos/inextro/pdf-reader/releases/latest \
+    | grep -o "https://[^\"]*/$app-[0-9.]*\.zip" | head -1)"
+  curl -fsSL -o "$app.zip" "$url"
+  ditto -x -k "$app.zip" .
+done
+
+# 2. Quit running copies, then move the apps to /Applications (replacing older versions).
+osascript -e 'tell application "PaperLibrary" to quit' -e 'tell application "PaperMark" to quit' 2>/dev/null
+for app in PaperMark PaperLibrary; do
+  rm -rf "/Applications/$app.app"
+  ditto "$app.app" "/Applications/$app.app"
+  xattr -dr com.apple.quarantine "/Applications/$app.app" 2>/dev/null || true
+done
+
+# 3. Put the Chrome extension where PaperLibrary keeps it up to date.
+EXT="$HOME/Library/Application Support/PaperLibrary/ChromeExtension"
+mkdir -p "$(dirname "$EXT")"
+rm -rf "$EXT"
+ditto /Applications/PaperLibrary.app/Contents/Resources/ChromeExtension "$EXT"
+open -g /Applications/PaperLibrary.app
+```
+
+The agent can't load the Chrome extension for you, so do this once by hand. Open `chrome://extensions`, turn on
+**Developer mode** (top right), click **Load unpacked**, and choose
+`~/Library/Application Support/PaperLibrary/ChromeExtension` (press `⌘⇧G` in the dialog and paste the path).
+Then pin **Save to PaperLibrary** from the puzzle icon.
+
+Then choose your workspace folder in PaperLibrary with **File → Change PDF Folder…** (or in Settings, `⌘,`), or
+bring in your Zotero library with **File → Import from Zotero…**. PaperMark asks once whether to become your
+default PDF app. Later updates of PaperMark install from inside the app. To update
+PaperLibrary, run the same steps again and click **Reload** on the extension in Chrome.
 
 ### Default PDF app
 
@@ -117,7 +161,7 @@ your PaperLibrary workspace open in PaperMark, and every other PDF opens in Prev
 launchers like Raycast or Alfred, which always use the system default app. Change it later with
 **PaperMark → Default PDF App…**.
 
-This replaces the separate [PDFRouter](https://github.com/inextro/pdf-router) app, which you can delete.
+This replaces the separate PDFRouter app, which you can delete.
 
 Without PaperLibrary, make PaperMark the default PDF app the usual way: select a PDF in Finder, press `⌘I`,
 choose PaperMark under **Open with**, and click **Change All…**.
