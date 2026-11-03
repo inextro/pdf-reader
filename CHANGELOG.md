@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.0.0
+
+- New: **PaperLibrary**, a paper library app that comes with PaperMark and replaces Zotero for everyday use.
+  Install both apps from this release. PaperLibrary keeps the bibliographic data, and PaperMark opens the PDFs.
+  - Your workspace is a folder you choose, for example in Google Drive. Each collection is a folder inside it, and a
+    paper's PDF lives in its collection's folder. A paper can also appear in other collections as a reference
+    (`⌥`-drag or **Add Reference**). Changes you make in Finder show up in the library.
+  - Save papers from Chrome with the **Save to PaperLibrary** extension. It adds the paper on the current page, with
+    its PDF, to the collection selected in the sidebar, and fills in the details from CrossRef and arXiv. It works
+    with sites such as ACM, IEEE Xplore, ScienceDirect, Taylor & Francis, Springer, arXiv, and OpenReview, using
+    your school's subscription in the browser. Choose **PaperLibrary → Install Chrome Extension…** to install it.
+  - Add a paper by DOI or arXiv ID (`⇧⌘N`), or import your Zotero library with its collections, tags, notes, and
+    Better BibTeX citation keys.
+  - Track your reading with status tags (To Do, In Process, Verified, Completed). Edit any field in the info panel,
+    and copy citations in APA, ACM, or IEEE style (`⇧⌘C`).
+  - Delete papers with `⌘⌫` and collections from the sidebar. Press `⌘Z` to bring them back, PDFs included.
+- New: PaperMark can become your default PDF app. It asks once, and you can change it later with
+  **PaperMark → Default PDF App…**. PDFs in your PaperLibrary workspace open in PaperMark, and other PDFs open in
+  Preview. This replaces the separate PDFRouter app, which you can delete.
+- Fix: When opening a PDF starts PaperMark, the tabs that were open when you quit come back next to it.
+
 ## 0.8.2
 
 - New: Translations keep the equations. Math in the selected text is cut out of the PDF as an image and placed

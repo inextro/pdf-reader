@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Save to PaperLibrary",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Save the paper on this page, with its PDF, to PaperLibrary.",
   "action": {
     "default_title": "Save to PaperLibrary",
