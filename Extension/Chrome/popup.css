@@ -80,6 +80,9 @@ h1 { margin: 0 0 6px; font-size: 16px; line-height: 1.35; }
 .pdf:empty { display: none; }
 .pdf.ok { color: var(--ok); }
 .pdf.warn { color: var(--warn); }
+.log { margin: 8px 0 0; font-size: 12px; }
+.log summary { cursor: pointer; color: var(--muted, #777); }
+.log pre { margin: 6px 0 0; max-height: 180px; overflow: auto; white-space: pre-wrap; word-break: break-all; font-size: 11px; user-select: text; }
 
 .warnings { margin: 10px 0 0; padding-left: 18px; color: var(--warn); font-size: 13px; }
 .warnings:empty { display: none; }

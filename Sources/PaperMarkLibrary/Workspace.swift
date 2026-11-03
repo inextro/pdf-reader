@@ -19,6 +19,7 @@ public struct Workspace {
         case invalidName(String)
         case nameTaken(String)
         case scanFailed(String)
+        case trashFailed([String], String)
 
         public var errorDescription: String? {
             switch self {
@@ -26,6 +27,11 @@ public struct Workspace {
             case .invalidName(let name): "“\(name)” cannot be used as a collection name."
             case .nameTaken(let name): "A collection or folder named “\(name)” already exists here."
             case .scanFailed(let message): "The workspace folder could not be read: \(message)"
+            case .trashFailed(let names, let reason):
+                (names.count == 1 ? "“\(names[0])” couldn’t be moved to the Trash, so its paper was kept in the library."
+                    : "\(names.count) PDFs couldn’t be moved to the Trash, so their papers were kept in the library: "
+                    + names.map { "“\($0)”" }.joined(separator: ", ") + ".")
+                + " The other papers were deleted. Try again in a moment, or move the file to the Trash in Finder. (\(reason))"
             }
         }
     }
@@ -173,19 +179,31 @@ public struct Workspace {
     }
 
     /// 논문들을 라이브러리에서 지우고 PDF를 휴지통으로 보낸다. 지우지 않는 다른 논문도 쓰는 PDF와 없는 파일은 건너뛴다.
+    /// PDF를 휴지통으로 보내지 못한 논문(Google Drive가 아직 올리는 중일 때 등)은 파일과 어긋나지 않게 라이브러리에 남기고,
+    /// 나머지는 지운 뒤 trashFailed로 알린다.
     public func deleteItems(_ ids: [Int64]) throws {
         guard isDirectory(root) else { throw Failure.missingRoot(root) }
         let items = try library.items()
         let doomed = Set(ids)
         let kept = Set(items.filter { !doomed.contains($0.id) }.flatMap(\.attachments).map(Self.key))
-        let files = items.filter { doomed.contains($0.id) }.flatMap(\.attachments).filter { !kept.contains(Self.key($0)) }
-        for path in Set(files) {
+        var failed: [String] = [], reason = ""
+        var failedKeys: Set<String> = []
+        for path in Set(items.filter { doomed.contains($0.id) }.flatMap(\.attachments)) where !kept.contains(Self.key(path)) {
             let file = Library.resolve(path, in: root)
-            if fm.fileExists(atPath: file.path) { try trash(file) }
+            guard fm.fileExists(atPath: file.path) else { continue }
+            do {
+                try trash(file)
+            } catch {
+                failed.append(file.lastPathComponent)
+                failedKeys.insert(Self.key(path))
+                reason = (error as NSError).localizedFailureReason ?? error.localizedDescription
+            }
         }
+        let keep = Set(items.filter { item in item.attachments.contains { failedKeys.contains(Self.key($0)) } }.map(\.id))
         try library.db.transaction {
-            for id in ids { try library.deleteItem(id) }
+            for id in ids where !keep.contains(id) { try library.deleteItem(id) }
         }
+        if !failed.isEmpty { throw Failure.trashFailed(failed.sorted(), reason) }
     }
 
     private func homeItems(under path: String) throws -> [Int64] {

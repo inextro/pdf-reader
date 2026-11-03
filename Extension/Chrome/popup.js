@@ -21,6 +21,7 @@ function setStatus(text, kind = '') {
 }
 
 function render(state) {
+  $('log').hidden = true;
   $('open').hidden = !(state.phase === 'error' && state.offline);
   if (state.phase === 'error') {
     setStatus(state.offline ? 'PaperLibrary is not running.' : state.message, 'error');
@@ -47,6 +48,8 @@ function render(state) {
   if (state.pdf === 'attached') setPDF(state.item.file ? `PDF saved as “${state.item.file}”` : 'PDF attached', 'ok');
   else if (state.pdf === 'failed') setPDF('The PDF could not be downloaded. Open the PDF in this tab and click the extension again.', 'warn');
   else setPDF('No PDF found on this page.', 'warn');
+  $('log').hidden = !(state.log || []).length;
+  $('log-text').textContent = (state.log || []).join('\n');
 }
 
 function showItem(next) {

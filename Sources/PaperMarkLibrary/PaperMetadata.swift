@@ -145,6 +145,20 @@ extension PaperMetadata {
         text.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
+
+    /// CrossRef의 제목·학술지 이름에 섞여 오는 HTML 태그(<i>, <sub>, MathML)를 떼고 &amp; 같은 문자 참조를 푼다.
+    static func plain(_ text: String) -> String {
+        var s = text.replacingOccurrences(of: #"<[^>]+>"#, with: "", options: .regularExpression)
+        for (entity, char) in [("&lt;", "<"), ("&gt;", ">"), ("&quot;", "\""), ("&#39;", "'"), ("&apos;", "'"), ("&nbsp;", " ")] {
+            s = s.replacingOccurrences(of: entity, with: char)
+        }
+        while let range = s.range(of: #"&#(x[0-9a-fA-F]+|[0-9]+);"#, options: .regularExpression) {
+            let body = s[range].dropFirst(2).dropLast()
+            let value = body.first == "x" ? UInt32(body.dropFirst(), radix: 16) : UInt32(body)
+            s.replaceSubrange(range, with: value.flatMap(Unicode.Scalar.init).map { String(Character($0)) } ?? "")
+        }
+        return clean(s.replacingOccurrences(of: "&amp;", with: "&"))
+    }
 }
 
 extension Creator {
@@ -169,10 +183,10 @@ extension PaperMetadata {
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let work = root["message"] as? [String: Any] else { return nil }
         func string(_ key: String) -> String? {
-            (work[key] as? String).map(clean).flatMap { $0.isEmpty ? nil : $0 }
+            (work[key] as? String).map(plain).flatMap { $0.isEmpty ? nil : $0 }
         }
         func firstString(_ key: String) -> String? {
-            (work[key] as? [String])?.lazy.map(clean).first { !$0.isEmpty }
+            (work[key] as? [String])?.lazy.map(plain).first { !$0.isEmpty }
         }
         func people(_ key: String, role: String) -> [Creator] {
             (work[key] as? [[String: Any]] ?? []).map { person in
@@ -373,8 +387,26 @@ public enum PaperID {
         let host = page?.host ?? ""
         if let id = m.arxivID, m.venue == "arXiv" || host.hasSuffix("arxiv.org") { urls.append("https://arxiv.org/pdf/\(id)") }
         if host.hasSuffix("dl.acm.org"), let doi = m.doi { urls.append("https://dl.acm.org/doi/pdf/\(doi)") }
+        // Taylor & Francis, SAGE처럼 ACM과 같은 출판 플랫폼(Atypon)을 쓰는 사이트는 /doi/full|abs/<DOI> 페이지의 PDF가
+        // /doi/pdf/<DOI>에 있다. 그 주소가 PDF 보기 화면으로 넘어가는 사이트가 있어 내려받기 주소(?download=true)를 먼저 시도한다.
+        if !host.hasSuffix("dl.acm.org"), let doi = m.doi, let path = page?.path,
+           ["/doi/full/", "/doi/abs/", "/doi/epdf/", "/doi/epub/", "/doi/"].contains(where: path.hasPrefix) {
+            urls.append("https://\(host)/doi/pdf/\(doi)?download=true")
+            urls.append("https://\(host)/doi/pdf/\(doi)")
+        }
         if host.hasSuffix("openreview.net"), let id = page?.queryItems?.first(where: { $0.name == "id" })?.value {
             urls.append("https://openreview.net/pdf?id=\(id)")
+        }
+        // IEEE Xplore는 PDF 주소를 메타태그나 링크로 주지 않는다. 문서 번호(/document/<번호>, PDF 화면은 ?arnumber=)로
+        // PDF 보기(stamp.jsp)의 iframe이 불러오는 주소를 만든다. 학교 구독 로그인이 있어야 받힌다.
+        if host.hasSuffix("ieeexplore.ieee.org"),
+           let number = page?.queryItems?.first(where: { $0.name == "arnumber" })?.value
+               ?? page.flatMap({ p in
+                   let parts = p.path.split(separator: "/")
+                   return parts.firstIndex(of: "document").flatMap { $0 + 1 < parts.count ? String(parts[$0 + 1]) : nil }
+               }),
+           !number.isEmpty, number.allSatisfy(\.isNumber) {
+            urls.append("https://ieeexplore.ieee.org/stampPDF/getPDF.jsp?tp=&arnumber=\(number)&ref=")
         }
         urls += links
         var seen: Set<String> = []

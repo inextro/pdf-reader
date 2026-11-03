@@ -33,7 +33,7 @@ enum DefaultPDFApp {
 
     static func forward(_ urls: [URL], done: @escaping () -> Void) {
         NSWorkspace.shared.open(urls, withApplicationAt: preview, configuration: NSWorkspace.OpenConfiguration()) { _, error in
-            if let error { NSLog("PaperMark: Preview로 넘기기 실패: \(error)") }
+            if let error { NSLog("%@", "PaperMark: Preview로 넘기기 실패: \(error)") }
             DispatchQueue.main.async(execute: done)
         }
     }

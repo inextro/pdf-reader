@@ -25,6 +25,14 @@ function readPage() {
     const name = (tag.getAttribute('name') || tag.getAttribute('property') || '').toLowerCase();
     if (name && tag.content) meta.push([name, tag.content]);
   }
+  // IEEE Xplore는 citation_* 메타태그가 없고, 서지 정보를 페이지 스크립트(xplGlobal.document.metadata)에만 둔다.
+  // 거기서 DOI를 꺼내 주면 PaperLibrary가 CrossRef로 나머지를 채운다.
+  if (location.hostname.endsWith('ieeexplore.ieee.org') && !meta.some(([name]) => name === 'citation_doi')) {
+    for (const script of document.scripts) {
+      const found = script.textContent.match(/xplGlobal\.document\.metadata\s*=\s*\{[\s\S]*?"doi":"(10\.[^"]+)"/);
+      if (found) { meta.push(['citation_doi', found[1]]); break; }
+    }
+  }
   const links = [];
   for (const a of document.querySelectorAll('a[href]')) {
     if (/\.pdf(?:$|[?#])|\/pdf(?:\/|\?)|pdfft/i.test(a.href) && !links.includes(a.href)) links.push(a.href);
@@ -40,46 +48,89 @@ function update(tabId, state) {
   chrome.action.setBadgeBackgroundColor({ tabId, color: { error: '#d33b3b', duplicate: '#d98a00' }[state.phase] || '#2f9e72' });
 }
 
-// 페이지 안에서 실행된다. 같은 사이트의 PDF를 페이지처럼 받는다(base64).
+// 페이지 안에서 실행된다. 같은 사이트의 PDF를 페이지처럼 받는다(base64). 마지막 주소(넘겨진 뒤)도 돌려준다.
 // ACM처럼 Cloudflare가 지키는 사이트는 확장에서 바로 받으면 사람 확인 페이지가 오지만, 페이지 안에서 받으면 통과한다.
 async function fetchInPage(url) {
   try {
     const response = await fetch(url, { credentials: 'include' });
-    if (!response.ok) return null;
+    const info = { url: response.url, status: response.status, type: response.headers.get('content-type') || '' };
+    if (!response.ok) return info;
     const blob = await response.blob();
-    return await new Promise((resolve) => {
+    const data = await new Promise((resolve) => {
       const reader = new FileReader();
       reader.onload = () => resolve(String(reader.result).split(',')[1] || null);
       reader.onerror = () => resolve(null);
       reader.readAsDataURL(blob);
     });
-  } catch {
-    return null;
+    return { ...info, data };
+  } catch (error) {
+    return { error: String(error) };
   }
+}
+
+// 실패했을 때 확장 창에 보여 줄 한 줄: 어디서 받았는지, 응답 코드, 형식, 넘겨진 주소, HTML이면 제목.
+function note(where, url, info, data) {
+  if (info.error) return `${where}: ${info.error} — ${url}`;
+  let title = '';
+  if (data && /html/i.test(info.type)) {
+    title = (new TextDecoder().decode(data.slice(0, 200_000)).match(/<title[^>]*>([^<]*)/i)?.[1] || '').trim().slice(0, 60);
+  }
+  const moved = info.url && info.url !== url ? ` → ${info.url}` : '';
+  return `${where}: ${info.status} ${info.type.split(';')[0]}${title ? ` “${title}”` : ''} — ${url}${moved}`;
 }
 
 function isPDF(data) {
   return data && String.fromCharCode(...new Uint8Array(data, 0, Math.min(5, data.byteLength))) === '%PDF-' ? data : null;
 }
 
-async function download(url, tab) {
+// PDF 대신 받은 HTML이 PDF로 넘겨 주는 중간 페이지면 그 주소를 꺼낸다.
+// ScienceDirect(pdfft)는 meta refresh나 window.location으로, IEEE(stamp.jsp)는 iframe으로 실제 PDF를 부른다.
+function redirectIn(data, base) {
+  if (!data || data.byteLength > 2_000_000) return null;
+  const html = new TextDecoder().decode(data);
+  const patterns = [
+    /<meta[^>]+http-equiv=["']?refresh["']?[^>]+content=["']?\s*\d+\s*;\s*url=['"]?([^"'>\s]+)/i,
+    /window\.location(?:\.href)?\s*=\s*["']([^"']+)["']/i,
+    /<(?:iframe|embed)[^>]+src=["']([^"']*pdf[^"']*)["']/i,
+  ];
+  for (const pattern of patterns) {
+    const found = html.match(pattern);
+    if (!found) continue;
+    try {
+      return new URL(found[1].replace(/&amp;/g, '&'), base).href;
+    } catch {
+      // 주소가 아니면 다음 규칙을 본다.
+    }
+  }
+  return null;
+}
+
+// PDF를 받는다. 중간 페이지가 오면 그 페이지가 가리키는 주소를 한 번 더 받아 본다.
+// 시도한 결과는 log에 한 줄씩 남긴다.
+async function download(url, tab, log, depth = 0) {
+  let fallback = null;
   if (tab?.url && new URL(url, tab.url).origin === new URL(tab.url).origin) {
     try {
       const [{ result }] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: fetchInPage, args: [url] });
-      if (result) {
-        const data = isPDF(Uint8Array.from(atob(result), (c) => c.charCodeAt(0)).buffer);
-        if (data) return data;
-      }
-    } catch {
+      const data = result?.data ? Uint8Array.from(atob(result.data), (c) => c.charCodeAt(0)).buffer : null;
+      if (isPDF(data)) return data;
+      if (result) log.push(note('page', url, result, data));
+      fallback = redirectIn(data, result?.url || url);
+    } catch (error) {
       // PDF 보기 탭처럼 스크립트를 넣을 수 없으면 확장에서 받는다.
+      log.push(`page: ${error} — ${url}`);
     }
   }
   try {
     const response = await fetch(url, { credentials: 'include' });
-    return response.ok ? isPDF(await response.arrayBuffer()) : null;
-  } catch {
-    return null;
+    const data = response.ok ? await response.arrayBuffer() : null;
+    if (isPDF(data)) return data;
+    log.push(note('extension', url, { url: response.url, status: response.status, type: response.headers.get('content-type') || '' }, data));
+    fallback = fallback || redirectIn(data, response.url || url);
+  } catch (error) {
+    log.push(`extension: ${error} — ${url}`);
   }
+  return fallback && fallback !== url && depth < 2 ? download(fallback, tab, log, depth + 1) : null;
 }
 
 async function save(tab) {
@@ -132,8 +183,9 @@ async function finish(tab, item) {
 async function savePDF(tab, item) {
   const tabId = tab.id;
   update(tabId, { phase: 'saving', step: 'Downloading the PDF…', item });
+  const log = [];
   for (const url of item.pdfCandidates) {
-    const data = await download(url, tab);
+    const data = await download(url, tab, log);
     if (!data) continue;
     update(tabId, { phase: 'saving', step: 'Saving the PDF…', item });
     const attached = await api(`/attach?id=${item.id}`, {
@@ -142,7 +194,7 @@ async function savePDF(tab, item) {
     update(tabId, { phase: 'done', item: { ...item, ...attached }, pdf: 'attached' });
     return;
   }
-  update(tabId, { phase: 'done', item, pdf: 'failed' });
+  update(tabId, { phase: 'done', item, pdf: 'failed', log });
 }
 
 chrome.runtime.onMessage.addListener((message, sender, reply) => {

@@ -16,7 +16,7 @@ enum ChromeExtension {
     /// 켤 때: 복사해 둔 확장이 있고 앱에 든 것과 다르면 바꿔 둔다(Chrome에서는 Reload만 누르면 된다).
     static func refresh() {
         guard FileManager.default.fileExists(atPath: installedURL.path), let bundled = bundledURL, !same(bundled, installedURL) else { return }
-        do { try copy(from: bundled) } catch { NSLog("PaperLibrary: could not update the Chrome extension: \(error)") }
+        do { try copy(from: bundled) } catch { NSLog("%@", "PaperLibrary: could not update the Chrome extension: \(error)") }
     }
 
     /// 처음 켰을 때 한 번: 확장을 아직 복사한 적이 없으면 설치를 권한다. 나중에는 메뉴에서 설치한다.

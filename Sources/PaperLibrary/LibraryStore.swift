@@ -57,7 +57,7 @@ final class LibraryStore {
     func didModify() {
         reload()
         guard let library, let folder else { return }
-        do { try LibraryBackup.write(library, to: folder) } catch { NSLog("PaperLibrary backup failed: \(error)") }
+        do { try LibraryBackup.write(library, to: folder) } catch { NSLog("%@", "PaperLibrary backup failed: \(error)") }
     }
 
     /// 서지 정보로 항목을 만든다. 같은 논문이 이미 있으면 만들지 않고 그 항목을 돌려준다. 다시 읽기·백업은 부르는 쪽이 한다.

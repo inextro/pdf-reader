@@ -774,6 +774,10 @@ check(crossref?.type == "conferencePaper" && crossref?.date == "2020-07-25" && c
       && crossref?.fields["pages"] == "639-648" && crossref?.fields["place"] == "New York, NY, USA"
       && crossref?.fields["conferenceName"]?.hasPrefix("SIGIR '20") == true
       && crossref?.abstract == "Graph Convolution Network (GCN) has become new state-of-the-art.", "CrossRef 응답 읽기")
+check(PaperMetadata.crossref(Data(#"{"message":{"title":["Unveiling the types of growth patterns of mobile startups: <i>do business models matter?</i>"],"container-title":["Technology Analysis &amp; Strategic Management"],"type":"journal-article"}}"#.utf8))
+      .map { [$0.title, $0.venue ?? ""] } == ["Unveiling the types of growth patterns of mobile startups: do business models matter?",
+                                                 "Technology Analysis & Strategic Management"],
+      "CrossRef 제목·학술지 이름의 HTML 태그와 &amp;를 푼다")
 
 let arxivAtom = """
 <?xml version="1.0" encoding="UTF-8"?>
@@ -850,13 +854,23 @@ let wand = PaperID.identifiers(in: "10.1145/3397271.3401063, https://doi.org/10.
 check(wand.map { $0.doi ?? "arxiv:" + ($0.arxivID ?? "") }
       == ["10.1145/3397271.3401063", "arxiv:2002.02126", "arxiv:2310.20453", "arxiv:1706.03762", "arxiv:2401.00001"],
       "마술 지팡이 입력에서 DOI·arXiv 번호 찾기")
+var tandfPage = PaperMetadata()
+tandfPage.doi = "10.1080/09537325.2024.2361420"
 var acmPage = PaperMetadata()
 acmPage.doi = "10.1145/3397271.3401063"
 check(PaperID.pdfCandidates(for: acmPage, pageURL: "https://dl.acm.org/doi/10.1145/3397271.3401063", isPDF: false,
                             links: ["https://dl.acm.org/doi/pdf/10.1145/3397271.3401063", "https://x.org/a.pdf"])
       == ["https://dl.acm.org/doi/pdf/10.1145/3397271.3401063", "https://x.org/a.pdf"]
       && PaperID.pdfCandidates(for: PaperMetadata(), pageURL: "https://openreview.net/forum?id=PxTIG12RRHS", isPDF: false, links: [])
-      == ["https://openreview.net/pdf?id=PxTIG12RRHS"], "PDF 주소 후보")
+      == ["https://openreview.net/pdf?id=PxTIG12RRHS"]
+      && PaperID.pdfCandidates(for: PaperMetadata(), pageURL: "https://ieeexplore.ieee.org/abstract/document/10857049", isPDF: false, links: [])
+      == ["https://ieeexplore.ieee.org/stampPDF/getPDF.jsp?tp=&arnumber=10857049&ref="]
+      && PaperID.pdfCandidates(for: PaperMetadata(), pageURL: "https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=10857049", isPDF: false, links: [])
+      == ["https://ieeexplore.ieee.org/stampPDF/getPDF.jsp?tp=&arnumber=10857049&ref="]
+      && PaperID.pdfCandidates(for: tandfPage, pageURL: "https://www.tandfonline.com/doi/full/10.1080/09537325.2024.2361420", isPDF: false,
+                               links: ["https://www.tandfonline.com/doi/pdf/10.1080/09537325.2024.2361420"])
+      == ["https://www.tandfonline.com/doi/pdf/10.1080/09537325.2024.2361420?download=true",
+          "https://www.tandfonline.com/doi/pdf/10.1080/09537325.2024.2361420"], "PDF 주소 후보(ACM, OpenReview, IEEE, Taylor & Francis)")
 
 let edited = try Library(url: libDir.appendingPathComponent("edited.sqlite"))
 try edited.db.run("INSERT INTO collections (key, name) VALUES ('c1', 'Inbox'), ('c2', 'Read')")
@@ -986,6 +1000,27 @@ try ws.addReferences([a], to: proj)
     check((try? wsLib.item(d)) == nil && (try? wsLib.item(e)) == nil && (try? entry(a)) != nil
           && fm.fileExists(atPath: wsRoot.appendingPathComponent("archive/A.pdf").path)
           && !fm.fileExists(atPath: wsRoot.appendingPathComponent("archive/E.pdf").path), "논문 지우기: PDF는 휴지통, 같이 쓰는 PDF는 남기기")
+
+    // 휴지통으로 못 보낸 PDF(Drive가 막을 때)의 논문은 남기고, 나머지는 지운다.
+    for name in ["F", "G"] {
+        meta.title = "Paper \(name)"
+        let id = try wsLib.add(meta, citationKey: name.lowercased(), collectionID: archive)
+        try Data("%PDF-1.4 \(name)".utf8).write(to: wsRoot.appendingPathComponent("archive/\(name).pdf"))
+        try wsLib.addAttachment("archive/\(name).pdf", to: id)
+    }
+    let ids = try wsLib.items().filter { ["f", "g"].contains($0.citationKey) }.map(\.id)
+    var stubborn = ws
+    stubborn.trash = { url in
+        if url.lastPathComponent == "G.pdf" { throw CocoaError(.fileWriteNoPermission) }
+        try FileManager.default.trashItem(at: url, resultingItemURL: nil)
+    }
+    var trashError: [String] = []
+    do { try stubborn.deleteItems(ids) } catch Workspace.Failure.trashFailed(let names, _) { trashError = names }
+    let left = try wsLib.items().filter { ["f", "g"].contains($0.citationKey) }.compactMap(\.citationKey)
+    check(trashError == ["G.pdf"] && left == ["g"]
+          && !fm.fileExists(atPath: wsRoot.appendingPathComponent("archive/F.pdf").path)
+          && fm.fileExists(atPath: wsRoot.appendingPathComponent("archive/G.pdf").path),
+          "논문 지우기: 휴지통으로 못 보낸 PDF의 논문만 남긴다 (\(left))")
 
     // workspace가 없으면 아무것도 바꾸지 않는다.
     var gone = false

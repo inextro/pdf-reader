@@ -440,7 +440,7 @@ final class LibrarySidebarView: NSView, NSOutlineViewDataSource, NSOutlineViewDe
         alert.informativeText = lines.joined(separator: " ")
         alert.addButton(withTitle: "Delete")
         alert.addButton(withTitle: "Cancel")
-        alert.buttons.first?.hasDestructiveAction = true
+        // Return으로 바로 지운다. hasDestructiveAction을 켜면 Return이 버튼에서 빠지므로 쓰지 않는다.
         let run = { (response: NSApplication.ModalResponse) in
             guard response == .alertFirstButtonReturn else { return }
             do { try store.deleteCollection(id) } catch { store.presentError(error, in: self.window) }

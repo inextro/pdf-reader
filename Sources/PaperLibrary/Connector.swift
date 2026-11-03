@@ -120,7 +120,7 @@ final class Connector {
             id = proceed
         } else if let existing = try library.existingItem(for: metadata), let entry = store.items.first(where: { $0.id == existing }) {
             var json = itemJSON(entry)
-            NSLog("PaperLibrary connector: \(page.url) is already in the library as \(existing)")
+            NSLog("%@", "PaperLibrary connector: \(page.url) is already in the library as \(existing)")
             json["existing"] = true
             json["in"] = entry.collectionIDs.compactMap { c in store.collections.first { $0.id == c }?.name }
             json["collection"] = target.map { $0 as Any } ?? NSNull()
@@ -139,7 +139,7 @@ final class Connector {
         let candidates = entry.attachments.isEmpty
             ? PaperID.pdfCandidates(for: metadata, pageURL: page.url, isPDF: isPDF, links: page.links ?? []) : []
         json["pdfCandidates"] = candidates
-        NSLog("PaperLibrary connector: saved \(id) from \(page.url) (\(meta.count) meta tags, \(candidates.count) PDF links, proceed: \(page.proceed.map(String.init) ?? "no"))")
+        NSLog("%@", "PaperLibrary connector: saved \(id) from \(page.url) (\(meta.count) meta tags, \(candidates.count) PDF links, proceed: \(page.proceed.map(String.init) ?? "no"))")
         json["warnings"] = warnings
         return .json(json)
     }
