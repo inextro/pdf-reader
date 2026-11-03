@@ -993,6 +993,31 @@ try ws.addReferences([a], to: proj)
     check(try gone && wsLib.collections().count == 3, "workspace가 없으면 그대로")
 }
 
+// MARK: 기본 PDF 앱: workspace 안의 PDF만 PaperMark가 연다
+
+do {
+    let temp = FileManager.default.temporaryDirectory.appendingPathComponent("pmcheck-route", isDirectory: true)
+    try? FileManager.default.removeItem(at: temp)
+    let root = temp.appendingPathComponent("ws", isDirectory: true)
+    let sub = root.appendingPathComponent("archive", isDirectory: true)
+    try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: true)
+    let link = temp.appendingPathComponent("link")
+    try FileManager.default.createSymbolicLink(at: link, withDestinationURL: root)
+    let sibling = temp.appendingPathComponent("ws2/a.pdf")
+    check(PDFRouting.isInside(sub.appendingPathComponent("a.pdf"), root)
+          && PDFRouting.isInside(link.appendingPathComponent("archive/a.pdf"), root)
+          && !PDFRouting.isInside(sibling, root) && !PDFRouting.isInside(root, root),
+          "workspace 안의 PDF만 고른다(하위 폴더·심링크 포함, 이름만 비슷한 옆 폴더 제외)")
+    let defaults = UserDefaults(suiteName: "pmcheck.route")!
+    defaults.removeObject(forKey: PDFRouting.libraryFolderKey)
+    let unset = PDFRouting.workspaceFolder(defaults: defaults)
+    defaults.set(root.path, forKey: PDFRouting.libraryFolderKey)
+    check(unset == nil && PDFRouting.workspaceFolder(defaults: defaults)?.path == root.path,
+          "PaperLibrary 설정의 workspace 폴더를 읽는다")
+    defaults.removePersistentDomain(forName: "pmcheck.route")
+    try? FileManager.default.removeItem(at: temp)
+}
+
 // MARK: 참고문헌 문장
 do {
     let citeLib = try Library(url: libDir.appendingPathComponent("citation-\(UUID().uuidString).sqlite"))
