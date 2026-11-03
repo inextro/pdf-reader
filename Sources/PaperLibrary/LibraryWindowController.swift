@@ -2,7 +2,7 @@ import AppKit
 import PaperMarkLibrary
 
 /// 라이브러리 창 하나: 왼쪽 사이드바(컬렉션·태그), 오른쪽 서지 표, 툴바 검색.
-final class LibraryWindowController: NSWindowController, NSToolbarDelegate, NSSearchFieldDelegate {
+final class LibraryWindowController: NSWindowController, NSToolbarDelegate, NSSearchFieldDelegate, NSWindowDelegate {
     private let sidebar = LibrarySidebarView()
     private let libraryView = LibraryView()
     private let infoView = ItemInfoView()
@@ -25,6 +25,7 @@ final class LibraryWindowController: NSWindowController, NSToolbarDelegate, NSSe
         window.isReleasedWhenClosed = false
         window.minSize = NSSize(width: 640, height: 360)
         super.init(window: window)
+        window.delegate = self
 
         let split = NSSplitViewController()
         let sidebarItem = NSSplitViewItem(sidebarWithViewController: Self.controller(for: sidebar))
@@ -98,6 +99,9 @@ final class LibraryWindowController: NSWindowController, NSToolbarDelegate, NSSe
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    /// ⌘Z가 라이브러리 지우기를 되돌리도록 창의 되돌리기를 LibraryStore 것으로 쓴다.
+    func windowWillReturnUndoManager(_ window: NSWindow) -> UndoManager? { LibraryStore.shared.undoManager }
 
     private static func controller(for view: NSView) -> NSViewController {
         let controller = NSViewController()

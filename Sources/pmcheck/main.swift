@@ -912,7 +912,16 @@ do {
     meta.title = "Paper C"
     let c = try wsLib.add(meta, citationKey: "c", collectionID: mainC)
     var ws = Workspace(library: wsLib, root: wsRoot)
-    ws.trash = { try fm.removeItem(at: $0) }
+    // 진짜 휴지통 대신 옆 폴더로 옮겨, 되살리기를 확인할 수 있게 한다.
+    let wsTrash = libDir.appendingPathComponent("workspace-trash", isDirectory: true)
+    try? fm.removeItem(at: wsTrash)
+    try fm.createDirectory(at: wsTrash, withIntermediateDirectories: true)
+    let fakeTrash: (URL) throws -> URL? = { url in
+        let to = wsTrash.appendingPathComponent(UUID().uuidString + "-" + url.lastPathComponent)
+        try FileManager.default.moveItem(at: url, to: to)
+        return to
+    }
+    ws.trash = fakeTrash
     func entry(_ id: Int64) throws -> LibraryEntry { try wsLib.item(id)! }
     func paths() throws -> [Int64: String] { Workspace.paths(of: try wsLib.collections()) }
 
@@ -1012,15 +1021,60 @@ try ws.addReferences([a], to: proj)
     var stubborn = ws
     stubborn.trash = { url in
         if url.lastPathComponent == "G.pdf" { throw CocoaError(.fileWriteNoPermission) }
-        try FileManager.default.trashItem(at: url, resultingItemURL: nil)
+        return try fakeTrash(url)
     }
     var trashError: [String] = []
-    do { try stubborn.deleteItems(ids) } catch Workspace.Failure.trashFailed(let names, _) { trashError = names }
+    if case .trashFailed(let names, _)? = try stubborn.deleteItems(ids).failure { trashError = names }
     let left = try wsLib.items().filter { ["f", "g"].contains($0.citationKey) }.compactMap(\.citationKey)
     check(trashError == ["G.pdf"] && left == ["g"]
           && !fm.fileExists(atPath: wsRoot.appendingPathComponent("archive/F.pdf").path)
           && fm.fileExists(atPath: wsRoot.appendingPathComponent("archive/G.pdf").path),
           "논문 지우기: 휴지통으로 못 보낸 PDF의 논문만 남긴다 (\(left))")
+
+    // 되살리기(⌘Z): 지운 논문을 같은 id·key·태그·소속으로, PDF는 원래 자리로.
+    meta.title = "Paper H"
+    let h = try wsLib.add(meta, citationKey: "h", collectionID: archive)
+    try Data("%PDF-1.4 H".utf8).write(to: wsRoot.appendingPathComponent("archive/H.pdf"))
+    try wsLib.addAttachment("archive/H.pdf", to: h)
+    try wsLib.addTag("/To Do", to: h)
+    let refC = try ws.createCollection("Ref", parent: nil)
+    try wsLib.moveItem(h, from: nil, to: refC)
+    let hBefore = try entry(h)
+    let hSnap = try ws.deleteItems([h])
+    let hGone = (try? wsLib.item(h)) == nil && !fm.fileExists(atPath: wsRoot.appendingPathComponent("archive/H.pdf").path)
+    try ws.restore(hSnap)
+    let hAfter = try? entry(h)
+    let hKey = try wsLib.db.query("SELECT key FROM items WHERE id = ?", [.int(h)]).first?["key"] ?? ""
+    check(try hGone && hAfter?.citationKey == "h" && hAfter?.tags == hBefore.tags && hAfter?.collectionIDs == hBefore.collectionIDs
+          && hAfter?.attachments == ["archive/H.pdf"] && fm.fileExists(atPath: wsRoot.appendingPathComponent("archive/H.pdf").path)
+          && (try wsLib.db.query("SELECT 1 FROM deleted_items WHERE key = ?", [.text(hKey)])).isEmpty,
+          "되살리기: 지운 논문의 서지 정보·태그·소속과 PDF를 되돌린다")
+
+    // 원래 자리에 같은 이름의 파일이 생겼으면 겹치지 않는 이름으로 두고 첨부 경로를 맞춘다.
+    let hSnap2 = try ws.deleteItems([h])
+    try Data("%PDF-1.4 other".utf8).write(to: wsRoot.appendingPathComponent("archive/H.pdf"))
+    try ws.restore(hSnap2)
+    check(try entry(h).attachments == ["archive/H 2.pdf"] && fm.fileExists(atPath: wsRoot.appendingPathComponent("archive/H 2.pdf").path),
+          "되살리기: 같은 이름의 파일이 있으면 'H 2.pdf'로")
+
+    // 컬렉션 지우기 되살리기: 폴더, 하위 컬렉션, 그 안에 있던 논문.
+    let tmp = try ws.createCollection("Tmp", parent: nil)
+    let sub = try ws.createCollection("Sub", parent: tmp)
+    meta.title = "Paper J"
+    let j = try wsLib.add(meta, citationKey: "j", collectionID: sub)
+    try Data("%PDF-1.4 J".utf8).write(to: wsRoot.appendingPathComponent("Tmp/Sub/J.pdf"))
+    try wsLib.addAttachment("Tmp/Sub/J.pdf", to: j)
+    try wsLib.moveItem(a, from: nil, to: sub)  // 다른 곳에 있는 논문의 참조
+    let cSnap = try ws.deleteCollection(tmp)
+    let cGone = (try? wsLib.item(j)) == nil && !fm.fileExists(atPath: wsRoot.appendingPathComponent("Tmp").path)
+    try ws.restore(cSnap)
+    let restoredPaths = try paths()
+    check(try cGone && restoredPaths[tmp] == "Tmp" && restoredPaths[sub] == "Tmp/Sub" && (try? entry(j))?.collectionIDs == [sub]
+          && (try entry(a)).collectionIDs.contains(sub) && fm.fileExists(atPath: wsRoot.appendingPathComponent("Tmp/Sub/J.pdf").path),
+          "되살리기: 지운 컬렉션의 폴더·하위 컬렉션·논문·참조를 되돌린다")
+    _ = try ws.deleteCollection(tmp)
+    _ = try ws.deleteCollection(refC)
+    try wsLib.deleteItem(h)
 
     // workspace가 없으면 아무것도 바꾸지 않는다.
     var gone = false

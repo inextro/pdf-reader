@@ -7,7 +7,12 @@ public struct Workspace {
     public let root: URL
     private var fm: FileManager { .default }
     /// 지울 파일·폴더를 휴지통으로 보낸다. 검사에서는 바로 지우게 바꾼다.
-    public var trash: (URL) throws -> Void = { try FileManager.default.trashItem(at: $0, resultingItemURL: nil) }
+    /// 휴지통으로 보내고 휴지통 안의 위치를 돌려준다(되살릴 때 쓴다).
+    public var trash: (URL) throws -> URL? = { url in
+        var result: NSURL?
+        try FileManager.default.trashItem(at: url, resultingItemURL: &result)
+        return result as URL?
+    }
 
     public init(library: Library, root: URL) {
         self.library = library
@@ -164,35 +169,43 @@ public struct Workspace {
     }
 
     /// 폴더째 휴지통으로 보내고, 원본 자리가 그 안인 논문을 지운다. 참조는 소속만 사라진다(하위 컬렉션도 함께).
-    public func deleteCollection(_ id: Int64) throws {
+    /// 되살릴 때 쓸 스냅숏을 돌려준다.
+    @discardableResult
+    public func deleteCollection(_ id: Int64) throws -> DeletionSnapshot {
         let paths = try currentPaths()
-        guard let path = paths[id] else { return }
+        guard let path = paths[id] else { return DeletionSnapshot() }
         let doomed = try homeItems(under: path)
+        let prefix = Self.key(path) + "/"
+        let collections = paths.filter { $0.key == id || Self.key($0.value).hasPrefix(prefix) }.map(\.key)
+        var snapshot = try library.snapshot(items: doomed, collections: collections)
         if isDirectory(url(path)) {
             guard isDirectory(root) else { throw Failure.missingRoot(root) }
-            try trash(url(path))
+            if let trashed = try trash(url(path)) { snapshot.files.append((path, trashed)) }
         }
         try library.db.transaction {
             for item in doomed { try library.deleteItem(item) }
             try library.db.run("DELETE FROM collections WHERE id = ?", [.int(id)])
         }
+        return snapshot
     }
 
     /// 논문들을 라이브러리에서 지우고 PDF를 휴지통으로 보낸다. 지우지 않는 다른 논문도 쓰는 PDF와 없는 파일은 건너뛴다.
     /// PDF를 휴지통으로 보내지 못한 논문(Google Drive가 아직 올리는 중일 때 등)은 파일과 어긋나지 않게 라이브러리에 남기고,
-    /// 나머지는 지운 뒤 trashFailed로 알린다.
-    public func deleteItems(_ ids: [Int64]) throws {
+    /// 나머지는 지우고, 돌려주는 스냅숏의 failure(trashFailed)로 알린다. 스냅숏으로 지운 논문을 되살린다.
+    @discardableResult
+    public func deleteItems(_ ids: [Int64]) throws -> DeletionSnapshot {
         guard isDirectory(root) else { throw Failure.missingRoot(root) }
         let items = try library.items()
         let doomed = Set(ids)
         let kept = Set(items.filter { !doomed.contains($0.id) }.flatMap(\.attachments).map(Self.key))
         var failed: [String] = [], reason = ""
         var failedKeys: Set<String> = []
+        var trashed: [(String, URL)] = []
         for path in Set(items.filter { doomed.contains($0.id) }.flatMap(\.attachments)) where !kept.contains(Self.key(path)) {
             let file = Library.resolve(path, in: root)
             guard fm.fileExists(atPath: file.path) else { continue }
             do {
-                try trash(file)
+                if let location = try trash(file) { trashed.append((path, location)) }
             } catch {
                 failed.append(file.lastPathComponent)
                 failedKeys.insert(Self.key(path))
@@ -200,10 +213,14 @@ public struct Workspace {
             }
         }
         let keep = Set(items.filter { item in item.attachments.contains { failedKeys.contains(Self.key($0)) } }.map(\.id))
+        let deleting = ids.filter { !keep.contains($0) }
+        var snapshot = try library.snapshot(items: deleting)
+        snapshot.files = trashed
         try library.db.transaction {
-            for id in ids where !keep.contains(id) { try library.deleteItem(id) }
+            for id in deleting { try library.deleteItem(id) }
         }
-        if !failed.isEmpty { throw Failure.trashFailed(failed.sorted(), reason) }
+        if !failed.isEmpty { snapshot.failure = Failure.trashFailed(failed.sorted(), reason) }
+        return snapshot
     }
 
     private func homeItems(under path: String) throws -> [Int64] {
@@ -292,7 +309,7 @@ public struct Workspace {
                     case .keepBoth: destination = uniquePath(destination)
                     case .replace:
                         do {
-                            try trash(url(destination))
+                            _ = try trash(url(destination))
                             // 바꿔 넣은 파일을 쓰던 다른 논문은 PDF를 잃는다.
                             try library.db.run("DELETE FROM attachments WHERE path = ? AND item_id != ?",
                                                [.text(destination), .int(move.itemID)])

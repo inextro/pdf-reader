@@ -16,10 +16,12 @@ extension LibraryStore {
 
     /// 휴지통으로 보낸다. Google Drive는 휴지통에 같은 이름의 파일이 있었던 PDF를 권한 오류로 막을 때가 있다
     /// (지웠다가 다시 저장한 논문). 그러면 그 자리에서 겹치지 않는 이름으로 바꾼 뒤 다시 보내고, 그래도 안 되면 이름을 되돌린다.
-    static func trash(_ url: URL) throws {
+    static func trash(_ url: URL) throws -> URL? {
         let fm = FileManager.default
+        var result: NSURL?
         do {
-            try fm.trashItem(at: url, resultingItemURL: nil)
+            try fm.trashItem(at: url, resultingItemURL: &result)
+            return result as URL?
         } catch let direct {
             NSLog("%@", "PaperLibrary: trashItem failed for \(url.path): \(direct)")
             let stamp = ISO8601DateFormatter().string(from: Date()).filter(\.isNumber)
@@ -27,7 +29,8 @@ extension LibraryStore {
                 "\(url.deletingPathExtension().lastPathComponent) (deleted \(stamp))").appendingPathExtension(url.pathExtension)
             guard (try? fm.moveItem(at: url, to: renamed)) != nil else { throw direct }
             do {
-                try fm.trashItem(at: renamed, resultingItemURL: nil)
+                try fm.trashItem(at: renamed, resultingItemURL: &result)
+                return result as URL?
             } catch {
                 try? fm.moveItem(at: renamed, to: url)
                 throw direct
@@ -133,15 +136,40 @@ extension LibraryStore {
 
     func deleteCollection(_ id: Int64) throws {
         guard let workspace else { return }
-        try workspace.deleteCollection(id)
+        let snapshot = try workspace.deleteCollection(id)
         didModify()
+        registerUndo(snapshot, name: "Delete Collection")
     }
 
     func deleteItems(_ ids: [Int64]) throws {
         guard let workspace else { return }
-        // 일부만 지워지고 오류가 나도 지운 것은 화면에 반영한다.
-        defer { didModify() }
-        try workspace.deleteItems(ids)
+        let snapshot = try workspace.deleteItems(ids)
+        didModify()
+        registerUndo(snapshot, name: snapshot.itemCount == 1 ? "Delete Paper" : "Delete Papers")
+        if let failure = snapshot.failure { throw failure }
+    }
+
+    /// ⌘Z로 지운 것을 되살리고, ⇧⌘Z로 다시 지운다.
+    private func registerUndo(_ snapshot: DeletionSnapshot, name: String) {
+        guard !snapshot.isEmpty else { return }
+        undoManager.registerUndo(withTarget: self) { store in
+            do {
+                try store.workspace?.restore(snapshot)
+            } catch {
+                store.presentError(error, in: NSApp.mainWindow)
+            }
+            store.didModify()
+            store.undoManager.registerUndo(withTarget: store) { store in
+                do {
+                    if let collection = snapshot.collectionID { try store.deleteCollection(collection) }
+                    else { try store.deleteItems(snapshot.itemIDs) }
+                } catch {
+                    store.presentError(error, in: NSApp.mainWindow)
+                }
+            }
+            store.undoManager.setActionName(name)
+        }
+        undoManager.setActionName(name)
     }
 
     // MARK: 옮기기와 참조

@@ -5,6 +5,8 @@ import PaperMarkLibrary
 /// 앱 전체가 같이 쓰는 라이브러리. 항목은 한 번에 읽어 두고, 가져오기가 끝나면 다시 읽어 didChange를 알린다.
 final class LibraryStore {
     static let shared = LibraryStore()
+    /// 라이브러리 창의 되돌리기(⌘Z). 논문·컬렉션 지우기를 되살린다.
+    let undoManager = UndoManager()
     static let didChange = Notification.Name("LibraryStoreDidChange")
     private static let folderKey = "libraryFolder"
 
