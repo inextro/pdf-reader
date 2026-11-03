@@ -1,6 +1,10 @@
-# PaperMark
+# PaperMark and PaperLibrary
 
-**A free, open-source PDF reader for macOS that lets you highlight in any color you like.**
+**Free, open-source Mac apps for reading and keeping papers.** PaperMark is a PDF reader that lets you highlight
+in any color you like. PaperLibrary is a paper library, a lighter Zotero, that saves papers from Chrome and opens
+them in PaperMark.
+
+## PaperMark
 
 PaperMark is a small, native Mac app for reading and marking up papers. Drag over text and it is
 highlighted in your current color. Your highlights are saved into the PDF itself as standard
