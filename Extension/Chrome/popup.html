@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <img src="icons/icon-32.png" alt="" width="20" height="20">
+    <span>PaperLibrary</span>
+  </header>
+  <p id="status" class="status">Reading the page…</p>
+  <section id="card" hidden>
+    <h1 id="title"></h1>
+    <p id="authors" class="muted"></p>
+    <p id="venue" class="muted"></p>
+    <label class="row">
+      <span>Collection</span>
+      <select id="collection"></select>
+    </label>
+    <p id="where" class="where" hidden></p>
+    <p id="pdf" class="pdf"></p>
+    <details id="log" class="log" hidden>
+      <summary>Details</summary>
+      <pre id="log-text"></pre>
+    </details>
+  </section>
+  <div id="confirm" class="buttons" hidden>
+    <button id="cancel" class="secondary">Cancel</button>
+    <button id="proceed">Save Again</button>
+  </div>
+  <ul id="warnings" class="warnings"></ul>
+  <button id="open" hidden>Open PaperLibrary</button>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

@@ -3,6 +3,7 @@ import CoreText
 import CryptoKit
 import PDFKit
 import PaperMarkCore
+import PaperMarkLibrary
 
 // 사용법: pmcheck <출력 폴더>
 // 텍스트 PDF를 만들고, 형광펜을 칠해 저장한 뒤 다시 열어 주석이 보존되는지 확인한다.
@@ -580,6 +581,612 @@ try FileManager.default.createDirectory(at: installedApp.appendingPathComponent(
 if let unpacked { try? Updates.replace(installedApp, with: unpacked) }
 let replacedVersion = NSDictionary(contentsOf: installedApp.appendingPathComponent("Contents/Info.plist"))?["CFBundleShortVersionString"] as? String
 check(replacedVersion == "9.9.9", "설치된 앱을 새 앱으로 교체 (\(replacedVersion ?? "nil"))")
+
+// 라이브러리: 스키마, Zotero 가져오기(합성 DB와 실제 DB), 다시 가져오기, 백업
+let libDir = outDir.appendingPathComponent("library")
+try? FileManager.default.removeItem(at: libDir)
+try FileManager.default.createDirectory(at: libDir, withIntermediateDirectories: true)
+
+let libURL = libDir.appendingPathComponent("library.sqlite")
+check((try? Library(url: libURL))?.version == Library.schemaVersion, "빈 DB에 스키마 만들기")
+check((try? Library(url: libURL))?.version == Library.schemaVersion, "다시 열어도 같은 스키마")
+
+check(ZoteroImport.parseDate("2023-10-31 2023-10-31") == ("2023-10-31", 2023)
+      && ZoteroImport.parseDate("1994-12-00 1994-12") == ("1994-12", 1994)
+      && ZoteroImport.parseDate("0000-00-00 Spring") == ("Spring", nil)
+      && ZoteroImport.parseDate(nil) == (nil, nil), "Zotero 날짜 읽기")
+check(ZoteroImport.arxivID(archiveID: "arXiv:2310.20453", extra: nil, url: nil) == "2310.20453"
+      && ZoteroImport.arxivID(archiveID: nil, extra: "TLDR: x\narXiv:2303.14524 [cs]", url: nil) == "2303.14524"
+      && ZoteroImport.arxivID(archiveID: nil, extra: nil, url: "https://arxiv.org/abs/2509.20234v2") == "2509.20234v2"
+      && ZoteroImport.arxivID(archiveID: nil, extra: "PMID: 1", url: "https://doi.org/10.1/x") == nil, "arXiv ID 찾기")
+check(ZoteroImport.prefValue("extensions.zotero.baseAttachmentPath",
+                             in: #"user_pref("extensions.zotero.baseAttachmentPath", "/Users/a/My Drive/zotero");"#)
+      == "/Users/a/My Drive/zotero", "prefs.js에서 첨부 base 폴더 읽기")
+
+/// Zotero 스키마에서 가져오기가 읽는 테이블만 가진 작은 DB.
+let zURL = libDir.appendingPathComponent("zotero.sqlite")
+let zdb = try SQLiteDatabase(path: zURL.path)
+try zdb.execute("""
+    CREATE TABLE libraries (libraryID INTEGER PRIMARY KEY, type TEXT);
+    CREATE TABLE itemTypes (itemTypeID INTEGER PRIMARY KEY, typeName TEXT);
+    CREATE TABLE items (itemID INTEGER PRIMARY KEY, itemTypeID INT, dateAdded TEXT, dateModified TEXT, libraryID INT, key TEXT);
+    CREATE TABLE fields (fieldID INTEGER PRIMARY KEY, fieldName TEXT);
+    CREATE TABLE itemDataValues (valueID INTEGER PRIMARY KEY, value UNIQUE);
+    CREATE TABLE itemData (itemID INT, fieldID INT, valueID INT);
+    CREATE TABLE creators (creatorID INTEGER PRIMARY KEY, firstName TEXT, lastName TEXT, fieldMode INT);
+    CREATE TABLE creatorTypes (creatorTypeID INTEGER PRIMARY KEY, creatorType TEXT);
+    CREATE TABLE itemCreators (itemID INT, creatorID INT, creatorTypeID INT, orderIndex INT);
+    CREATE TABLE itemAttachments (itemID INTEGER PRIMARY KEY, parentItemID INT, linkMode INT, contentType TEXT, path TEXT);
+    CREATE TABLE itemNotes (itemID INTEGER PRIMARY KEY, parentItemID INT, note TEXT, title TEXT);
+    CREATE TABLE collections (collectionID INTEGER PRIMARY KEY, collectionName TEXT, parentCollectionID INT, libraryID INT, key TEXT);
+    CREATE TABLE collectionItems (collectionID INT, itemID INT, orderIndex INT);
+    CREATE TABLE tags (tagID INTEGER PRIMARY KEY, name TEXT);
+    CREATE TABLE itemTags (itemID INT, tagID INT, type INT);
+    CREATE TABLE deletedItems (itemID INTEGER PRIMARY KEY);
+    CREATE TABLE deletedCollections (collectionID INTEGER PRIMARY KEY);
+    INSERT INTO libraries VALUES (1, 'user');
+    INSERT INTO itemTypes VALUES (3, 'attachment'), (11, 'conferencePaper'), (22, 'journalArticle'), (28, 'note'), (31, 'preprint'), (5, 'thesis');
+    INSERT INTO creatorTypes VALUES (1, 'author'), (2, 'editor');
+    INSERT INTO fields VALUES (1, 'title'), (2, 'date'), (3, 'DOI'), (4, 'citationKey'), (5, 'proceedingsTitle'), (6, 'extra'), (7, 'pages'), (8, 'publicationTitle');
+    INSERT INTO items VALUES
+      (1, 11, '2026-02-09 05:30:49', '2026-03-02 05:30:30', 1, 'AAAA0001'),
+      (2, 22, '2026-02-10 00:00:00', '2026-02-10 00:00:00', 1, 'AAAA0002'),
+      (3, 31, '2026-02-11 00:00:00', '2026-02-11 00:00:00', 1, 'AAAA0003'),
+      (4, 5,  '2026-02-12 00:00:00', '2026-02-12 00:00:00', 1, 'AAAA0004'),
+      (10, 3, '2026-02-09 05:30:49', '2026-02-09 05:30:49', 1, 'ATT00010'),
+      (11, 3, '2026-02-09 05:30:49', '2026-02-09 05:30:49', 1, 'ATT00011'),
+      (12, 28, '2026-02-09 05:30:49', '2026-02-09 05:30:49', 1, 'NOTE0012'),
+      (13, 3, '2026-02-09 05:30:49', '2026-02-09 05:30:49', 1, 'ATT00013');
+    INSERT INTO itemDataValues VALUES (1, 'A ConvNet for the 2020s'), (2, '2022-06-00 2022-06'), (3, '10.1109/CVPR52688.2022.01167'),
+      (4, 'liu2022convnet'), (5, 'Proceedings of CVPR'), (6, 'TALLRec'), (7, '2023 2023'), (8, 'bao2023tallrec'),
+      (9, 'A Preprint'), (10, 'arXiv:2310.20453 [cs]'), (11, '11976-11986'), (12, 'A Thesis'), (13, 'RecSys Journal');
+    INSERT INTO itemData VALUES (1,1,1), (1,2,2), (1,3,3), (1,4,4), (1,5,5), (1,7,11),
+      (2,1,6), (2,2,7), (2,4,8), (2,8,13), (3,1,9), (3,6,10), (4,1,12);
+    INSERT INTO creators VALUES (1, 'Zhuang', 'Liu', 0), (2, 'Hanzi', 'Mao', 0), (3, 'Keqin', 'Bao', 0), (4, '', 'OpenAI', 1), (5, 'Ed', 'Itor', 0);
+    INSERT INTO itemCreators VALUES (1,2,1,1), (1,1,1,0), (1,5,2,2), (2,3,1,0), (3,4,1,0);
+    INSERT INTO itemAttachments VALUES (10, 1, 2, 'application/pdf', 'attachments:archive/ConvNet.pdf'),
+      (11, 3, 1, 'application/pdf', 'storage:preprint.pdf'), (13, 2, 2, 'application/pdf', '/elsewhere/TALLRec.pdf');
+    INSERT INTO itemNotes VALUES (12, 1, '<p>Accepted at CVPR</p>', 'Accepted');
+    INSERT INTO collections VALUES (1, 'Vision', NULL, 1, 'COLL0001'), (2, 'CNN', 1, 1, 'COLL0002'), (3, 'RecSys', NULL, 1, 'COLL0003');
+    INSERT INTO collectionItems VALUES (2, 1, 0), (3, 2, 0);
+    INSERT INTO tags VALUES (1, 'to-read'), (2, 'unused');
+    INSERT INTO itemTags VALUES (1, 1, 0), (3, 1, 0);
+    """)
+let zBase = URL(fileURLWithPath: "/Drive/zotero", isDirectory: true)
+let library = try Library(url: libURL)
+let firstImport = try ZoteroImport.run(zotero: zURL, attachmentBase: zBase, libraryFolder: zBase, into: library)
+check(firstImport.items == 4 && firstImport.attachments == 2 && firstImport.skippedAttachments == 1 && firstImport.collections == 3
+      && firstImport.tags == 1 && firstImport.notes == 1, "합성 Zotero DB 가져오기 (\(firstImport))")
+let imported = try library.items()
+let convnet = imported.first { $0.citationKey == "liu2022convnet" }
+check(convnet?.title == "A ConvNet for the 2020s" && convnet?.year == 2022 && convnet?.date == "2022-06"
+      && convnet?.venue == "Proceedings of CVPR" && convnet?.doi == "10.1109/CVPR52688.2022.01167"
+      && convnet?.fields["pages"] == "11976-11986" && convnet?.addedAt == "2026-02-09T05:30:49Z",
+      "서지 필드 매핑")
+check(convnet?.creators.map(\.family) == ["Liu", "Mao", "Itor"] && convnet?.creators.last?.role == "editor"
+      && convnet?.authorSummary == "Liu & Mao", "저자 순서와 역할 (\(convnet?.authorSummary ?? "nil"))")
+check(convnet?.attachments == ["archive/ConvNet.pdf"]
+      && imported.first { $0.title == "TALLRec" }?.attachments == ["/elsewhere/TALLRec.pdf"],
+      "PDF 경로는 라이브러리 폴더 기준 상대 경로, 밖이면 절대 경로")
+let preprint = imported.first { $0.title == "A Preprint" }
+check(preprint?.arxivID == "2310.20453" && preprint?.authorSummary == "OpenAI" && preprint?.attachments == []
+      && preprint?.tags == ["to-read"], "preprint: arXiv ID, 기관 저자, storage 첨부 건너뛰기")
+check(imported.first { $0.title == "A Thesis" }?.type == "other", "모르는 유형은 other")
+let collections = try library.collections()
+let vision = collections.first { $0.name == "Vision" }, cnn = collections.first { $0.name == "CNN" }
+check(cnn?.parentID == vision?.id && vision?.parentID == nil && convnet.map { LibraryFilter.collection(cnn!.id).includes($0) } == true
+      && convnet.map { LibraryFilter.collection(vision!.id).includes($0) } == false, "하위 컬렉션과 소속")
+check(imported.filter(LibraryFilter.unfiled.includes).map(\.title).sorted() == ["A Preprint", "A Thesis"], "Unfiled")
+check(convnet?.matches("convnet liu") == true && convnet?.matches("cvpr 2020s") == true
+      && convnet?.matches("tallrec") == false, "검색어 낱말이 모두 맞아야 한다")
+let foundByPath = try library.itemID(forPDF: zBase.appendingPathComponent("archive/ConvNet.pdf"), in: zBase)
+check(foundByPath == convnet?.id,
+      "PDF 경로로 항목 찾기")
+
+// 다시 가져오기: 같은 결과, key 유지, Zotero에서 지우거나 바꾼 것 반영
+let again = try ZoteroImport.run(zotero: zURL, attachmentBase: zBase, libraryFolder: zBase, into: library)
+let againItems = try library.items()
+check(again == firstImport && againItems == imported, "다시 가져와도 결과가 같다")
+try zdb.execute("""
+    INSERT INTO deletedItems VALUES (4);
+    UPDATE itemDataValues SET value = 'TALLRec: Efficient' WHERE valueID = 6;
+    DELETE FROM collections WHERE collectionID = 3;
+    DELETE FROM collectionItems WHERE collectionID = 3;
+    DELETE FROM itemTags;
+    """)
+let third = try ZoteroImport.run(zotero: zURL, attachmentBase: zBase, libraryFolder: zBase, into: library)
+let afterEdit = try library.items()
+let afterTags = try library.tags()
+check(third.items == 3 && third.removed == 1 && third.collections == 2 && third.tags == 0
+      && afterEdit.contains { $0.title == "TALLRec: Efficient" && $0.key == imported.first { $0.title == "TALLRec" }?.key }
+      && !afterEdit.contains { $0.title == "A Thesis" } && afterTags.isEmpty,
+      "Zotero에서 지우고 고친 것 반영, PaperMark key는 유지 (\(third))")
+
+let backupURL = try LibraryBackup.write(library, to: libDir)
+let backup = try? JSONDecoder().decode(LibraryBackup.File.self, from: Data(contentsOf: backupURL))
+let backupConvnet = backup?.items.first { $0.citationKey == "liu2022convnet" }
+check(backup?.items.count == 3 && backup?.deleted.count == 1 && backup?.collections.count == 2
+      && backup?.collections.first { $0.name == "CNN" }?.parent == vision?.key
+      && backupConvnet?.collections == [cnn?.key ?? ""] && backupConvnet?.notes == ["<p>Accepted at CVPR</p>"],
+      "JSON 백업은 key로 서로를 가리킨다")
+
+// 실제 Zotero 라이브러리(있을 때만): 임시 DB로 가져와 개수와 PDF 경로 확인
+if FileManager.default.fileExists(atPath: ZoteroImport.defaultDatabase.path), let base = ZoteroImport.attachmentBase() {
+    let real = try Library(url: libDir.appendingPathComponent("real.sqlite"))
+    let result = try ZoteroImport.run(zotero: ZoteroImport.defaultDatabase, attachmentBase: base, libraryFolder: base, into: real)
+    let items = try real.items()
+    let missing = items.flatMap(\.attachments).filter { !FileManager.default.fileExists(atPath: Library.resolve($0, in: base).path) }
+    // PaperLibrary에서 지우거나 옮긴 PDF는 Zotero에 경로만 남아 있으므로, 없는 PDF 수는 알리기만 하고 실패로 보지 않는다.
+    check(result.items > 0 && result.unresolvedAttachments == 0
+          && items.filter { $0.citationKey != nil }.count == result.items,
+          "실제 Zotero 가져오기: 서지 \(result.items), PDF \(result.attachments), 컬렉션 \(result.collections), 태그 \(result.tags), 노트 \(result.notes), 건너뜀 \(result.skippedAttachments), 없는 PDF \(missing.count)(참고)")
+} else {
+    print("SKIP 실제 Zotero 라이브러리 없음")
+}
+
+// MARK: 브라우저 확장으로 추가하기: 메타태그·CrossRef·arXiv 읽기, 이름 짓기, 항목 만들기
+
+// 실제 페이지(2026-11-02)의 citation_* 메타태그
+let arxivPage = PaperMetadata.page(meta: [
+    ("citation_title", "LightGCN: Simplifying and Powering Graph Convolution Network for Recommendation"),
+    ("citation_author", "He, Xiangnan"), ("citation_author", "Deng, Kuan"), ("citation_author", "Wang, Xiang"),
+    ("citation_date", "2020/02/06"), ("citation_online_date", "2020/07/07"),
+    ("citation_pdf_url", "https://arxiv.org/pdf/2002.02126"), ("citation_arxiv_id", "2002.02126"),
+    ("citation_abstract", "Graph Convolution Network (GCN) has become new state-of-the-art   for collaborative filtering."),
+], url: "https://arxiv.org/abs/2002.02126", title: "[2002.02126] LightGCN")
+check(arxivPage.type == "preprint" && arxivPage.venue == "arXiv" && arxivPage.arxivID == "2002.02126"
+      && arxivPage.date == "2020-02-06" && arxivPage.creators.first == Creator(role: "author", family: "He", given: "Xiangnan")
+      && arxivPage.abstract == "Graph Convolution Network (GCN) has become new state-of-the-art for collaborative filtering."
+      && arxivPage.pdfURL == "https://arxiv.org/pdf/2002.02126", "arXiv 페이지 메타태그")
+let neuripsPage = PaperMetadata.page(meta: [
+    ("citation_title", "Training language models to follow instructions with human feedback"),
+    ("citation_author", "Ouyang, Long"), ("citation_journal_title", "Advances in Neural Information Processing Systems"),
+    ("citation_volume", "35"), ("citation_firstpage", "27730"), ("citation_lastpage", "27744"),
+    ("citation_publication_date", "2022-12-06"), ("citation_doi", "10.52202/068431-2011"),
+], url: "https://proceedings.neurips.cc/paper_files/paper/2022/hash/b1ef-Abstract-Conference.html", title: nil)
+check(neuripsPage.type == "conferencePaper" && neuripsPage.fields["pages"] == "27730-27744"
+      && neuripsPage.fields["volume"] == "35" && neuripsPage.doi == "10.52202/068431-2011" && neuripsPage.year == 2022,
+      "NeurIPS 페이지: journal 메타태그여도 학회 논문")
+let aclPage = PaperMetadata.page(meta: [
+    ("citation_title", "RecMind: Large Language Model Powered Agent For Recommendation"),
+    ("citation_author", "Yancheng Wang"), ("citation_author", "Ziyan Jiang"),
+    ("citation_conference_title", "Findings of the Association for Computational Linguistics: NAACL 2024"),
+    ("citation_publication_date", "2024/6"), ("citation_doi", "10.18653/v1/2024.findings-naacl.271"),
+], url: "https://aclanthology.org/2024.findings-naacl.271/", title: nil)
+check(aclPage.type == "conferencePaper" && aclPage.date == "2024-06"
+      && aclPage.creators.first == Creator(role: "author", family: "Wang", given: "Yancheng")
+      && aclPage.venue == "Findings of the Association for Computational Linguistics: NAACL 2024", "ACL Anthology 페이지")
+let blankPage = PaperMetadata.page(meta: [("og:site_name", "Some Blog")], url: "https://example.com/post", title: " A Post ")
+check(blankPage.type == "webpage" && blankPage.title == "A Post" && blankPage.venue == "Some Blog", "논문이 아닌 페이지는 webpage")
+
+let crossrefJSON = """
+{"status":"ok","message":{"type":"proceedings-article","DOI":"10.1145/3397271.3401063",
+ "title":["LightGCN: Simplifying and Powering Graph Convolution Network for Recommendation"],
+ "author":[{"given":"Xiangnan","family":"He","sequence":"first"},{"given":"Kuan","family":"Deng"},{"name":"ACM Team"}],
+ "container-title":["Proceedings of the 43rd International ACM SIGIR Conference on Research and Development in Information Retrieval"],
+ "issued":{"date-parts":[[2020,7,25]]},"page":"639-648","publisher":"ACM","publisher-location":"New York, NY, USA",
+ "ISBN":["9781450380164"],"event":{"name":"SIGIR '20: The 43rd International ACM SIGIR conference"},
+ "abstract":"<jats:title>Abstract</jats:title><jats:p>Graph Convolution Network (GCN) has become\\n new state-of-the-art.</jats:p>"}}
+"""
+let crossref = PaperMetadata.crossref(Data(crossrefJSON.utf8))
+check(crossref?.type == "conferencePaper" && crossref?.date == "2020-07-25" && crossref?.creators.count == 3
+      && crossref?.creators[2] == Creator(role: "author", family: "ACM Team", given: nil)
+      && crossref?.fields["pages"] == "639-648" && crossref?.fields["place"] == "New York, NY, USA"
+      && crossref?.fields["conferenceName"]?.hasPrefix("SIGIR '20") == true
+      && crossref?.abstract == "Graph Convolution Network (GCN) has become new state-of-the-art.", "CrossRef 응답 읽기")
+check(PaperMetadata.crossref(Data(#"{"message":{"title":["Unveiling the types of growth patterns of mobile startups: <i>do business models matter?</i>"],"container-title":["Technology Analysis &amp; Strategic Management"],"type":"journal-article"}}"#.utf8))
+      .map { [$0.title, $0.venue ?? ""] } == ["Unveiling the types of growth patterns of mobile startups: do business models matter?",
+                                                 "Technology Analysis & Strategic Management"],
+      "CrossRef 제목·학술지 이름의 HTML 태그와 &amp;를 푼다")
+
+let arxivAtom = """
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:arxiv="http://arxiv.org/schemas/atom">
+  <title>ArXiv Query</title><id>http://arxiv.org/api/xyz</id>
+  <entry>
+    <id>http://arxiv.org/abs/2002.02126v4</id>
+    <published>2020-02-06T08:45:58Z</published>
+    <title>LightGCN: Simplifying and Powering Graph
+      Convolution Network for Recommendation</title>
+    <summary>  Graph Convolution Network (GCN) has become new state-of-the-art. </summary>
+    <author><name>Xiangnan He</name></author>
+    <author><name>Kuan Deng</name><arxiv:affiliation>USTC</arxiv:affiliation></author>
+    <arxiv:doi>10.1145/3397271.3401063</arxiv:doi>
+  </entry>
+</feed>
+"""
+let arxivEntry = PaperMetadata.arxiv(Data(arxivAtom.utf8))
+check(arxivEntry?.metadata.arxivID == "2002.02126" && arxivEntry?.publishedDOI == "10.1145/3397271.3401063"
+      && arxivEntry?.metadata.title == "LightGCN: Simplifying and Powering Graph Convolution Network for Recommendation"
+      && arxivEntry?.metadata.creators.map(\.family) == ["He", "Deng"] && arxivEntry?.metadata.date == "2020-02-06"
+      && arxivEntry?.metadata.fields["archiveID"] == "arXiv:2002.02126", "arXiv 응답 읽기")
+check(PaperMetadata.arxiv(Data("<feed><entry><id>http://arxiv.org/api/errors#bad</id><title>Error</title></entry></feed>".utf8)) == nil,
+      "arXiv에 없는 번호")
+
+let merged = arxivPage.merged(with: crossref!, preferOther: true)
+check(merged.type == "conferencePaper" && merged.venue == crossref?.venue && merged.arxivID == "2002.02126"
+      && merged.doi == "10.1145/3397271.3401063" && merged.url == "https://arxiv.org/abs/2002.02126"
+      && merged.creators.count == 3 && merged.pdfURL == "https://arxiv.org/pdf/2002.02126", "페이지 + CrossRef 합치기(온라인 우선)")
+let pageFirst = neuripsPage.merged(with: crossref!, preferOther: false)
+check(pageFirst.title == neuripsPage.title && pageFirst.fields["pages"] == "27730-27744" && pageFirst.fields["place"] == "New York, NY, USA",
+      "페이지 우선이면 빈 칸만 채운다")
+
+for (title, expected) in [
+    ("LightGCN: Simplifying and Powering Graph Convolution Network for Recommendation",
+     "LightGCN: Simplifying and powering graph convolution network for recommendation"),
+    ("Score-Based Generative Modeling through Stochastic Differential Equations",
+     "Score-based generative modeling through stochastic differential equations"),
+    ("Rethinking Semantic–Collaborative Integration: Why Alignment Is Not Enough",
+     "Rethinking semantic–collaborative integration: Why alignment is not enough"),
+    ("A Survey on 3D Vision with BERT and Q-Learning", "A survey on 3D vision with BERT and Q-learning"),
+    ("DEEP LEARNING FOR RECOMMENDER SYSTEMS", "Deep learning for recommender systems"),
+    ("Neural collaborative filtering", "Neural collaborative filtering"),
+] {
+    let got = PaperMetadata.sentenceCase(title)
+    check(got == expected, "첫 글자만 대문자: \(got)")
+}
+
+let named = PaperMetadata.sentenceCase(merged.title)
+var namedMeta = merged
+namedMeta.title = named
+check(Naming.citationKey(pattern: Naming.defaultCitationKey, metadata: namedMeta, taken: []) == "he2020lightgcn"
+      && Naming.citationKey(pattern: Naming.defaultCitationKey, metadata: namedMeta, taken: ["he2020lightgcn", "he2020lightgcna"]) == "he2020lightgcnb"
+      && Naming.citationKey(pattern: "{Auth}_{title2}", metadata: namedMeta, taken: []) == "He_lightgcnsimplifying",
+      "citation key 패턴과 겹칠 때 a, b")
+var scoreMeta = PaperMetadata()
+(scoreMeta.title, scoreMeta.date, scoreMeta.creators) = ("Score-based generative modeling", "2020", [Creator.author("Yang Song")])
+check(Naming.citationKey(pattern: "{auth}{year}{Title1}", metadata: scoreMeta, taken: []) == "song2020ScoreBased"
+      && Naming.citationKey(pattern: Naming.defaultCitationKey, metadata: scoreMeta, taken: []) == "song2020scorebased",
+      "하이픈 낱말(song2020ScoreBased, song2020scorebased)")
+check(Naming.fileName(pattern: Naming.defaultFileName, metadata: namedMeta)
+      == "LightGCN Simplifying and powering graph convolution network for recommendation"
+      && Naming.fileName(pattern: "{year} - {authors} - {title}", metadata: namedMeta).hasPrefix("2020 - He et al. - LightGCN Simplifying"),
+      "PDF 파일 이름 패턴")
+
+check(PaperID.doi(in: "https://dl.acm.org/doi/pdf/10.1145/3397271.3401063?download=true") == "10.1145/3397271.3401063"
+      && PaperID.doi(in: "doi:10.18653/v1/2024.findings-naacl.271.") == "10.18653/v1/2024.findings-naacl.271"
+      && PaperID.doi(in: "https://doi.org/10.1016%2Fj.knosys.2023.110364") == "10.1016/j.knosys.2023.110364"
+      && PaperID.arxiv(in: "https://arxiv.org/pdf/2002.02126v4") == "2002.02126"
+      && PaperID.arxiv(in: "10.48550/arXiv.2310.20453") == "2310.20453"
+      && PaperID.arxiv(in: "arXiv:2310.20453v2 [cs.LG] 31 Oct 2023") == "2310.20453", "DOI, arXiv 번호 찾기")
+let wand = PaperID.identifiers(in: "10.1145/3397271.3401063, https://doi.org/10.1145/3397271.3401063\n2002.02126v2 arXiv:2310.20453 "
+                                + "https://arxiv.org/abs/1706.03762 10.48550/arXiv.2401.00001 hello 2024")
+check(wand.map { $0.doi ?? "arxiv:" + ($0.arxivID ?? "") }
+      == ["10.1145/3397271.3401063", "arxiv:2002.02126", "arxiv:2310.20453", "arxiv:1706.03762", "arxiv:2401.00001"],
+      "마술 지팡이 입력에서 DOI·arXiv 번호 찾기")
+var tandfPage = PaperMetadata()
+tandfPage.doi = "10.1080/09537325.2024.2361420"
+var acmPage = PaperMetadata()
+acmPage.doi = "10.1145/3397271.3401063"
+check(PaperID.pdfCandidates(for: acmPage, pageURL: "https://dl.acm.org/doi/10.1145/3397271.3401063", isPDF: false,
+                            links: ["https://dl.acm.org/doi/pdf/10.1145/3397271.3401063", "https://x.org/a.pdf"])
+      == ["https://dl.acm.org/doi/pdf/10.1145/3397271.3401063", "https://x.org/a.pdf"]
+      && PaperID.pdfCandidates(for: PaperMetadata(), pageURL: "https://openreview.net/forum?id=PxTIG12RRHS", isPDF: false, links: [])
+      == ["https://openreview.net/pdf?id=PxTIG12RRHS"]
+      && PaperID.pdfCandidates(for: PaperMetadata(), pageURL: "https://ieeexplore.ieee.org/abstract/document/10857049", isPDF: false, links: [])
+      == ["https://ieeexplore.ieee.org/stampPDF/getPDF.jsp?tp=&arnumber=10857049&ref="]
+      && PaperID.pdfCandidates(for: PaperMetadata(), pageURL: "https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=10857049", isPDF: false, links: [])
+      == ["https://ieeexplore.ieee.org/stampPDF/getPDF.jsp?tp=&arnumber=10857049&ref="]
+      && PaperID.pdfCandidates(for: tandfPage, pageURL: "https://www.tandfonline.com/doi/full/10.1080/09537325.2024.2361420", isPDF: false,
+                               links: ["https://www.tandfonline.com/doi/pdf/10.1080/09537325.2024.2361420"])
+      == ["https://www.tandfonline.com/doi/pdf/10.1080/09537325.2024.2361420?download=true",
+          "https://www.tandfonline.com/doi/pdf/10.1080/09537325.2024.2361420"], "PDF 주소 후보(ACM, OpenReview, IEEE, Taylor & Francis)")
+
+let edited = try Library(url: libDir.appendingPathComponent("edited.sqlite"))
+try edited.db.run("INSERT INTO collections (key, name) VALUES ('c1', 'Inbox'), ('c2', 'Read')")
+let newID = try edited.add(namedMeta, citationKey: "he2020lightgcn", collectionID: 1)
+try edited.addAttachment("archive/LightGCN.pdf", to: newID)
+try edited.moveItem(newID, from: 1, to: 2)
+let added = try edited.item(newID)
+check(added?.title == named && added?.type == "conferencePaper" && added?.year == 2020 && added?.arxivID == "2002.02126"
+      && added?.creators.count == 3 && added?.attachments == ["archive/LightGCN.pdf"] && added?.collectionIDs == [2]
+      && added?.fields["proceedingsTitle"] == crossref?.venue, "항목 추가, PDF 붙이기, 컬렉션 옮기기")
+var sameByArxiv = PaperMetadata()
+sameByArxiv.arxivID = "2002.02126"
+var sameByTitle = PaperMetadata()
+sameByTitle.title = "LIGHTGCN — simplifying and powering graph convolution network for recommendation"
+check(try edited.existingItem(for: acmPage) == newID && edited.existingItem(for: sameByArxiv) == newID
+      && edited.existingItem(for: sameByTitle) == newID && edited.existingItem(for: aclPage) == nil, "이미 있는 논문 찾기")
+try edited.update(newID, with: aclPage, citationKey: "wang2024RecMind")
+check(try edited.item(newID).map { $0.title == aclPage.title && $0.citationKey == "wang2024RecMind" && $0.creators.count == 2
+                                   && $0.attachments.count == 1 && $0.collectionIDs == [2] } == true, "서지 정보 바꾸기")
+
+// MARK: Workspace: 컬렉션 = 폴더, 원본과 참조, 옮기기, 바깥에서 고친 것 맞추기
+do {
+    let fm = FileManager.default
+    let wsRoot = libDir.appendingPathComponent("workspace", isDirectory: true)
+    try? fm.removeItem(at: wsRoot)
+    try fm.createDirectory(at: wsRoot.appendingPathComponent("archive"), withIntermediateDirectories: true)
+    for name in ["A.pdf", "B.pdf", "Stray.pdf"] { try Data("%PDF-1.4 \(name)".utf8).write(to: wsRoot.appendingPathComponent("archive/" + name)) }
+    let wsLib = try Library(url: libDir.appendingPathComponent("workspace.sqlite"))
+    let archive = try wsLib.insertCollection(name: "archive", parent: nil)
+    let mainC = try wsLib.insertCollection(name: "main", parent: nil)
+    let proj = try wsLib.insertCollection(name: "Proj", parent: mainC)
+    var meta = PaperMetadata()
+    meta.title = "Paper A"
+    let a = try wsLib.add(meta, citationKey: "a", collectionID: proj)
+    try wsLib.addAttachment("archive/A.pdf", to: a)
+    meta.title = "Paper B"
+    let b = try wsLib.add(meta, citationKey: "b", collectionID: archive)
+    try wsLib.addAttachment("archive/B.pdf", to: b)
+    meta.title = "Paper C"
+    let c = try wsLib.add(meta, citationKey: "c", collectionID: mainC)
+    var ws = Workspace(library: wsLib, root: wsRoot)
+    // 진짜 휴지통 대신 옆 폴더로 옮겨, 되살리기를 확인할 수 있게 한다.
+    let wsTrash = libDir.appendingPathComponent("workspace-trash", isDirectory: true)
+    try? fm.removeItem(at: wsTrash)
+    try fm.createDirectory(at: wsTrash, withIntermediateDirectories: true)
+    let fakeTrash: (URL) throws -> URL? = { url in
+        let to = wsTrash.appendingPathComponent(UUID().uuidString + "-" + url.lastPathComponent)
+        try FileManager.default.moveItem(at: url, to: to)
+        return to
+    }
+    ws.trash = fakeTrash
+    func entry(_ id: Int64) throws -> LibraryEntry { try wsLib.item(id)! }
+    func paths() throws -> [Int64: String] { Workspace.paths(of: try wsLib.collections()) }
+
+    let first = try ws.reconcile(createMissingFolders: true)
+    check(first.createdFolders == 2 && first.newFiles == ["archive/Stray.pdf"] && first.homesAdded == 1
+          && fm.fileExists(atPath: wsRoot.appendingPathComponent("main/Proj").path), "처음 맞추기: 없는 폴더 만들기, 새 PDF, 원본 자리 소속 (\(first))")
+    check(try Workspace.home(of: entry(a), paths: paths()) == .collection(archive)
+          && Workspace.isReference(try entry(a), in: proj, paths: try paths())
+          && !Workspace.isReference(try entry(a), in: archive, paths: try paths())
+          && Workspace.home(of: try entry(c), paths: try paths()) == .none, "원본 자리와 참조")
+    check(try ws.reconcile() == Workspace.Report(newFiles: ["archive/Stray.pdf"]), "다시 맞춰도 바뀌는 것이 없다")
+
+    // 원본 옮기기: PDF도 옮기고 원래 컬렉션에서 뺀다.
+    let moveA = try ws.planMove([a], viewing: archive, to: mainC)
+    check(moveA.count == 1 && moveA[0].file?.to == "main/A.pdf" && moveA[0].removeFrom == archive && !moveA[0].conflict, "원본 옮기기 계획")
+    try ws.perform(moveA) { _ in .skip }
+    check(try entry(a).attachments == ["main/A.pdf"] && entry(a).collectionIDs == [mainC, proj]
+          && fm.fileExists(atPath: wsRoot.appendingPathComponent("main/A.pdf").path)
+          && !fm.fileExists(atPath: wsRoot.appendingPathComponent("archive/A.pdf").path), "원본 옮기기: 파일과 소속")
+    // 참조 옮기기: 소속만. 원본 자리로 옮기면 참조만 빠진다.
+    let refMove = try ws.planMove([a], viewing: proj, to: mainC)
+    check(refMove == [Workspace.Move(itemID: a, removeFrom: proj, addTo: nil, file: nil, conflict: false)], "참조를 원본 자리로: 참조만 빠진다")
+    try ws.addReferences([b], to: proj)
+    check(try ws.removeReferences([a, b], from: proj) == 2 && entry(b).collectionIDs == [archive] && entry(a).collectionIDs == [mainC]
+      && ws.removeReferences([a], from: mainC) == 0, "참조 넣고 빼기, 원본 자리는 빼지 않는다")
+try ws.addReferences([a], to: proj)
+    // PDF 없는 논문은 소속만.
+    let moveC = try ws.planMove([c], viewing: nil, to: proj)
+    check(moveC == [Workspace.Move(itemID: c, removeFrom: mainC, addTo: proj, file: nil, conflict: false)], "PDF 없는 논문 옮기기")
+    // 같은 이름이 있으면 고른 대로.
+    try Data("%PDF-1.4 other".utf8).write(to: wsRoot.appendingPathComponent("main/B.pdf"))
+    let moveB = try ws.planMove([b], viewing: nil, to: mainC)
+    check(moveB.first?.conflict == true, "같은 이름 파일 알아채기")
+    try ws.perform(moveB) { _ in .keepBoth }
+    check(try entry(b).attachments == ["main/B (2).pdf"] && entry(b).collectionIDs == [mainC], "둘 다 유지: 번호 붙이기")
+    try Data("%PDF-1.4 other".utf8).write(to: wsRoot.appendingPathComponent("archive/B (2).pdf"))
+    try ws.perform(try ws.planMove([b], viewing: mainC, to: archive)) { _ in .replace }
+    check(try entry(b).attachments == ["archive/B (2).pdf"]
+          && String(decoding: try Data(contentsOf: wsRoot.appendingPathComponent("archive/B (2).pdf")), as: UTF8.self) == "%PDF-1.4 B.pdf",
+          "교체: 있던 파일을 버리고 옮기기")
+    try ws.perform(try ws.planMove([b], viewing: archive, to: mainC)) { _ in .skip }
+
+    // 앱에서 이름 바꾸기, 만들기
+    try ws.renameCollection(mainC, to: "Main2")
+    check(try entry(a).attachments == ["Main2/A.pdf"] && fm.fileExists(atPath: wsRoot.appendingPathComponent("Main2/Proj").path)
+          && paths()[proj] == "Main2/Proj", "컬렉션 이름 바꾸기: 폴더와 PDF 경로")
+    try ws.createCollection("Agent", parent: nil)
+    var taken = false
+    do { try ws.createCollection("agent", parent: nil) } catch Workspace.Failure.nameTaken { taken = true }
+    check(taken && fm.fileExists(atPath: wsRoot.appendingPathComponent("Agent").path), "컬렉션 만들기, 같은 이름 막기")
+
+    // Finder에서 고친 것 맞추기: 폴더 이름 바꾸기, 새 폴더, 폴더 지우기, PDF 옮기기
+    try fm.moveItem(at: wsRoot.appendingPathComponent("Main2"), to: wsRoot.appendingPathComponent("Projects"))
+    let renamed = try ws.reconcile()
+    try fm.removeItem(at: wsRoot.appendingPathComponent("Agent"))
+    let removed = try ws.reconcile()
+    try fm.createDirectory(at: wsRoot.appendingPathComponent("New/Sub"), withIntermediateDirectories: true)
+    try fm.moveItem(at: wsRoot.appendingPathComponent("archive/Stray.pdf"), to: wsRoot.appendingPathComponent("New/Stray.pdf"))
+    let added = try ws.reconcile()
+    check(renamed.renamedCollections == 1 && renamed.relinked == 2 && removed.deletedCollections == 1 && removed.renamedCollections == 0
+          && added.createdCollections == 2 && added.newFiles == ["New/Stray.pdf", "Projects/B.pdf"], "바깥 변경 맞추기 (\(renamed), \(removed), \(added))")
+    check(try paths()[mainC] == "Projects" && paths()[proj] == "Projects/Proj" && !paths().values.contains("Agent")
+          && entry(a).attachments == ["Projects/A.pdf"] && entry(c).collectionIDs == [mainC] && entry(a).collectionIDs == [mainC, proj],
+          "이름 바뀐 폴더를 따라가고 소속은 그대로")
+    // PDF를 Finder로 다른 컬렉션 폴더에 옮기면 원본 자리도 따라간다.
+    try fm.moveItem(at: wsRoot.appendingPathComponent("Projects/A.pdf"), to: wsRoot.appendingPathComponent("archive/A.pdf"))
+    _ = try ws.reconcile()
+    check(try entry(a).attachments == ["archive/A.pdf"] && entry(a).collectionIDs == [archive, proj], "Finder로 옮긴 PDF의 원본 자리")
+
+    // 지우기: 폴더째, 원본 자리가 그 안인 논문도.
+    let summary = try ws.deletionSummary(mainC)
+    try ws.deleteCollection(mainC)
+    check(summary.pdfs == 2 && summary.items == 1 && (try? wsLib.item(b)) == nil && (try? entry(a)) != nil && (try? entry(c))?.collectionIDs == []
+          && !fm.fileExists(atPath: wsRoot.appendingPathComponent("Projects").path), "컬렉션 지우기 (\(summary))")
+
+    // 논문 지우기: PDF는 휴지통으로, 다른 논문도 쓰는 PDF는 남긴다.
+    meta.title = "Paper D"
+    let d = try wsLib.add(meta, citationKey: "d", collectionID: archive)
+    try wsLib.addAttachment("archive/A.pdf", to: d)
+    meta.title = "Paper E"
+    let e = try wsLib.add(meta, citationKey: "e", collectionID: archive)
+    try Data("%PDF-1.4 E".utf8).write(to: wsRoot.appendingPathComponent("archive/E.pdf"))
+    try wsLib.addAttachment("archive/E.pdf", to: e)
+    try ws.deleteItems([d, e])
+    check((try? wsLib.item(d)) == nil && (try? wsLib.item(e)) == nil && (try? entry(a)) != nil
+          && fm.fileExists(atPath: wsRoot.appendingPathComponent("archive/A.pdf").path)
+          && !fm.fileExists(atPath: wsRoot.appendingPathComponent("archive/E.pdf").path), "논문 지우기: PDF는 휴지통, 같이 쓰는 PDF는 남기기")
+
+    // 휴지통으로 못 보낸 PDF(Drive가 막을 때)의 논문은 남기고, 나머지는 지운다.
+    for name in ["F", "G"] {
+        meta.title = "Paper \(name)"
+        let id = try wsLib.add(meta, citationKey: name.lowercased(), collectionID: archive)
+        try Data("%PDF-1.4 \(name)".utf8).write(to: wsRoot.appendingPathComponent("archive/\(name).pdf"))
+        try wsLib.addAttachment("archive/\(name).pdf", to: id)
+    }
+    let ids = try wsLib.items().filter { ["f", "g"].contains($0.citationKey) }.map(\.id)
+    var stubborn = ws
+    stubborn.trash = { url in
+        if url.lastPathComponent == "G.pdf" { throw CocoaError(.fileWriteNoPermission) }
+        return try fakeTrash(url)
+    }
+    var trashError: [String] = []
+    if case .trashFailed(let names, _)? = try stubborn.deleteItems(ids).failure { trashError = names }
+    let left = try wsLib.items().filter { ["f", "g"].contains($0.citationKey) }.compactMap(\.citationKey)
+    check(trashError == ["G.pdf"] && left == ["g"]
+          && !fm.fileExists(atPath: wsRoot.appendingPathComponent("archive/F.pdf").path)
+          && fm.fileExists(atPath: wsRoot.appendingPathComponent("archive/G.pdf").path),
+          "논문 지우기: 휴지통으로 못 보낸 PDF의 논문만 남긴다 (\(left))")
+
+    // 되살리기(⌘Z): 지운 논문을 같은 id·key·태그·소속으로, PDF는 원래 자리로.
+    meta.title = "Paper H"
+    let h = try wsLib.add(meta, citationKey: "h", collectionID: archive)
+    try Data("%PDF-1.4 H".utf8).write(to: wsRoot.appendingPathComponent("archive/H.pdf"))
+    try wsLib.addAttachment("archive/H.pdf", to: h)
+    try wsLib.addTag("/To Do", to: h)
+    let refC = try ws.createCollection("Ref", parent: nil)
+    try wsLib.moveItem(h, from: nil, to: refC)
+    let hBefore = try entry(h)
+    let hSnap = try ws.deleteItems([h])
+    let hGone = (try? wsLib.item(h)) == nil && !fm.fileExists(atPath: wsRoot.appendingPathComponent("archive/H.pdf").path)
+    try ws.restore(hSnap)
+    let hAfter = try? entry(h)
+    let hKey = try wsLib.db.query("SELECT key FROM items WHERE id = ?", [.int(h)]).first?["key"] ?? ""
+    check(try hGone && hAfter?.citationKey == "h" && hAfter?.tags == hBefore.tags && hAfter?.collectionIDs == hBefore.collectionIDs
+          && hAfter?.attachments == ["archive/H.pdf"] && fm.fileExists(atPath: wsRoot.appendingPathComponent("archive/H.pdf").path)
+          && (try wsLib.db.query("SELECT 1 FROM deleted_items WHERE key = ?", [.text(hKey)])).isEmpty,
+          "되살리기: 지운 논문의 서지 정보·태그·소속과 PDF를 되돌린다")
+
+    // 원래 자리에 같은 이름의 파일이 생겼으면 겹치지 않는 이름으로 두고 첨부 경로를 맞춘다.
+    let hSnap2 = try ws.deleteItems([h])
+    try Data("%PDF-1.4 other".utf8).write(to: wsRoot.appendingPathComponent("archive/H.pdf"))
+    try ws.restore(hSnap2)
+    check(try entry(h).attachments == ["archive/H 2.pdf"] && fm.fileExists(atPath: wsRoot.appendingPathComponent("archive/H 2.pdf").path),
+          "되살리기: 같은 이름의 파일이 있으면 'H 2.pdf'로")
+
+    // 컬렉션 지우기 되살리기: 폴더, 하위 컬렉션, 그 안에 있던 논문.
+    let tmp = try ws.createCollection("Tmp", parent: nil)
+    let sub = try ws.createCollection("Sub", parent: tmp)
+    meta.title = "Paper J"
+    let j = try wsLib.add(meta, citationKey: "j", collectionID: sub)
+    try Data("%PDF-1.4 J".utf8).write(to: wsRoot.appendingPathComponent("Tmp/Sub/J.pdf"))
+    try wsLib.addAttachment("Tmp/Sub/J.pdf", to: j)
+    try wsLib.moveItem(a, from: nil, to: sub)  // 다른 곳에 있는 논문의 참조
+    let cSnap = try ws.deleteCollection(tmp)
+    let cGone = (try? wsLib.item(j)) == nil && !fm.fileExists(atPath: wsRoot.appendingPathComponent("Tmp").path)
+    try ws.restore(cSnap)
+    let restoredPaths = try paths()
+    check(try cGone && restoredPaths[tmp] == "Tmp" && restoredPaths[sub] == "Tmp/Sub" && (try? entry(j))?.collectionIDs == [sub]
+          && (try entry(a)).collectionIDs.contains(sub) && fm.fileExists(atPath: wsRoot.appendingPathComponent("Tmp/Sub/J.pdf").path),
+          "되살리기: 지운 컬렉션의 폴더·하위 컬렉션·논문·참조를 되돌린다")
+    _ = try ws.deleteCollection(tmp)
+    _ = try ws.deleteCollection(refC)
+    try wsLib.deleteItem(h)
+
+    // workspace가 없으면 아무것도 바꾸지 않는다.
+    var gone = false
+    do { _ = try Workspace(library: wsLib, root: wsRoot.appendingPathComponent("nope")).reconcile() } catch Workspace.Failure.missingRoot { gone = true }
+    check(try gone && wsLib.collections().count == 3, "workspace가 없으면 그대로")
+}
+
+// MARK: 기본 PDF 앱: workspace 안의 PDF만 PaperMark가 연다
+
+do {
+    let temp = FileManager.default.temporaryDirectory.appendingPathComponent("pmcheck-route", isDirectory: true)
+    try? FileManager.default.removeItem(at: temp)
+    let root = temp.appendingPathComponent("ws", isDirectory: true)
+    let sub = root.appendingPathComponent("archive", isDirectory: true)
+    try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: true)
+    let link = temp.appendingPathComponent("link")
+    try FileManager.default.createSymbolicLink(at: link, withDestinationURL: root)
+    let sibling = temp.appendingPathComponent("ws2/a.pdf")
+    check(PDFRouting.isInside(sub.appendingPathComponent("a.pdf"), root)
+          && PDFRouting.isInside(link.appendingPathComponent("archive/a.pdf"), root)
+          && !PDFRouting.isInside(sibling, root) && !PDFRouting.isInside(root, root),
+          "workspace 안의 PDF만 고른다(하위 폴더·심링크 포함, 이름만 비슷한 옆 폴더 제외)")
+    let defaults = UserDefaults(suiteName: "pmcheck.route")!
+    defaults.removeObject(forKey: PDFRouting.libraryFolderKey)
+    let unset = PDFRouting.workspaceFolder(defaults: defaults)
+    defaults.set(root.path, forKey: PDFRouting.libraryFolderKey)
+    check(unset == nil && PDFRouting.workspaceFolder(defaults: defaults)?.path == root.path,
+          "PaperLibrary 설정의 workspace 폴더를 읽는다")
+    defaults.removePersistentDomain(forName: "pmcheck.route")
+    try? FileManager.default.removeItem(at: temp)
+}
+
+// MARK: 참고문헌 문장
+do {
+    let citeLib = try Library(url: libDir.appendingPathComponent("citation-\(UUID().uuidString).sqlite"))
+    var paper = PaperMetadata()
+    paper.type = "conferencePaper"
+    paper.title = "LightGCN: Simplifying and powering graph convolution network for recommendation"
+    paper.creators = [Creator(role: "author", family: "He", given: "Xiangnan"), Creator(role: "author", family: "Deng", given: "Kuan"),
+                      Creator(role: "author", family: "Wang", given: "Xiang")]
+    paper.date = "2020-07-25"
+    paper.venue = "Proceedings of the 43rd International ACM SIGIR Conference on Research and Development in Information Retrieval"
+    paper.doi = "10.1145/3397271.3401063"
+    paper.fields = ["pages": "639-648", "publisher": "ACM", "series": "SIGIR '20"]
+    let conf = try citeLib.item(try citeLib.add(paper, citationKey: "he2020lightgcn", collectionID: nil))!
+    var article = PaperMetadata()
+    article.type = "journalArticle"
+    article.title = "Quasi-oracle estimation of heterogeneous treatment effects"
+    article.creators = [Creator(role: "author", family: "Nie", given: "Xinkun"), Creator(role: "author", family: "Wager", given: "Stefan")]
+    article.date = "2021"
+    article.fields = ["publicationTitle": "Biometrika", "volume": "108", "issue": "2", "pages": "299-319"]
+    let journal = try citeLib.item(try citeLib.add(article, citationKey: "nie2021quasi", collectionID: nil))!
+    check(Citation.plain(conf, style: .apa) == "He, X., Deng, K., & Wang, X. (2020). LightGCN: Simplifying and powering graph convolution network for recommendation. In Proceedings of the 43rd International ACM SIGIR Conference on Research and Development in Information Retrieval (pp. 639–648). ACM. https://doi.org/10.1145/3397271.3401063"
+          && Citation.pieces(conf, style: .apa).first { $0.italic }?.text == paper.venue, "APA 학회 논문 (\(Citation.plain(conf, style: .apa)))")
+    check(Citation.plain(journal, style: .apa) == "Nie, X., & Wager, S. (2021). Quasi-oracle estimation of heterogeneous treatment effects. Biometrika, 108(2), 299–319.",
+          "APA 학술지 (\(Citation.plain(journal, style: .apa)))")
+    check(Citation.plain(conf, style: .ieee) == "X. He, K. Deng, and X. Wang, “LightGCN: Simplifying and powering graph convolution network for recommendation,” in Proceedings of the 43rd International ACM SIGIR Conference on Research and Development in Information Retrieval, 2020, pp. 639–648, doi: 10.1145/3397271.3401063.",
+          "IEEE (\(Citation.plain(conf, style: .ieee)))")
+    try citeLib.addTag("/To Do", to: conf.id)
+    try citeLib.addTag("to do", to: journal.id)
+    try citeLib.addTag("/To Do", to: conf.id)
+    check(try citeLib.tags() == ["/To Do"] && citeLib.item(conf.id)?.tags == ["/To Do"] && citeLib.item(journal.id)?.tags == ["/To Do"],
+          "태그 붙이기: 앞의 / 와 대소문자가 달라도 같은 태그")
+    let statuses = ["/To Do", "/In Process", "/Verified"]
+    try citeLib.addTag("Reading list", to: conf.id)
+    try citeLib.setTag("/In Process", of: [conf.id, journal.id], removing: statuses)
+    check(try citeLib.item(conf.id)?.tags == ["/In Process", "Reading list"] && (try citeLib.item(journal.id)?.tags == ["/In Process"]),
+          "상태 바꾸기: 다른 상태 태그만 떼고 새 상태를 붙인다")
+    try citeLib.setTag(nil, of: [journal.id], removing: statuses)
+    check(try citeLib.item(journal.id)?.tags == [], "상태 None: 상태 태그를 모두 뗀다")
+    try citeLib.renameTag("/In Process", to: "/Reading")
+    check(try citeLib.item(conf.id)?.tags == ["/Reading", "Reading list"], "태그 이름 바꾸기")
+    try citeLib.renameTag("/Reading", to: "reading list")
+    check(try citeLib.item(conf.id)?.tags == ["Reading list"] && !(try citeLib.tags()).contains("/Reading"), "같은 이름으로 바꾸면 합친다")
+    try citeLib.deleteTag("Reading list")
+    check(try citeLib.item(conf.id)?.tags == [] && !(try citeLib.tags()).contains("Reading list") && (try citeLib.item(conf.id)) != nil,
+          "태그 지우기: 논문은 남는다")
+    // 손으로 고친 칸은 다시 채워도(확장, PDF의 DOI) 그대로
+    var fixed = PaperMetadata(try citeLib.item(journal.id)!)
+    fixed.title = "Quasi-oracle estimation (fixed)"
+    fixed.fields["pages"] = "300-320"
+    try citeLib.edit(journal.id, to: fixed, citationKey: "nie2021fixed")
+    let editedJournal = try citeLib.item(journal.id)!
+    check(Library.editedFields(of: editedJournal) == ["title", "pages", "citationKey"] && editedJournal.title == fixed.title,
+          "편집: 바뀐 칸만 기억 (\(Library.editedFields(of: editedJournal).sorted()))")
+    var refetched = PaperMetadata(journal)
+    refetched.fields["pages"] = "299-319"
+    refetched.abstract = "New abstract"
+    try citeLib.update(journal.id, with: refetched, citationKey: "nie2021")
+    let after = try citeLib.item(journal.id)!
+    check(after.title == fixed.title && after.fields["pages"] == "300-320" && after.citationKey == "nie2021fixed"
+          && after.abstract == "New abstract" && Library.editedFields(of: after) == Library.editedFields(of: editedJournal),
+          "다시 채워도 고친 칸은 지키고 나머지는 바꾼다")
+    check(Citation.list([conf, journal], style: .apa).first?.first?.text.hasPrefix("He") == true
+          && Citation.list([journal, conf], style: .ieee).first?.first?.text == "[1] ", "여러 편: APA는 저자순, IEEE는 번호")
+}
+
+// 실제 CrossRef·arXiv(네트워크가 될 때만)
+final class Box<T> { var value: T?; init() {} }
+let online = Box<(PaperMetadata, [String])>()
+let done = DispatchSemaphore(value: 0)
+Task.detached {
+    online.value = await MetadataLookup.complete(arxivPage, options: LookupOptions())
+    done.signal()
+}
+if done.wait(timeout: .now() + 30) == .timedOut || online.value?.1.isEmpty == false {
+    print("SKIP 실제 CrossRef·arXiv 조회:", online.value?.1 ?? ["시간 초과"])
+} else if let (live, _) = online.value {
+    check(live.type == "conferencePaper" && live.doi?.lowercased() == "10.1145/3397271.3401063" && live.arxivID == "2002.02126"
+          && live.title.hasPrefix("LightGCN: Simplifying and powering") && live.venue?.contains("SIGIR") == true,
+          "실제 조회: arXiv → 출판본(SIGIR) (\(live.venue ?? "-"))")
+}
 
 print(failures == 0 ? "ALL PASS" : "\(failures) FAILED", "→", outDir.path)
 exit(failures == 0 ? 0 : 1)

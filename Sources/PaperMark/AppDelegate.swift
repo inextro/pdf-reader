@@ -55,6 +55,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var colorItems: [NSMenuItem] = []
     private var commandItems: [Command: NSMenuItem] = [:]
 
+    /// 앱을 끌 때 열려 있던 파일. 파일을 열면서 앱이 켜지면 그 파일이 Session에 먼저 들어가므로, 열기 전에 기억해 둔다.
+    private var previousFiles: [URL] = []
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        previousFiles = Session.files
+    }
+
+    /// 켜지는 동안(첫 0.5초) 받은 PDF를 모두 Preview로 넘겼으면, PaperMark는 창 없이 다시 꺼진다.
+    private var isLaunching = true, forwardedOnly = false, pendingForwards = 0, quitAfterForwarding = false
+
+    /// Finder, Raycast, PaperLibrary 등에서 PDF를 열 때. 기본 PDF 앱으로 받은 workspace 밖의 PDF는 Preview로 넘긴다.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        let (open, forward) = DefaultPDFApp.split(urls, sender: DefaultPDFApp.currentSender)
+        for url in open {
+            NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { _, _, error in
+                if let error { NSApp.presentError(error) }
+            }
+        }
+        if isLaunching, open.isEmpty, NSDocumentController.shared.documents.isEmpty { forwardedOnly = true }
+        if !open.isEmpty { forwardedOnly = false }
+        guard !forward.isEmpty else { return }
+        pendingForwards += 1
+        DefaultPDFApp.forward(forward) { [self] in
+            pendingForwards -= 1
+            if quitAfterForwarding, pendingForwards == 0 { NSApp.terminate(nil) }
+        }
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = makeMainMenu()
         NotificationCenter.default.addObserver(self, selector: #selector(rebuildColorItems),
@@ -63,9 +91,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                                name: ShortcutStore.didChange, object: nil)
         applyShortcuts()
         MainActor.assumeIsolated { UpdateController.shared.start() }
-        // Dock에서 그냥 실행했을 때는 직전 파일을 다시 연다(파일을 더블클릭해 실행한 경우 제외).
+        // Dock에서 그냥 실행했을 때는 새 탭과 직전 파일을 다시 연다. 파일을 열면서 켜졌으면(Finder, PaperLibrary 등)
+        // 직전 파일을 그 파일 왼쪽 탭으로 되살리고, 연 파일을 앞에 둔다.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            if NSDocumentController.shared.documents.isEmpty { self.reopenLastFiles() }
+            self.isLaunching = false
+            let documents = NSDocumentController.shared.documents
+            if self.forwardedOnly, documents.isEmpty {
+                // PDF를 Preview로 넘기려고만 켜졌다.
+                self.quitAfterForwarding = true
+                if self.pendingForwards == 0 { NSApp.terminate(nil) }
+                return
+            }
+            if documents.isEmpty { self.reopenLastFiles() } else { self.restoreBeside() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { DefaultPDFApp.askOnce() }
         }
     }
 
@@ -81,6 +119,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if urls.isEmpty, let recent = controller.recentDocumentURLs.first(where: exists) { urls = [recent] }
             for url in urls {
                 controller.openDocument(withContentsOf: url, display: true) { _, _, _ in }
+            }
+        }
+    }
+
+    /// 파일을 열면서 앱이 켜졌을 때, 앱을 끌 때 열려 있던 파일을 그 파일 창의 탭으로 되살린다.
+    /// 되살린 탭은 연 파일 왼쪽에 끼우고, 다 열면 연 파일 탭을 다시 앞에 둔다.
+    private func restoreBeside() {
+        let controller = NSDocumentController.shared
+        guard let opened = controller.documents.lazy.compactMap({ $0.windowControllers.first?.window }).first else { return }
+        let openURLs = Set(controller.documents.compactMap { $0.fileURL?.standardizedFileURL })
+        let urls = previousFiles.filter {
+            !openURLs.contains($0.standardizedFileURL) && FileManager.default.fileExists(atPath: $0.path)
+        }
+        var remaining = urls.count
+        for url in urls {
+            controller.openDocument(withContentsOf: url, display: false) { document, alreadyOpen, _ in
+                if let document, !alreadyOpen {
+                    document.makeWindowControllers()
+                    if let window = document.windowControllers.first?.window {
+                        opened.addTabbedWindow(window, ordered: .below)
+                    }
+                    document.showWindows()
+                }
+                remaining -= 1
+                if remaining == 0 { opened.makeKeyAndOrderFront(nil) }
             }
         }
     }
@@ -110,6 +173,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    @objc private func askDefaultPDFApp(_ sender: Any?) { DefaultPDFApp.ask() }
+
     func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool { false }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -127,6 +192,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .target = MainActor.assumeIsolated { UpdateController.shared }
         app.addItem(.separator())
         app.addItem(withTitle: "Settings…", action: #selector(openSettings(_:)), keyEquivalent: ",").target = self
+        app.addItem(withTitle: "Default PDF App…", action: #selector(askDefaultPDFApp(_:)), keyEquivalent: "").target = self
         app.addItem(.separator())
         app.addItem(withTitle: "Hide PaperMark", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         app.addItem(withTitle: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
