@@ -1,4 +1,5 @@
 import AppKit
+import AppUpdater
 
 /// 첫 열기 창을 Google Drive 폴더에서 시작하게 한다. 이후에는 마지막으로 연 폴더를 시스템이 기억한다.
 final class PMDocumentController: NSDocumentController {

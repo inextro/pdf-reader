@@ -532,9 +532,9 @@ let updateDir = outDir.appendingPathComponent("update")
 try? FileManager.default.removeItem(at: updateDir)
 try FileManager.default.createDirectory(at: updateDir, withIntermediateDirectories: true)
 /// Info.plist만 든 가짜 PaperMark.app을 만들어 release.sh처럼 ditto로 묶는다.
-func makeAppZip(version: String, bundleID: String = "com.inextro.papermark", name: String) -> URL {
+func makeAppZip(version: String, bundleID: String = "com.inextro.papermark", name: String, appName: String = "PaperMark") -> URL {
     let folder = updateDir.appendingPathComponent(name)
-    let app = folder.appendingPathComponent("PaperMark.app")
+    let app = folder.appendingPathComponent("\(appName).app")
     try! FileManager.default.createDirectory(at: app.appendingPathComponent("Contents"), withIntermediateDirectories: true)
     (["CFBundleIdentifier": bundleID, "CFBundleShortVersionString": version] as NSDictionary)
         .write(to: app.appendingPathComponent("Contents/Info.plist"), atomically: true)
@@ -550,10 +550,12 @@ func sha256(_ url: URL) -> String {
     "sha256:" + SHA256.hash(data: try! Data(contentsOf: url)).map { String(format: "%02x", $0) }.joined()
 }
 let goodZip = makeAppZip(version: "9.9.9", name: "good")
+let libraryZip = makeAppZip(version: "9.9.9", bundleID: "com.inextro.paperlibrary", name: "library", appName: "PaperLibrary")
 let releaseJSON = """
 {"tag_name": "v9.9.9", "html_url": "https://github.com/inextro/pdf-reader/releases/tag/v9.9.9",
  "body": "- New: something\\n\\n---\\nDownload `PaperMark-9.9.9.zip`, unzip, and move it.",
- "assets": [{"name": "PaperMark-9.9.9.zip", "browser_download_url": "\(goodZip.absoluteString)", "digest": "\(sha256(goodZip))"}]}
+ "assets": [{"name": "PaperMark-9.9.9.zip", "browser_download_url": "\(goodZip.absoluteString)", "digest": "\(sha256(goodZip))"},
+            {"name": "PaperLibrary-9.9.9.zip", "browser_download_url": "\(libraryZip.absoluteString)", "digest": "\(sha256(libraryZip))"}]}
 """
 let releaseFile = updateDir.appendingPathComponent("latest.json")
 try releaseJSON.write(to: releaseFile, atomically: true, encoding: .utf8)
@@ -562,6 +564,11 @@ var fetched: Updates.Release?
 Task { fetched = try? await Updates.latestRelease(from: releaseFile); semaphore.signal() }
 semaphore.wait()
 check(fetched?.version == "9.9.9" && fetched?.zip?.url == goodZip, "릴리스 JSON에서 버전과 zip 찾기 (\(fetched?.version ?? "nil"))")
+check(fetched?.zip(for: "PaperLibrary")?.url == libraryZip && fetched?.zip(for: "PaperLibrary")?.digest == sha256(libraryZip),
+      "같은 릴리스에서 PaperLibrary zip 찾기")
+let unpackedLibrary = try? Updates.unpack(zip: libraryZip, digest: sha256(libraryZip), bundleID: "com.inextro.paperlibrary",
+                                          version: "9.9.9", appName: "PaperLibrary")
+check(unpackedLibrary?.lastPathComponent == "PaperLibrary.app", "PaperLibrary zip을 풀어 앱 찾기")
 check(fetched?.changes == "- New: something", "패치 노트에서 설치 안내 빼기 (\(fetched?.changes ?? "nil"))")
 
 let unpacked = try? Updates.unpack(zip: goodZip, digest: sha256(goodZip), bundleID: "com.inextro.papermark", version: "9.9.9")

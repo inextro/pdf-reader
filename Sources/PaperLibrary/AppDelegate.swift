@@ -1,4 +1,5 @@
 import AppKit
+import AppUpdater
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var libraryWindow = LibraryWindowController()
@@ -11,10 +12,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Connector.shared.start()
         // workspace 폴더와 컬렉션을 맞추고 폴더를 감시한다.
         LibraryStore.shared.startWorkspaceSync()
-        ChromeExtension.refresh()
+        // 앱이 업데이트되어 확장 파일이 바뀌었으면 Chrome에서 Reload를 눌러야 새 확장이 돈다.
+        let extensionUpdated = ChromeExtension.refresh()
         // workspace가 없으면 쓸 수 없다(컬렉션 = 그 안의 폴더, PDF도 거기 둔다). 고를 때까지 묻고, 고른 뒤에 확장 설치를 권한다.
         DispatchQueue.main.async {
-            self.requireWorkspace { ChromeExtension.offerOnFirstLaunch(in: self.libraryWindow.window) }
+            self.requireWorkspace {
+                if extensionUpdated { ChromeExtension.announceUpdate(in: self.libraryWindow.window) }
+                ChromeExtension.offerOnFirstLaunch(in: self.libraryWindow.window)
+                // 새 버전 확인(켤 때 잠시 뒤 한 번, 그 뒤 하루마다). workspace를 고르는 중에는 묻지 않는다.
+                UpdateController.shared.start()
+            }
         }
     }
 
@@ -107,6 +114,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let app = submenu(of: main, title: "PaperLibrary")
         app.addItem(withTitle: "About PaperLibrary", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         app.addItem(.separator())
+        app.addItem(withTitle: "Check for Updates…", action: #selector(UpdateController.checkForUpdates(_:)), keyEquivalent: "")
+            .target = MainActor.assumeIsolated { UpdateController.shared }
         app.addItem(withTitle: "Settings…", action: #selector(showSettings(_:)), keyEquivalent: ",").target = self
         app.addItem(withTitle: "Install Chrome Extension…", action: #selector(installChromeExtension(_:)), keyEquivalent: "").target = self
         app.addItem(.separator())

@@ -3,18 +3,22 @@ import PaperMarkCore
 
 /// 새 버전 알림과 설치. 앱을 켤 때와 그 뒤 하루마다 GitHub 최신 릴리스를 확인하고,
 /// 새 버전이 있으면 패치 노트와 함께 묻는다. Install을 누르면 zip을 받아 앱을 바꾸고 다시 실행한다.
+/// PaperMark와 PaperLibrary가 같이 쓴다. 같은 릴리스에서 각자 <앱 이름>-<버전>.zip을 받는다.
 @MainActor
-final class UpdateController: NSObject {
-    static let shared = UpdateController()
+public final class UpdateController: NSObject {
+    public static let shared = UpdateController()
+
+    /// 번들 이름(PaperMark, PaperLibrary). 릴리스의 zip 이름과 zip 안의 앱 이름이 이것이다.
+    private let appName = Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "PaperMark"
 
     private static let autoCheckKey = "checksForUpdates", lastCheckKey = "lastUpdateCheck", skippedKey = "skippedVersion"
     private static let interval: TimeInterval = 24 * 60 * 60
     private var timer: Timer?
     private var busy = false
-    // 자동 확인에서 찾았지만 PaperMark가 앞에 있지 않아 아직 알리지 않은 릴리스.
+    // 자동 확인에서 찾았지만 앱이 앞에 있지 않아 아직 알리지 않은 릴리스.
     private var waiting: Updates.Release?
 
-    var checksAutomatically: Bool {
+    public var checksAutomatically: Bool {
         get { UserDefaults.standard.object(forKey: Self.autoCheckKey) as? Bool ?? true }
         set { UserDefaults.standard.set(newValue, forKey: Self.autoCheckKey) }
     }
@@ -24,7 +28,7 @@ final class UpdateController: NSObject {
     }
 
     /// 앱을 켠 뒤 잠시 기다렸다 한 번, 그 뒤로는 한 시간마다 하루가 지났는지 본다(잠자기에서 깨어난 뒤도 따라잡는다).
-    func start() {
+    public func start() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in self?.checkIfDue() }
         timer = Timer.scheduledTimer(withTimeInterval: 60 * 60, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.checkIfDue() }
@@ -38,7 +42,7 @@ final class UpdateController: NSObject {
         check(userInitiated: false)
     }
 
-    @objc func checkForUpdates(_ sender: Any?) {
+    @objc public func checkForUpdates(_ sender: Any?) {
         check(userInitiated: true)
     }
 
@@ -53,10 +57,10 @@ final class UpdateController: NSObject {
                 UserDefaults.standard.set(Date(), forKey: Self.lastCheckKey)
                 let skipped = UserDefaults.standard.string(forKey: Self.skippedKey)
                 if Updates.isNewer(release.version, than: currentVersion), userInitiated || release.version != skipped {
-                    // 다른 앱을 쓰는 중에 PaperMark가 앞으로 튀어나오지 않게, 돌아올 때 알린다.
+                    // 다른 앱을 쓰는 중에 앱이 앞으로 튀어나오지 않게, 돌아올 때 알린다.
                     if NSApp.isActive { offer(release) } else { offerWhenActive(release) }
                 } else if userInitiated {
-                    inform("PaperMark is up to date", "Version \(currentVersion) is the latest.")
+                    inform("\(appName) is up to date", "Version \(currentVersion) is the latest.")
                 }
             } catch {
                 if userInitiated { inform("Couldn’t check for updates", error.localizedDescription) }
@@ -82,7 +86,7 @@ final class UpdateController: NSObject {
 
     private func offer(_ release: Updates.Release) {
         let alert = NSAlert()
-        alert.messageText = "PaperMark \(release.version) is available"
+        alert.messageText = "\(appName) \(release.version) is available"
         alert.informativeText = "You have \(currentVersion). What’s new:"
         alert.accessoryView = notesView(release.changes)
         alert.addButton(withTitle: "Install and Relaunch")
@@ -120,26 +124,27 @@ final class UpdateController: NSObject {
         guard !installed.path.contains("/AppTranslocation/"),
               FileManager.default.isWritableFile(atPath: installed.deletingLastPathComponent().path) else {
             inform("Install the update manually",
-                   "PaperMark can’t replace itself at \(installed.deletingLastPathComponent().path). "
-                   + "Move PaperMark to your Applications folder, or download the new version from the release page.")
+                   "\(appName) can’t replace itself at \(installed.deletingLastPathComponent().path). "
+                   + "Move \(appName) to your Applications folder, or download the new version from the release page.")
             NSWorkspace.shared.open(release.page)
             return
         }
-        guard let asset = release.zip else {
+        guard let asset = release.zip(for: appName) else {
             NSWorkspace.shared.open(release.page)
             return
         }
-        let progress = ProgressPanel(title: "Downloading PaperMark \(release.version)…")
+        let progress = ProgressPanel(appName: appName, title: "Downloading \(appName) \(release.version)…")
         progress.show()
         Task {
             do {
                 let (downloaded, _) = try await URLSession.shared.download(from: asset.url)
                 // 받은 임시 파일은 시스템이 언제 지울지 모르니 바로 옮겨 둔다.
-                let zip = FileManager.default.temporaryDirectory.appendingPathComponent("PaperMark-\(UUID().uuidString).zip")
+                let zip = FileManager.default.temporaryDirectory.appendingPathComponent("\(appName)-\(UUID().uuidString).zip")
                 try FileManager.default.moveItem(at: downloaded, to: zip)
                 let bundleID = Bundle.main.bundleIdentifier ?? ""
+                let appName = self.appName
                 let app = try await Task.detached {
-                    try Updates.unpack(zip: zip, digest: asset.digest, bundleID: bundleID, version: release.version)
+                    try Updates.unpack(zip: zip, digest: asset.digest, bundleID: bundleID, version: release.version, appName: appName)
                 }.value
                 try Updates.replace(installed, with: app)
                 progress.close()
@@ -174,10 +179,10 @@ final class UpdateController: NSObject {
 private final class ProgressPanel {
     private let panel: NSPanel
 
-    init(title: String) {
+    init(appName: String, title: String) {
         panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 320, height: 70), styleMask: [.titled], backing: .buffered,
                         defer: false)
-        panel.title = "Updating PaperMark"
+        panel.title = "Updating \(appName)"
         let label = NSTextField(labelWithString: title)
         let bar = NSProgressIndicator()
         bar.isIndeterminate = true

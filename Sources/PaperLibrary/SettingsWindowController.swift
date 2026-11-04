@@ -1,4 +1,5 @@
 import AppKit
+import AppUpdater
 import PaperMarkLibrary
 
 /// PaperLibrary > Settings…(⌘,). 브라우저 확장으로 논문을 넣을 때 서지 정보를 채우는 방식과 PDF 저장 위치를 고른다.
@@ -14,6 +15,7 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
                                             target: nil, action: nil)
     private let sentenceCase = NSButton(checkboxWithTitle: "Write titles in sentence case (only the first word capitalized)", target: nil, action: nil)
     private let connectorLabel = NSTextField(labelWithString: "")
+    private let checkUpdates = NSButton(checkboxWithTitle: "Check for updates automatically (once a day)", target: nil, action: nil)
     private let citationStyle = NSPopUpButton()
     private let columnList = ChecklistView()
     private let menuList = ChecklistView()
@@ -86,12 +88,15 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
             [Self.header("Titles:"), sentenceCase],
             [Self.header("Copy Citation:"), citationStyle],
             [Self.header("Browser extension:"), Self.row(connectorLabel, installExtension)],
+            [Self.header("Updates:"), checkUpdates],
         ])
+        checkUpdates.target = self
+        checkUpdates.action = #selector(checkUpdatesChanged(_:))
         grid.rowSpacing = 8
         grid.columnSpacing = 10
         grid.column(at: 0).xPlacement = .trailing
         grid.rowAlignment = .firstBaseline
-        for row in [2, 3, 7, 8, 10, 11, 12] { grid.row(at: row).topPadding = 10 }
+        for row in [2, 3, 7, 8, 10, 11, 12, 13] { grid.row(at: row).topPadding = 10 }
         grid.translatesAutoresizingMaskIntoConstraints = false
 
         let content = NSView()
@@ -303,6 +308,7 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         pdfFolderLabel.stringValue = Settings.pdfFolder?.path ?? "Not set"
         let lookup = Settings.lookup
         preferOnline.state = lookup.preferOnline ? .on : .off
+        checkUpdates.state = UpdateController.shared.checksAutomatically ? .on : .off
         publishedVersion.state = lookup.usePublishedVersion ? .on : .off
         sentenceCase.state = lookup.sentenceCase ? .on : .off
         connectorLabel.stringValue = Connector.shared.status
@@ -331,6 +337,10 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
     }
 
     @objc private func installExtension(_ sender: Any?) { ChromeExtension.install(in: window) }
+
+    @objc private func checkUpdatesChanged(_ sender: NSButton) {
+        UpdateController.shared.checksAutomatically = sender.state == .on
+    }
 
     @objc private func citationStyleChanged(_ sender: NSPopUpButton) {
         Settings.citationStyle = CitationStyle.allCases[max(0, sender.indexOfSelectedItem)]

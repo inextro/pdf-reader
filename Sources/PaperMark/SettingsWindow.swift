@@ -1,4 +1,5 @@
 import AppKit
+import AppUpdater
 import PaperMarkCore
 
 /// 설정 창(⌘,): 명령마다 단축키 칸을 누르고 새 키를 누르면 바뀐다.

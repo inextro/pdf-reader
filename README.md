@@ -84,6 +84,9 @@ Double-click a paper to read it in PaperMark.
   remembered and not overwritten when the paper is saved again from the browser.
 - **Copy citations** in APA, ACM, or IEEE style (`⇧⌘C`), or copy the citation key or DOI.
 - **Backup.** The library is also written as `PaperLibrary.json` in your workspace folder.
+- **Updates itself**, like PaperMark: once a day it checks for a new release, and **Install and Relaunch** updates it
+  in place. Use **PaperLibrary → Check for Updates…** any time, or turn off the daily check in Settings (`⌘,`). When
+  an update changes the Chrome extension, PaperLibrary asks you to click **Reload** on it in Chrome.
 
 To install the Chrome extension, choose **PaperLibrary → Install Chrome Extension…** and follow the steps. The
 extension is not in the Chrome Web Store; it is loaded unpacked from a folder PaperLibrary keeps up to date.
@@ -155,8 +158,8 @@ Then pin **Save to PaperLibrary** from the puzzle icon.
 
 When PaperLibrary opens for the first time, it asks you to choose your workspace folder or import your Zotero
 library. You can't use PaperLibrary until you do one of these. PaperMark asks once whether to become your
-default PDF app. Later updates of PaperMark install from inside the app. To update
-PaperLibrary, run the same steps again and click **Reload** on the extension in Chrome.
+default PDF app. From version 1.0.3, both apps update themselves from inside the app. If you installed PaperLibrary
+1.0.2 or earlier, run the same steps once more to get 1.0.3.
 
 ### Default PDF app
 

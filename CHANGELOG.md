@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.3
+
+- New: PaperLibrary updates itself, like PaperMark. Once a day it checks for a new release and shows what's new.
+  Click **Install and Relaunch** to update in place, or choose **PaperLibrary → Check for Updates…** any time. Turn
+  off the daily check in Settings (`⌘,`). When an update changes the Chrome extension, PaperLibrary asks you to click
+  **Reload** on it in Chrome.
+- Note: PaperLibrary 1.0.2 and earlier can't update themselves, so install this version by hand once.
+- PaperMark has no visible changes in this version.
+
 ## 1.0.2
 
 - Fix: Copied citations no longer include ORCID links or "View Profile" as authors. Some papers imported from Zotero

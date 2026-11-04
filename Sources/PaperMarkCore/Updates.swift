@@ -35,7 +35,10 @@ public enum Updates {
         public var version: String { tag.hasPrefix("v") ? String(tag.dropFirst()) : tag }
 
         /// release.sh가 올리는 PaperMark-<버전>.zip
-        public var zip: Asset? { assets.first { $0.name == "PaperMark-\(version).zip" } }
+        public var zip: Asset? { zip(for: "PaperMark") }
+
+        /// release.sh가 올리는 <앱 이름>-<버전>.zip(PaperMark, PaperLibrary)
+        public func zip(for appName: String) -> Asset? { assets.first { $0.name == "\(appName)-\(version).zip" } }
 
         /// 설명 끝의 설치 안내("---" 아래)는 앱 안에서는 필요 없어서 뺀다.
         public var changes: String {
@@ -78,21 +81,21 @@ public enum Updates {
         public var errorDescription: String? {
             switch self {
             case .badResponse(let code): "GitHub answered with status \(code)."
-            case .noDownload: "This release has no PaperMark download."
+            case .noDownload: "This release has no download for this app."
             case .checksumMismatch: "The download is damaged (checksum mismatch)."
-            case .notTheApp(let reason): "The download is not the expected PaperMark app (\(reason))."
+            case .notTheApp(let reason): "The download is not the expected app (\(reason))."
             case .unzipFailed: "The download could not be unzipped."
             }
         }
     }
 
-    /// 내려받은 zip을 풀어 그 안의 PaperMark.app을 돌려준다. 체크섬, 번들 ID, 버전이 맞아야 한다.
-    public static func unpack(zip: URL, digest: String?, bundleID: String, version: String) throws -> URL {
+    /// 내려받은 zip을 풀어 그 안의 <appName>.app을 돌려준다. 체크섬, 번들 ID, 버전이 맞아야 한다.
+    public static func unpack(zip: URL, digest: String?, bundleID: String, version: String, appName: String = "PaperMark") throws -> URL {
         if let digest, digest.hasPrefix("sha256:") {
             let hash = SHA256.hash(data: try Data(contentsOf: zip)).map { String(format: "%02x", $0) }.joined()
             guard hash == digest.dropFirst("sha256:".count).lowercased() else { throw UpdateError.checksumMismatch }
         }
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("PaperMarkUpdate-\(UUID().uuidString)")
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("\(appName)Update-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let ditto = Process()
         ditto.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
@@ -101,7 +104,7 @@ public enum Updates {
         ditto.waitUntilExit()
         guard ditto.terminationStatus == 0 else { throw UpdateError.unzipFailed }
 
-        let app = folder.appendingPathComponent("PaperMark.app")
+        let app = folder.appendingPathComponent("\(appName).app")
         guard let info = NSDictionary(contentsOf: app.appendingPathComponent("Contents/Info.plist")) else {
             throw UpdateError.notTheApp("no Info.plist")
         }

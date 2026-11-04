@@ -13,10 +13,30 @@ enum ChromeExtension {
             .flatMap { FileManager.default.fileExists(atPath: $0.path) ? $0 : nil }
     }
 
-    /// 켤 때: 복사해 둔 확장이 있고 앱에 든 것과 다르면 바꿔 둔다(Chrome에서는 Reload만 누르면 된다).
-    static func refresh() {
-        guard FileManager.default.fileExists(atPath: installedURL.path), let bundled = bundledURL, !same(bundled, installedURL) else { return }
-        do { try copy(from: bundled) } catch { NSLog("%@", "PaperLibrary: could not update the Chrome extension: \(error)") }
+    /// 켤 때: 복사해 둔 확장이 있고 앱에 든 것과 다르면 바꿔 둔다(Chrome에서는 Reload만 누르면 된다). 바꿨으면 true.
+    @discardableResult
+    static func refresh() -> Bool {
+        guard FileManager.default.fileExists(atPath: installedURL.path), let bundled = bundledURL, !same(bundled, installedURL) else { return false }
+        do {
+            try copy(from: bundled)
+            return true
+        } catch {
+            NSLog("%@", "PaperLibrary: could not update the Chrome extension: \(error)")
+            return false
+        }
+    }
+
+    /// 앱 업데이트로 확장 파일이 바뀌었을 때: Chrome이 새 파일을 읽도록 Reload를 눌러 달라고 한다.
+    static func announceUpdate(in window: NSWindow?) {
+        let alert = NSAlert()
+        alert.messageText = "The Chrome extension was updated"
+        alert.informativeText = "Open chrome://extensions and click Reload (↻) on Save to PaperLibrary to start using the new version."
+        alert.addButton(withTitle: "Open Chrome Extensions")
+        alert.addButton(withTitle: "Later")
+        let run = { (response: NSApplication.ModalResponse) in
+            if response == .alertFirstButtonReturn { openChromeExtensions() }
+        }
+        if let window { alert.beginSheetModal(for: window, completionHandler: run) } else { run(alert.runModal()) }
     }
 
     /// 처음 켰을 때 한 번: 확장을 아직 복사한 적이 없으면 설치를 권한다. 나중에는 메뉴에서 설치한다.
