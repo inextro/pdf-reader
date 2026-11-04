@@ -87,7 +87,7 @@ extension PaperMetadata {
         m.title = first("citation_title", "dc.title", "og:title") ?? clean(pageTitle ?? "")
         let names = all["citation_author"] ?? all["dc.creator"]
             ?? all["citation_authors"]?.flatMap { $0.split(separator: ";").map(String.init) } ?? []
-        m.creators = names.map(Creator.author)
+        m.creators = Creator.people(names.map(Creator.author))
         m.date = first("citation_publication_date", "citation_date", "citation_cover_date", "citation_online_date",
                        "dc.date", "prism.publicationdate").map(normalizedDate)
         m.doi = first("citation_doi", "prism.doi", "bepress_citation_doi").flatMap(PaperID.doi(in:))
@@ -253,7 +253,7 @@ extension PaperMetadata {
         m.type = "preprint"
         m.venue = "arXiv"
         m.title = clean(title)
-        m.creators = reader.authors.map(Creator.author)
+        m.creators = Creator.people(reader.authors.map(Creator.author))
         m.date = entry["published"].map { String($0.prefix(10)) }
         m.arxivID = id
         m.doi = "10.48550/arXiv.\(id)"

@@ -16,6 +16,29 @@ public final class Library {
         db = try SQLiteDatabase(path: url.path)
         try db.execute("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;")
         try migrate()
+        try cleanCreators()
+    }
+
+    /// 저자 칸에 들어간 ORCID 주소와 "View Profile" 같은 화면 문구를 DB에서도 지운다. 켤 때마다 본다(몇 천 줄이라 금방 끝난다).
+    private func cleanCreators() throws {
+        let rows = try db.query("SELECT item_id, position, role, family, given FROM creators")
+        let changes = rows.compactMap { row -> (SQLRow, Creator?)? in
+            let creator = Creator(role: row["role"] ?? "author", family: row["family"] ?? "", given: row["given"])
+            let cleaned = creator.cleaned
+            return cleaned == creator ? nil : (row, cleaned)
+        }
+        guard !changes.isEmpty else { return }
+        try db.transaction {
+            for (row, cleaned) in changes {
+                let key: [SQLValue] = [SQLValue(row.int("item_id")), SQLValue(row.int("position"))]
+                if let cleaned {
+                    try db.run("UPDATE creators SET family = ?, given = ? WHERE item_id = ? AND position = ?",
+                               [.text(cleaned.family), SQLValue(cleaned.given)] + key)
+                } else {
+                    try db.run("DELETE FROM creators WHERE item_id = ? AND position = ?", key)
+                }
+            }
+        }
     }
 
     public var version: Int { Int(((try? db.query("PRAGMA user_version"))?.first?.int("user_version")) ?? 0) }
@@ -109,7 +132,10 @@ public final class Library {
         }
         for row in try db.query("SELECT * FROM creators ORDER BY item_id, position") {
             guard let id = row.int("item_id") else { continue }
-            items[id]?.creators.append(Creator(role: row["role"] ?? "author", family: row["family"] ?? "", given: row["given"]))
+            // 예전에 저장된 ORCID 주소·화면 문구는 읽을 때도 거른다(목록, 정보 패널, 참고문헌 복사).
+            if let creator = Creator(role: row["role"] ?? "author", family: row["family"] ?? "", given: row["given"]).cleaned {
+                items[id]?.creators.append(creator)
+            }
         }
         for row in try db.query("SELECT item_id, path FROM attachments ORDER BY id") {
             if let id = row.int("item_id"), let path = row["path"] { items[id]?.attachments.append(path) }

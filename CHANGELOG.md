@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.2
+
+- Fix: Copied citations no longer include ORCID links or "View Profile" as authors. Some papers imported from Zotero
+  (saved from the ACM Digital Library) had these mixed into the author list. PaperLibrary removes them from your
+  library when it opens, and filters them out of papers you save or import from now on. Author names that had an
+  ORCID attached keep the name and drop the link.
+- PaperMark has no changes in this version.
+
 ## 1.0.1
 
 - Improved: When PaperLibrary opens for the first time, it asks you to choose your workspace folder or import your

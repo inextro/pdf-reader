@@ -12,6 +12,35 @@ public struct Creator: Codable, Equatable {
     }
 }
 
+extension Creator {
+    /// 논문 페이지를 긁을 때 저자 사이에 끼어드는 화면 문구(ACM의 저자 카드 등).
+    private static let pageWords: Set<String> = [
+        "view profile", "view orcid profile", "orcid", "search about this author", "search for this author",
+        "authors info & claims", "author information", "et al", "et al.",
+    ]
+
+    /// 이름에 붙은 주소(https://orcid.org/…)와 ORCID 번호를 떼어 낸 저자. 남는 것이 사람 이름이 아니면 nil.
+    /// 예: "https://orcid.org/0000-0002-7592-8925" → nil, "View Profile" → nil, "Liu https://orcid.org/…" → "Liu".
+    public var cleaned: Creator? {
+        func strip(_ text: String) -> String {
+            text.replacingOccurrences(of: #"https?://\S+"#, with: " ", options: .regularExpression)
+                .replacingOccurrences(of: #"(?i)\borcid(?:\.org)?/?\s*:?\s*"#, with: " ", options: .regularExpression)
+                .replacingOccurrences(of: #"\b\d{4}-\d{4}-\d{4}-\d{3}[\dXx]\b"#, with: " ", options: .regularExpression)
+                .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+                .trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: ",;:|·/")))
+        }
+        let family = strip(self.family), given = given.map(strip).flatMap { $0.isEmpty ? nil : $0 }
+        let full = [given, family].compactMap { $0 }.joined(separator: " ")
+        guard !full.isEmpty, !Self.pageWords.contains(full.lowercased()),
+              full.contains(where: \.isLetter) else { return nil }
+        if family.isEmpty, let given { return Creator(role: role, family: given, given: nil) }
+        return Creator(role: role, family: family, given: given)
+    }
+
+    /// 사람이 아닌 항목을 빼고 이름에 붙은 ORCID를 뗀 저자 목록.
+    public static func people(_ list: [Creator]) -> [Creator] { list.compactMap(\.cleaned) }
+}
+
 /// 서지 항목 하나와 거기 딸린 저자·PDF·컬렉션·태그.
 public struct LibraryEntry: Equatable {
     public var id: Int64

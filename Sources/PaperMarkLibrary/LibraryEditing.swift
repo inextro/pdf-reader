@@ -222,7 +222,7 @@ extension Library {
     }
 
     private func insertCreators(_ creators: [Creator], of id: Int64) throws {
-        for (position, creator) in creators.enumerated() {
+        for (position, creator) in Creator.people(creators).enumerated() {
             try db.run("INSERT INTO creators (item_id, position, role, family, given) VALUES (?,?,?,?,?)",
                        [.int(id), .int(Int64(position)), .text(creator.role), .text(creator.family), SQLValue(creator.given)])
         }

@@ -185,7 +185,7 @@ public enum ZoteroImport {
                         """, values + [.text(UUID().uuidString), .text(zkey)])
                     localID[zid] = db.lastInsertID
                 }
-                for (position, creator) in (creatorsByItem[zid] ?? []).enumerated() {
+                for (position, creator) in Creator.people(creatorsByItem[zid] ?? []).enumerated() {
                     try db.run("INSERT INTO creators (item_id, position, role, family, given) VALUES (?,?,?,?,?)",
                                [.int(localID[zid]!), .int(Int64(position)), .text(creator.role), .text(creator.family),
                                 SQLValue(creator.given)])

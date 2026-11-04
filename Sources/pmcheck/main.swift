@@ -1107,6 +1107,37 @@ do {
     try? FileManager.default.removeItem(at: temp)
 }
 
+// MARK: 저자 칸의 ORCID·화면 문구
+do {
+    // Zotero의 ACM 수집기가 저자 사이에 ORCID 주소와 "View Profile"을 저자로 넣은 경우(SimGCF).
+    let junk = [Creator(role: "author", family: "Liu", given: "Feng"),
+                Creator(role: "author", family: "https://orcid.org/0009-0009-1384-1179", given: nil),
+                Creator(role: "author", family: "View Profile", given: nil),
+                Creator(role: "author", family: "Cang", given: "Hao"),
+                Creator(role: "author", family: "Yuan https://orcid.org/0000-0002-7592-8925", given: "Huanhuan"),
+                Creator(role: "author", family: "0000-0001-5659-7457", given: ""),
+                Creator(role: "author", family: "OpenAI", given: nil)]
+    let people = Creator.people(junk)
+    check(people.map { [$0.given, $0.family].compactMap { $0 }.joined(separator: " ") } == ["Feng Liu", "Hao Cang", "Huanhuan Yuan", "OpenAI"],
+          "저자에서 ORCID 주소·번호와 View Profile을 뺀다 (\(people))")
+    let url = libDir.appendingPathComponent("orcid-\(UUID().uuidString).sqlite")
+    var paper = PaperMetadata()
+    paper.type = "conferencePaper"
+    paper.title = "How do graph signals affect recommendation"
+    paper.date = "2026"
+    paper.creators = Array(junk.prefix(4))
+    let lib = try Library(url: url)
+    let id = try lib.add(paper, citationKey: "SimGCF", collectionID: nil)
+    check(try lib.item(id)!.creators.count == 2, "저장할 때도 거른다")
+    // 예전 버전이 그대로 저장해 둔 행은 다음에 열 때 DB에서 지운다.
+    try lib.db.run("INSERT INTO creators (item_id, position, role, family, given) VALUES (?, 9, 'author', 'https://orcid.org/0000-0001-8980-4950', NULL)", [.int(id)])
+    let reopened = try Library(url: url)
+    let left = try reopened.db.query("SELECT family FROM creators WHERE item_id = ?", [.int(id)]).compactMap { $0["family"] }
+    check(left == ["Liu", "Cang"], "열 때 DB에 남은 ORCID 행을 지운다 (\(left))")
+    let apa = Citation.plain(try reopened.item(id)!, style: .apa)
+    check(!apa.contains("orcid") && !apa.contains("View Profile"), "참고문헌에 ORCID가 없다 (\(apa))")
+}
+
 // MARK: 참고문헌 문장
 do {
     let citeLib = try Library(url: libDir.appendingPathComponent("citation-\(UUID().uuidString).sqlite"))
