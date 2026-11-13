@@ -195,6 +195,10 @@ final class Connector {
         try request.body.write(to: file, options: .withoutOverwriting)
         if store.folder == nil { store.folder = folder }
         try library.addAttachment(Library.storedPath(for: file, in: store.folder ?? folder), to: id)
+        // ACM 학술지는 CrossRef에 논문 번호가 없어서 PDF 첫 쪽에서 읽는다.
+        if ArticleNumber.needsLookup(entry), let number = LibraryStore.articleNumber(inPDF: PDFDocument(data: request.body)) {
+            store.setArticleNumber(number, of: id)
+        }
         store.didModify()
         guard let updated = store.items.first(where: { $0.id == id }) else { throw Failure(status: 500, message: "The PDF was not saved.") }
         var json = itemJSON(updated)

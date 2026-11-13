@@ -214,7 +214,7 @@ extension Library {
     }
 
     private func columns(of m: PaperMetadata, citationKey: String?) throws -> [SQLValue] {
-        var fields = m.fields
+        var fields = ArticleNumber.separated(m.fields, type: m.type)
         if let venue = m.venue, fields[m.venueField] == nil { fields[m.venueField] = venue }
         let json = String(decoding: try JSONEncoder.sorted.encode(fields), as: UTF8.self)
         return [.text(m.type), .text(m.title), SQLValue(m.date), SQLValue(m.year), SQLValue(m.venue), SQLValue(m.doi),

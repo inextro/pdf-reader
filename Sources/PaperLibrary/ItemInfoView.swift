@@ -171,7 +171,9 @@ final class ItemInfoView: NSView, NSTextFieldDelegate {
             case .venue: edit(Self.venueTitle(item.type), item.venue) { m, _, v in m.venue = v }
             case .date: edit("Date", item.date ?? item.year.map(String.init)) { m, _, v in m.date = v }
             case .volumeIssuePages:
-                let row = NSStackView(views: ["volume", "issue", "pages"].map { key in
+                let keys = Self.numberKeys(item)
+                guard !keys.isEmpty else { break }
+                let row = NSStackView(views: keys.map { key in
                     section(Self.fieldTitle(key), editable(item.fields[key] ?? "") { m, _, v in m.fields[key] = v })
                 })
                 row.orientation = .horizontal
@@ -180,16 +182,18 @@ final class ItemInfoView: NSView, NSTextFieldDelegate {
                 row.spacing = 12
                 add(row)
             case .publisher:
-                edit("Publisher", item.fields["publisher"]) { m, _, v in m.fields["publisher"] = v }
+                if Self.showsPublisher(item) {
+                    edit("Publisher", item.fields["publisher"]) { m, _, v in m.fields["publisher"] = v }
+                }
                 otherFields(item)
             case .citationKey: edit("Citation Key", item.citationKey) { _, key, v in key = v }
             case .doi:
+                guard item.type != "webpage" || item.doi != nil else { break }
+                // arXiv 칸은 따로 두지 않는다. 항목 하나는 한 버전이라 DOI 하나로 충분하다(프리프린트는 arXiv DOI).
+                // arXiv DOI로 고치면 숨은 arXiv ID(같은 논문 알아보기·PDF 받기에 쓴다)도 맞춘다.
                 edit("DOI", item.doi, link: item.doi.flatMap { URL(string: "https://doi.org/\($0)") }) { m, _, v in
                     m.doi = v.map(Self.bareDOI)
-                }
-            case .arxiv:
-                edit("arXiv", item.arxivID, link: item.arxivID.flatMap { URL(string: "https://arxiv.org/abs/\($0)") }) { m, _, v in
-                    m.arxivID = v
+                    if let doi = m.doi, doi.lowercased().hasPrefix("10.48550/"), let id = PaperID.arxiv(in: doi) { m.arxivID = id }
                 }
             case .url: edit("URL", item.url, link: item.url.flatMap(URL.init(string:))) { m, _, v in m.url = v }
             case .collections:
@@ -406,7 +410,7 @@ final class ItemInfoView: NSView, NSTextFieldDelegate {
 
     /// 위 칸에 없는 Zotero 필드(series, ISBN …). 비우면 빠지고, Add Field…로 더한다.
     private func otherFields(_ item: LibraryEntry) {
-        let shown: Set<String> = ["volume", "issue", "pages", "publisher", Library.editedKey]
+        let shown: Set<String> = ["volume", "issue", "pages", ArticleNumber.key, "publisher", Library.editedKey]
         for key in item.fields.keys.sorted() where !shown.contains(key) && !Self.venueFields.contains(key) {
             edit(Self.fieldTitle(key), item.fields[key]) { m, _, v in m.fields[key] = v }
         }
@@ -420,7 +424,7 @@ final class ItemInfoView: NSView, NSTextFieldDelegate {
     @objc private func addField(_ sender: Any?) {
         let alert = NSAlert()
         alert.messageText = "Add Field"
-        alert.informativeText = "Use a Zotero field name, such as series, edition, ISBN, or place."
+        alert.informativeText = "Use a Zotero field name, such as series, edition, ISBN, or place. For a journal article number, use articleNumber."
         let name = NSTextField(string: "")
         name.placeholderString = "Field name"
         let value = NSTextField(string: "")
@@ -463,8 +467,26 @@ final class ItemInfoView: NSView, NSTextFieldDelegate {
         }
     }
 
+    /// 종류에 맞는 권·호·쪽 칸. 학술지만 권·호를 두고, 논문 번호가 있으면 쪽 대신 논문 번호 칸을 둔다.
+    /// 종류에 없는 칸도 값이 있으면 보인다(고치거나 지울 수 있게). 빈 칸은 그 종류에 있는 칸만 보인다.
+    private static func numberKeys(_ item: LibraryEntry) -> [String] {
+        let filled = { (key: String) in !(item.fields[key] ?? "").isEmpty }
+        let wanted: [String] = switch item.type {
+        case "journalArticle": ["volume", "issue", filled(ArticleNumber.key) ? ArticleNumber.key : "pages"]
+        case "conferencePaper", "bookSection": ["pages"]
+        default: []
+        }
+        return ["volume", "issue", ArticleNumber.key, "pages"].filter { wanted.contains($0) || filled($0) }
+    }
+
+    /// 학술지·프리프린트·웹페이지의 참고문헌에는 출판사가 없어서 값이 있을 때만 보인다.
+    private static func showsPublisher(_ item: LibraryEntry) -> Bool {
+        !["journalArticle", "preprint", "webpage"].contains(item.type) || !(item.fields["publisher"] ?? "").isEmpty
+    }
+
     /// "conferenceName" → "Conference name"
     private static func fieldTitle(_ key: String) -> String {
+        if key == ArticleNumber.key { return "Article No." }
         guard key.first?.isLowercase == true else { return key }
         var out = ""
         for c in key { out += c.isUppercase ? " " + c.lowercased() : String(c) }

@@ -17,6 +17,31 @@ public final class Library {
         try db.execute("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;")
         try migrate()
         try cleanCreators()
+        try normalizeItems()
+    }
+
+    /// 예전에 저장했거나 Zotero에서 가져온 항목을 지금 규칙에 맞춘다. 켤 때와 Zotero 가져오기 뒤에 본다.
+    /// - 학술지로 들어온 학회 논문(NeurIPS·ICLR)을 학회 논문으로. 사용자가 종류를 고쳤으면 그대로 둔다.
+    /// - 학술지 `pages`에 든 논문 번호를 `articleNumber`로.
+    public func normalizeItems() throws {
+        let rows = try db.query("SELECT id, type, venue, fields FROM items")
+        var changes: [(Int64, String, String)] = []
+        for row in rows {
+            guard let id = row.int("id"), let type = row["type"] else { continue }
+            let fields = row["fields"].flatMap { try? JSONDecoder().decode([String: String].self, from: Data($0.utf8)) } ?? [:]
+            let edited = Set((fields[Self.editedKey] ?? "").split(separator: ",").map(String.init))
+            var (newType, newFields) = edited.contains("type") ? (type, fields)
+                : PaperMetadata.correctedType(type: type, venue: row["venue"], fields: fields)
+            newFields = ArticleNumber.separated(newFields, type: newType)
+            guard newType != type || newFields != fields else { continue }
+            changes.append((id, newType, String(decoding: try JSONEncoder.sorted.encode(newFields), as: UTF8.self)))
+        }
+        guard !changes.isEmpty else { return }
+        try db.transaction {
+            for (id, type, json) in changes {
+                try db.run("UPDATE items SET type = ?, fields = ? WHERE id = ?", [.text(type), .text(json), .int(id)])
+            }
+        }
     }
 
     /// 저자 칸에 들어간 ORCID 주소와 "View Profile" 같은 화면 문구를 DB에서도 지운다. 켤 때마다 본다(몇 천 줄이라 금방 끝난다).

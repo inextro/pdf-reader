@@ -1145,6 +1145,100 @@ do {
     check(!apa.contains("orcid") && !apa.contains("View Profile"), "참고문헌에 ORCID가 없다 (\(apa))")
 }
 
+// MARK: 학술지 논문 번호와 종류 고치기
+do {
+    check(ArticleNumber.separated(["pages": "12:1–12:25"], type: "journalArticle") == ["articleNumber": "12", "pages": "1-25"],
+          "ACM의 12:1–12:25를 논문 12, 1–25쪽으로 나눈다")
+    check(ArticleNumber.separated(["pages": "103403"], type: "journalArticle") == ["articleNumber": "103403"],
+          "끝 쪽 없는 큰 숫자는 논문 번호")
+    check(ArticleNumber.separated(["pages": "e1002345"], type: "journalArticle") == ["articleNumber": "e1002345"], "e로 시작하는 논문 번호")
+    check(ArticleNumber.separated(["pages": "5"], type: "journalArticle") == ["pages": "5"], "한 쪽짜리 논문의 쪽은 그대로")
+    check(ArticleNumber.separated(["pages": "299-319"], type: "journalArticle") == ["pages": "299-319"], "쪽 범위는 그대로")
+    check(ArticleNumber.separated(["pages": "103403"], type: "conferencePaper") == ["pages": "103403"], "학술지만 본다")
+    check(ArticleNumber.separated(["pages": "103403", "articleNumber": "103403"], type: "journalArticle") == ["articleNumber": "103403"],
+          "CrossRef가 쪽과 논문 번호를 같게 주면 쪽을 뺀다")
+    let footer = "ACM Transactions on Information Systems, Vol. 41, No. 1, Article 12. Publication date: January 2023."
+    check(ArticleNumber.inPDFText("Revisiting negative sampling\n12\n" + footer) == "12", "ACM PDF 첫 쪽에서 논문 번호를 읽는다")
+    check(ArticleNumber.inPDFText("ACMComputingSurveys, Vol. 56,No.1,Article 19.Publicationdate:August 2023.") == "19",
+          "PDFKit이 띄어쓰기를 뺀 꼬리말도 읽는다")
+    check(ArticleNumber.inPDFText("Proceedings of KDD '24, Barcelona, Spain. Article 5 shows") == nil, "꼬리말 꼴이 아니면 읽지 않는다")
+    let numbered = PaperMetadata.crossref(Data(#"{"message":{"title":["A"],"type":"journal-article","container-title":["Information Processing & Management"],"page":"103403","article-number":"103403"}}"#.utf8))
+    check(numbered?.fields["articleNumber"] == "103403", "CrossRef의 article-number를 읽는다")
+    let pnas = PaperMetadata.page(meta: [("citation_title", "X"), ("citation_journal_title", "Proceedings of the National Academy of Sciences")], url: nil, title: nil)
+    check(pnas.type == "journalArticle", "PNAS는 이름에 Proceedings가 있어도 학술지")
+
+    let url = libDir.appendingPathComponent("artnum-\(UUID().uuidString).sqlite")
+    let lib = try Library(url: url)
+    var paper = PaperMetadata()
+    paper.type = "journalArticle"
+    paper.title = "Revisiting negative sampling vs. non-sampling in implicit recommendation"
+    paper.date = "2023"
+    paper.creators = [Creator(role: "author", family: "Chen", given: "Chong")]
+    paper.venue = "ACM Transactions on Information Systems"
+    paper.doi = "10.1145/3522672"
+    paper.fields = ["volume": "41", "issue": "1", "pages": "1-25"]
+    let acmID = try lib.add(paper, citationKey: "chen2023", collectionID: nil)
+    // 예전 버전·Zotero가 넣어 둔 값: pages의 논문 번호, 학술지로 들어온 NeurIPS 논문, 사용자가 학술지로 고친 학회 이름.
+    func insert(_ type: String, _ venue: String, _ fields: String) throws -> Int64 {
+        try lib.db.run("INSERT INTO items (key, type, title, venue, fields, added_at, modified_at) VALUES (?, ?, 'T', ?, ?, '', '')",
+                       [.text(UUID().uuidString), .text(type), .text(venue), .text(fields)])
+        return lib.db.lastInsertID
+    }
+    let ipm = try insert("journalArticle", "Information Processing & Management", #"{"pages":"103403","volume":"60"}"#)
+    let neurips = try insert("journalArticle", "Advances in Neural Information Processing Systems",
+                             #"{"pages":"59532-59569","publicationTitle":"Advances in Neural Information Processing Systems"}"#)
+    let kept = try insert("journalArticle", "Proceedings of the Workshop", #"{"_edited":"type"}"#)
+    let reopened = try Library(url: url)
+    let ipmItem = try reopened.item(ipm)!, neuripsItem = try reopened.item(neurips)!
+    check(ipmItem.fields == ["articleNumber": "103403", "volume": "60"], "열 때 pages의 논문 번호를 옮긴다 (\(ipmItem.fields))")
+    check(neuripsItem.type == "conferencePaper" && neuripsItem.fields["proceedingsTitle"] == "Advances in Neural Information Processing Systems"
+          && neuripsItem.fields["publicationTitle"] == nil, "학술지로 들어온 NeurIPS 논문을 학회 논문으로 (\(neuripsItem.type))")
+    check(try reopened.item(kept)!.type == "journalArticle", "사용자가 고친 종류는 그대로")
+
+    var acm = try reopened.item(acmID)!
+    check(ArticleNumber.needsLookup(acm), "1쪽에서 시작하는 학술지 논문은 번호를 찾아본다")
+    var m = PaperMetadata(acm)
+    m.fields["articleNumber"] = "12"
+    try reopened.update(acmID, with: m, citationKey: acm.citationKey)
+    acm = try reopened.item(acmID)!
+    check(!ArticleNumber.needsLookup(acm), "번호가 있으면 다시 찾지 않는다")
+    let apa = Citation.plain(acm, style: .apa), ieee = Citation.plain(acm, style: .ieee), acmRef = Citation.plain(acm, style: .acm)
+    check(apa.contains("ACM Transactions on Information Systems, 41(1), Article 12. https://doi.org"), "APA는 쪽 대신 Article 12 (\(apa))")
+    check(ieee.contains("vol. 41, no. 1, Art. no. 12, 2023") && !ieee.contains("pp."), "IEEE는 Art. no. 12 (\(ieee))")
+    check(acmRef.contains("41, 1 (2023), Article 12, 25 pages."), "ACM은 Article 12, 25 pages (\(acmRef))")
+    let ipmAPA = Citation.plain(ipmItem, style: .apa)
+    check(ipmAPA.contains(", 60, Article 103403") || ipmAPA.contains("60, Article 103403"), "논문 번호만 있는 학술지 (\(ipmAPA))")
+}
+
+// MARK: DOI 하나로: 숨은 arXiv ID
+do {
+    let lib = try Library(url: libDir.appendingPathComponent("arxivlink-\(UUID().uuidString).sqlite"))
+    var lora = PaperMetadata()
+    lora.type = "conferencePaper"
+    lora.title = "LoRA: Low-rank adaptation of large language models"
+    lora.creators = [Creator(role: "author", family: "Hu", given: "Edward J.")]
+    lora.date = "2022"
+    lora.venue = "International Conference on Learning Representations"
+    lora.arxivID = "2106.09685"
+    lora.url = "https://openreview.net/forum?id=nZeVKeeFYf9"
+    let conf = try lib.item(try lib.add(lora, citationKey: "hu2022lora", collectionID: nil))!
+    let apa = Citation.plain(conf, style: .apa)
+    check(apa.hasSuffix("https://openreview.net/forum?id=nZeVKeeFYf9") && !apa.contains("48550"),
+          "DOI 없는 학회 논문은 arXiv DOI 대신 주소를 링크로 (\(apa))")
+    var pre = PaperMetadata()
+    pre.type = "preprint"
+    pre.title = "A preprint"
+    pre.creators = [Creator(role: "author", family: "Kim", given: "Min")]
+    pre.date = "2025"
+    pre.venue = "arXiv"
+    pre.doi = "10.48550/arXiv.2501.00002"
+    pre.arxivID = "2501.00001"   // DOI만 고치고 남은 옛 값
+    let preprint = try lib.item(try lib.add(pre, citationKey: "kim2025", collectionID: nil))!
+    let preAPA = Citation.plain(preprint, style: .apa), preIEEE = Citation.plain(preprint, style: .ieee)
+    check(preAPA.contains("(arXiv:2501.00002)") && preIEEE.contains("arXiv:2501.00002") && !preAPA.contains("2501.00001"),
+          "프리프린트의 arXiv 번호는 DOI에서 읽는다 (\(preAPA))")
+}
+
 // MARK: 참고문헌 문장
 do {
     let citeLib = try Library(url: libDir.appendingPathComponent("citation-\(UUID().uuidString).sqlite"))

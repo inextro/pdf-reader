@@ -220,6 +220,7 @@ final class LibraryStore {
             let outcome = Result<(ZoteroImport.Result, Error?), Error> {
                 let library = try Library(url: Self.databaseURL)
                 let result = try ZoteroImport.run(zotero: zotero, attachmentBase: base, libraryFolder: folder, into: library)
+                try library.normalizeItems()
                 do { try LibraryBackup.write(library, to: folder); return (result, nil) } catch { return (result, error) }
             }
             DispatchQueue.main.async {
@@ -227,6 +228,7 @@ final class LibraryStore {
                 switch outcome {
                 case .success(let (result, backupError)):
                     self.folder = folder
+                    self.fillArticleNumbers(force: true)
                     var lines = ["\(result.items) papers, \(result.attachments) PDFs, \(result.collections) collections, "
                                  + "\(result.tags) tags, \(result.notes) notes."]
                     if result.removed > 0 { lines.append("\(result.removed) papers deleted in Zotero were removed.") }

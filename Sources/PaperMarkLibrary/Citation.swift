@@ -53,7 +53,8 @@ public enum Citation {
                     add(journal, italic: true)
                     if let volume = s.volume { add(", "); add(volume, italic: true) }
                     if let issue = s.issue { add("(\(issue))") }
-                    if let pages = s.pages { add(", \(pages)") }
+                    // APA 7: 논문 번호가 있으면 쪽 대신 "Article 103403".
+                    if let number = s.article { add(", Article \(number)") } else if let pages = s.pages { add(", \(pages)") }
                     add(". ")
                 }
             case .proceedings:
@@ -66,8 +67,8 @@ public enum Citation {
                 if let publisher = s.publisher { add(period(publisher) + " ") }
             case .preprint:
                 add(e.title, italic: true)
-                add(e.arxivID.map { " (arXiv:\($0)). arXiv. " } ?? ". ")
-                if let repository = s.container, e.arxivID == nil { add(period(repository) + " ") }
+                add(s.arxiv.map { " (arXiv:\($0)). arXiv. " } ?? ". ")
+                if let repository = s.container, s.arxiv == nil { add(period(repository) + " ") }
             case .book:
                 add(period(e.title), italic: true)
                 add(" ")
@@ -88,7 +89,12 @@ public enum Citation {
                     add(journal, italic: true)
                     let numbers = [s.volume, s.issue].compactMap { $0 }.joined(separator: ", ")
                     add((numbers.isEmpty ? "" : " " + numbers) + (e.year.map { " (\($0))" } ?? ""))
-                    add(s.pages.map { ", \($0). " } ?? ". ")
+                    // ACM: "…, Article 12, 25 pages."
+                    if let number = s.article {
+                        add(", Article \(number)" + (ArticleNumber.pageCount(s.pages).map { ", \($0) pages" } ?? "") + ". ")
+                    } else {
+                        add(s.pages.map { ", \($0). " } ?? ". ")
+                    }
                 }
             case .proceedings:
                 add(period(e.title) + " ")
@@ -101,7 +107,7 @@ public enum Citation {
                 if let publisher = s.publisher { add(period(publisher) + " ") }
             case .preprint:
                 add(period(e.title) + " ")
-                add(e.arxivID.map { "arXiv:\($0). " } ?? (s.container.map { period($0) + " " } ?? ""))
+                add(s.arxiv.map { "arXiv:\($0). " } ?? (s.container.map { period($0) + " " } ?? ""))
             case .book:
                 add(period(e.title), italic: true)
                 add(" ")
@@ -119,14 +125,15 @@ public enum Citation {
             case .journal:
                 add("“\(e.title),” ")
                 if let journal = s.container { add(journal, italic: true); add(", ") }
-                tail = [s.volume.map { "vol. \($0)" }, s.issue.map { "no. \($0)" }, s.pages.map { "pp. \($0)" }, year].compactMap { $0 }
+                tail = [s.volume.map { "vol. \($0)" }, s.issue.map { "no. \($0)" },
+                        s.article.map { "Art. no. \($0)" } ?? s.pages.map { "pp. \($0)" }, year].compactMap { $0 }
             case .proceedings:
                 add("“\(e.title),” ")
                 if let proceedings = s.container { add("in "); add(proceedings, italic: true); add(", ") }
                 tail = [year, s.pages.map { "pp. \($0)" }].compactMap { $0 }
             case .preprint:
                 add("“\(e.title),” ")
-                tail = [year, e.arxivID.map { "arXiv:\($0)" } ?? s.container].compactMap { $0 }
+                tail = [year, s.arxiv.map { "arXiv:\($0)" } ?? s.container].compactMap { $0 }
             case .book:
                 add(e.title, italic: true)
                 add(". ")
@@ -152,7 +159,7 @@ public enum Citation {
 
     private struct Source {
         var kind: Kind
-        var container, volume, issue, pages, publisher, series, link: String?
+        var container, volume, issue, pages, article, publisher, series, arxiv, link: String?
 
         init(_ e: LibraryEntry) {
             func field(_ names: String...) -> String? {
@@ -169,11 +176,18 @@ public enum Citation {
             volume = field("volume")
             issue = field("issue")
             pages = field("pages").map { $0.replacingOccurrences(of: "-", with: "–") }
+            article = kind == .journal ? field(ArticleNumber.key) : nil
+            // 프리프린트의 arXiv 번호. DOI가 arXiv DOI면 거기서 읽는다(DOI를 고쳤는데 숨은 arXiv ID가 옛 값이어도 맞게).
+            if kind == .preprint {
+                let fromDOI = e.doi.flatMap { $0.lowercased().hasPrefix("10.48550/") ? PaperID.arxiv(in: $0) : nil }
+                arxiv = fromDOI ?? e.arxivID
+            }
             publisher = field("publisher")
             series = field("series")
+            // 출판본은 그 버전의 DOI, 없으면 주소(ICLR은 OpenReview). 숨은 arXiv ID는 프리프린트에만 쓴다.
             if let doi = e.doi, !doi.isEmpty {
                 link = "https://doi.org/\(doi)"
-            } else if let arxiv = e.arxivID {
+            } else if let arxiv {
                 link = "https://doi.org/10.48550/arXiv.\(arxiv)"
             } else {
                 link = e.url

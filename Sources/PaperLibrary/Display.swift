@@ -3,7 +3,7 @@ import PaperMarkLibrary
 
 /// 표의 열. 보이는 열과 순서는 설정(Settings.columns)에 두고, 표 머리글을 끌거나 오른쪽 클릭해도, 설정 창에서도 고친다.
 enum LibraryColumn: String, CaseIterable {
-    case title, authors, year, venue, added, modified, type, citationKey, doi, arxiv, publisher, pages, tags
+    case title, authors, year, venue, added, modified, type, citationKey, doi, publisher, pages, tags
 
     /// 처음 구성(Restore Default Columns).
     static let defaults: [LibraryColumn] = [.year, .title, .authors, .citationKey, .tags]
@@ -19,7 +19,6 @@ enum LibraryColumn: String, CaseIterable {
         case .type: "Item Type"
         case .citationKey: "Citation Key"
         case .doi: "DOI"
-        case .arxiv: "arXiv"
         case .publisher: "Publisher"
         case .pages: "Pages"
         case .tags: "Tags"
@@ -35,7 +34,7 @@ enum LibraryColumn: String, CaseIterable {
         case .added, .modified: 100
         case .type: 130
         case .citationKey, .doi, .tags: 160
-        case .arxiv, .pages: 100
+        case .pages: 100
         }
     }
 
@@ -52,9 +51,8 @@ enum LibraryColumn: String, CaseIterable {
         case .type: itemTypeName(item.type)
         case .citationKey: item.citationKey ?? ""
         case .doi: item.doi ?? ""
-        case .arxiv: item.arxivID ?? ""
         case .publisher: item.fields["publisher"] ?? ""
-        case .pages: item.fields["pages"] ?? ""
+        case .pages: item.fields["pages"] ?? item.fields[ArticleNumber.key].map { "Art. \($0)" } ?? ""
         case .tags: item.tags.map(TagColor.displayName).joined(separator: ", ")
         }
     }
@@ -71,7 +69,7 @@ enum LibraryColumn: String, CaseIterable {
 
 /// 오른쪽 정보 패널에 보이는 칸. 제목은 늘 보인다. 보이는 칸과 순서는 설정(Settings.infoFields)에 둔다.
 enum InfoField: String, CaseIterable {
-    case type, authors, editors, venue, date, volumeIssuePages, publisher, citationKey, doi, arxiv, url,
+    case type, authors, editors, venue, date, volumeIssuePages, publisher, citationKey, doi, url,
          collections, tags, pdf, added, modified, abstract, notes
 
     static let defaults = allCases
@@ -87,7 +85,6 @@ enum InfoField: String, CaseIterable {
         case .publisher: "Publisher"
         case .citationKey: "Citation Key"
         case .doi: "DOI"
-        case .arxiv: "arXiv"
         case .url: "URL"
         case .collections: "Collections"
         case .tags: "Tags"
@@ -134,7 +131,7 @@ extension Settings {
 
 /// 툴바 검색이 찾는 칸. 기본은 제목과 citation key.
 enum SearchField: String, CaseIterable {
-    case title, citationKey, authors, year, venue, publisher, doi, arxiv, tags, abstract
+    case title, citationKey, authors, year, venue, publisher, doi, tags, abstract
 
     static let defaults: [SearchField] = [.title, .citationKey]
 
@@ -147,7 +144,6 @@ enum SearchField: String, CaseIterable {
         case .venue: "Venue"
         case .publisher: "Publisher"
         case .doi: "DOI"
-        case .arxiv: "arXiv ID"
         case .tags: "Tags"
         case .abstract: "Abstract"
         }
@@ -161,8 +157,8 @@ enum SearchField: String, CaseIterable {
         case .year: item.year.map(String.init) ?? ""
         case .venue: item.venue ?? ""
         case .publisher: item.fields["publisher"] ?? ""
-        case .doi: item.doi ?? ""
-        case .arxiv: item.arxivID ?? ""
+        // arXiv 번호로도 찾는다. 프리프린트는 DOI(10.48550/arXiv.…)에, 출판본은 숨은 arXiv ID에 있다.
+        case .doi: [item.doi, item.arxivID].compactMap { $0 }.joined(separator: " ")
         case .tags: item.tags.map(TagColor.displayName).joined(separator: " ")
         case .abstract: item.abstract ?? ""
         }

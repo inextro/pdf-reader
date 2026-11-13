@@ -123,8 +123,11 @@ extension PaperMetadata {
     }
 
     /// NeurIPS처럼 학회 논문집이 journal 메타태그로 오는 경우를 가린다.
+    /// 이름에 "Proceedings"가 있어도 학술지인 것(PNAS, Proceedings of the IEEE, PACM, PVLDB)은 뺀다.
     static func isConference(_ venue: String) -> Bool {
         let v = venue.lowercased()
+        if v == "proceedings of the ieee" || ["national academy of sciences", "proceedings of the acm on", "vldb endowment"]
+            .contains(where: v.contains) { return false }
         return ["proceedings", "conference", "symposium", "workshop", "neural information processing systems"]
             .contains { v.contains($0) }
     }
@@ -223,6 +226,7 @@ extension PaperMetadata {
         m.fields["volume"] = string("volume")
         m.fields["issue"] = string("issue")
         m.fields["pages"] = string("page")
+        m.fields[ArticleNumber.key] = string("article-number")
         m.fields["publisher"] = string("publisher")
         m.fields["place"] = string("publisher-location")
         m.fields["ISSN"] = (work["ISSN"] as? [String]).map { $0.joined(separator: ", ") }

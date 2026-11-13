@@ -21,6 +21,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 ChromeExtension.offerOnFirstLaunch(in: self.libraryWindow.window)
                 // 새 버전 확인(켤 때 잠시 뒤 한 번, 그 뒤 하루마다). workspace를 고르는 중에는 묻지 않는다.
                 UpdateController.shared.start()
+                // 예전에 저장한 학술지 논문의 논문 번호(한 번만).
+                LibraryStore.shared.fillArticleNumbers()
             }
         }
     }

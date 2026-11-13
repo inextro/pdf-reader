@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.0.4
+
+- New: Journal articles numbered by article instead of by page (ACM Transactions, Elsevier, Springer) get an
+  **Article No.** field. Citations now read "Article 12, 25 pages" (ACM), ", Article 103403" (APA) or "Art. no. 103403"
+  (IEEE) instead of "pp. 103403". PaperLibrary reads the number from Crossref or from the PDF's first page when you
+  save a paper, and fills it once for papers already in your library.
+- Improved: The info panel shows only the fields that belong to each type. Conference papers no longer show empty
+  Volume and Issue rows; journal articles show Pages or Article No.; publisher appears only where it matters. Fields
+  that already have a value always show.
+- Improved: Conference papers that Zotero saved as journal articles (NeurIPS, ICLR and similar) become conference
+  papers.
+- Changed: One DOI field per paper. A preprint uses its arXiv DOI (10.48550/arXiv.…); a published paper uses its
+  publisher DOI. The separate arXiv field is gone from the info panel, columns and search, and searching by DOI also
+  finds arXiv IDs.
+- PaperMark has no visible changes in this version.
+
 ## 1.0.3
 
 - New: PaperLibrary updates itself, like PaperMark. Once a day it checks for a new release and shows what's new.
