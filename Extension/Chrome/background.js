@@ -11,10 +11,10 @@ async function api(path, init = {}) {
   try {
     response = await fetch(API + path, { ...init, headers: { 'X-PaperLibrary': '1', ...(init.headers || {}) } });
   } catch {
-    throw Object.assign(new Error('PaperLibrary is not running.'), { offline: true });
+    throw Object.assign(new Error('Quillo is not running.'), { offline: true });
   }
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.error || `PaperLibrary answered ${response.status}.`);
+  if (!response.ok) throw new Error(body.error || `Quillo answered ${response.status}.`);
   return body;
 }
 

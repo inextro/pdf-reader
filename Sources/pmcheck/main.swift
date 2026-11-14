@@ -569,6 +569,19 @@ check(fetched?.zip(for: "PaperLibrary")?.url == libraryZip && fetched?.zip(for: 
 let unpackedLibrary = try? Updates.unpack(zip: libraryZip, digest: sha256(libraryZip), bundleID: "com.inextro.paperlibrary",
                                           version: "9.9.9", appName: "PaperLibrary")
 check(unpackedLibrary?.lastPathComponent == "PaperLibrary.app", "PaperLibrary zip을 풀어 앱 찾기")
+
+// PaperLibrary → Quillo: 옛 앱의 업데이트는 PaperLibrary.app 자리에 새 앱을 넣는다. 새 앱은 켤 때 Quillo.app으로 옮긴다.
+let renameApps = updateDir.appendingPathComponent("Rename")
+try? FileManager.default.removeItem(at: renameApps)
+try FileManager.default.createDirectory(at: renameApps.appendingPathComponent("PaperLibrary.app/Contents"), withIntermediateDirectories: true)
+let renamed = Updates.rename(renameApps.appendingPathComponent("PaperLibrary.app"), from: "PaperLibrary", to: "Quillo")
+check(renamed?.lastPathComponent == "Quillo.app" && FileManager.default.fileExists(atPath: renameApps.appendingPathComponent("Quillo.app/Contents").path)
+      && !FileManager.default.fileExists(atPath: renameApps.appendingPathComponent("PaperLibrary.app").path), "PaperLibrary.app을 Quillo.app으로 옮기기")
+check(Updates.rename(renameApps.appendingPathComponent("Quillo.app"), from: "PaperLibrary", to: "Quillo") == nil, "이미 Quillo.app이면 그대로")
+try FileManager.default.createDirectory(at: renameApps.appendingPathComponent("PaperLibrary.app/Contents"), withIntermediateDirectories: true)
+check(Updates.rename(renameApps.appendingPathComponent("PaperLibrary.app"), from: "PaperLibrary", to: "Quillo") == nil
+      && FileManager.default.fileExists(atPath: renameApps.appendingPathComponent("PaperLibrary.app").path), "Quillo.app이 이미 있으면 옮기지 않기")
+check(Updates.rename(renameApps.appendingPathComponent("PaperLibrary copy.app"), from: "PaperLibrary", to: "Quillo") == nil, "다른 이름의 앱은 그대로")
 check(fetched?.changes == "- New: something", "패치 노트에서 설치 안내 빼기 (\(fetched?.changes ?? "nil"))")
 
 let unpacked = try? Updates.unpack(zip: goodZip, digest: sha256(goodZip), bundleID: "com.inextro.papermark", version: "9.9.9")
@@ -716,6 +729,18 @@ check(backup?.items.count == 3 && backup?.deleted.count == 1 && backup?.collecti
       && backup?.collections.first { $0.name == "CNN" }?.parent == vision?.key
       && backupConvnet?.collections == [cnn?.key ?? ""] && backupConvnet?.notes == ["<p>Accepted at CVPR</p>"],
       "JSON 백업은 key로 서로를 가리킨다")
+check(backupURL.lastPathComponent == "Quillo.json", "백업 파일 이름은 Quillo.json")
+// 이름을 바꾸기 전의 PaperLibrary.json만 있으면 Quillo.json으로 옮겨 쓴다. 둘 다 있으면 옛 파일은 두고 새 파일만 쓴다.
+let renameDir = libDir.appendingPathComponent("backup-rename")
+try FileManager.default.createDirectory(at: renameDir, withIntermediateDirectories: true)
+try Data("old".utf8).write(to: renameDir.appendingPathComponent("PaperLibrary.json"))
+_ = try LibraryBackup.write(library, to: renameDir)
+check(!FileManager.default.fileExists(atPath: renameDir.appendingPathComponent("PaperLibrary.json").path)
+      && FileManager.default.fileExists(atPath: renameDir.appendingPathComponent("Quillo.json").path), "옛 백업 PaperLibrary.json을 Quillo.json으로 옮기기")
+try Data("old".utf8).write(to: renameDir.appendingPathComponent("PaperLibrary.json"))
+_ = try LibraryBackup.write(library, to: renameDir)
+check((try? Data(contentsOf: renameDir.appendingPathComponent("PaperLibrary.json"))) == Data("old".utf8),
+      "새 백업이 있으면 옛 백업은 건드리지 않기")
 
 // 실제 Zotero 라이브러리(있을 때만): 임시 DB로 가져와 개수와 PDF 경로 확인
 if FileManager.default.fileExists(atPath: ZoteroImport.defaultDatabase.path), let base = ZoteroImport.attachmentBase() {

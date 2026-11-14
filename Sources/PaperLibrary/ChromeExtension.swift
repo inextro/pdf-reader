@@ -30,7 +30,7 @@ enum ChromeExtension {
     static func announceUpdate(in window: NSWindow?) {
         let alert = NSAlert()
         alert.messageText = "The Chrome extension was updated"
-        alert.informativeText = "Open chrome://extensions and click Reload (↻) on Save to PaperLibrary to start using the new version."
+        alert.informativeText = "Open chrome://extensions and click Reload (↻) on Save to Quillo to start using the new version."
         alert.addButton(withTitle: "Open Chrome Extensions")
         alert.addButton(withTitle: "Later")
         let run = { (response: NSApplication.ModalResponse) in
@@ -47,8 +47,8 @@ enum ChromeExtension {
         UserDefaults.standard.set(true, forKey: key)
         let alert = NSAlert()
         alert.messageText = "Save papers from Chrome?"
-        alert.informativeText = "The Save to PaperLibrary extension adds the paper on the page you are reading, with its PDF, in one click. "
-            + "You can also install it later from PaperLibrary > Install Chrome Extension…."
+        alert.informativeText = "The Save to Quillo extension adds the paper on the page you are reading, with its PDF, in one click. "
+            + "You can also install it later from Quillo > Install Chrome Extension…."
         alert.addButton(withTitle: "Install Chrome Extension…")
         alert.addButton(withTitle: "Not Now")
         let run = { (response: NSApplication.ModalResponse) in
@@ -57,10 +57,10 @@ enum ChromeExtension {
         if let window { alert.beginSheetModal(for: window, completionHandler: run) } else { run(alert.runModal()) }
     }
 
-    /// PaperLibrary > Install Chrome Extension…: 복사하고 불러오는 방법을 안내한다.
+    /// Quillo > Install Chrome Extension…: 복사하고 불러오는 방법을 안내한다.
     static func install(in window: NSWindow?) {
         guard let bundled = bundledURL else {
-            NSApp.presentError(CocoaError(.fileNoSuchFile, userInfo: [NSLocalizedDescriptionKey: "This copy of PaperLibrary does not include the Chrome extension."]))
+            NSApp.presentError(CocoaError(.fileNoSuchFile, userInfo: [NSLocalizedDescriptionKey: "This copy of Quillo does not include the Chrome extension."]))
             return
         }
         do { try copy(from: bundled) } catch { NSApp.presentError(error); return }
@@ -72,9 +72,9 @@ enum ChromeExtension {
         alert.informativeText = """
             1. Click Open Chrome Extensions, then turn on Developer mode (top right).
             2. Click Load unpacked and choose the ChromeExtension folder. Its path is on the clipboard: press ⌘⇧G in the dialog and paste.
-            3. Pin “Save to PaperLibrary” from the puzzle icon.
+            3. Pin “Save to Quillo” from the puzzle icon.
 
-            Keep PaperLibrary running while you save papers. After PaperLibrary updates, click Reload on the extension in Chrome.
+            Keep Quillo running while you save papers. After Quillo updates, click Reload on the extension in Chrome.
             """
         alert.addButton(withTitle: "Open Chrome Extensions")
         alert.addButton(withTitle: "Show Folder")

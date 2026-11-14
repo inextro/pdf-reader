@@ -11,7 +11,7 @@ let collectionsLoaded = false;
 async function api(path, init = {}) {
   const response = await fetch(API + path, { ...init, headers: { 'X-PaperLibrary': '1', ...(init.headers || {}) } });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.error || `PaperLibrary answered ${response.status}.`);
+  if (!response.ok) throw new Error(body.error || `Quillo answered ${response.status}.`);
   return body;
 }
 
@@ -24,8 +24,8 @@ function render(state) {
   $('log').hidden = true;
   $('open').hidden = !(state.phase === 'error' && state.offline);
   if (state.phase === 'error') {
-    setStatus(state.offline ? 'PaperLibrary is not running.' : state.message, 'error');
-    if (state.offline) $('warnings').replaceChildren(listItem('Open PaperLibrary, then click the extension again.'));
+    setStatus(state.offline ? 'Quillo is not running.' : state.message, 'error');
+    if (state.offline) $('warnings').replaceChildren(listItem('Open Quillo, then click the extension again.'));
     return;
   }
   if (state.item) showItem(state.item);
@@ -44,7 +44,7 @@ function render(state) {
     if (state.item) setPDF(state.step, '');
     return;
   }
-  setStatus('Saved to PaperLibrary', 'ok');
+  setStatus('Saved to Quillo', 'ok');
   if (state.pdf === 'attached') setPDF(state.item.file ? `PDF saved as “${state.item.file}”` : 'PDF attached', 'ok');
   else if (state.pdf === 'failed') setPDF('The PDF could not be downloaded. Open the PDF in this tab and click the extension again.', 'warn');
   else setPDF('No PDF found on this page.', 'warn');

@@ -10,7 +10,7 @@ enum PaperMark {
         guard let app = appURL else {
             let alert = NSAlert()
             alert.messageText = "PaperMark is not installed."
-            alert.informativeText = "PaperLibrary opens PDFs in PaperMark. Open this PDF in the default app instead?"
+            alert.informativeText = "Quillo opens PDFs in PaperMark. Open this PDF in the default app instead?"
             alert.addButton(withTitle: "Open in Default App")
             alert.addButton(withTitle: "Cancel")
             let handler = { (response: NSApplication.ModalResponse) in

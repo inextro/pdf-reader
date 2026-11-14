@@ -34,7 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let again = { DispatchQueue.main.async { self.requireWorkspace(then: next) } }
         let alert = NSAlert()
         alert.messageText = "Choose your workspace folder"
-        alert.informativeText = "PaperLibrary keeps your papers in a folder you choose, for example in Google Drive. "
+        alert.informativeText = "Quillo keeps your papers in a folder you choose, for example in Google Drive. "
             + "Each collection is a folder inside it, and PDFs are saved there.\n\n"
             + "Choose a folder to start, or import your Zotero library (its PDF folder becomes the workspace)."
         alert.addButton(withTitle: "Choose Folder…")
@@ -64,7 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// `paperlibrary://`: 확장 팝업의 "Open PaperLibrary" 버튼이 앱을 켤 때 쓴다.
+    /// `paperlibrary://`: 확장 팝업의 "Open Quillo" 버튼이 앱을 켤 때 쓴다.
     func application(_ application: NSApplication, open urls: [URL]) {
         showLibrary(nil)
     }
@@ -113,20 +113,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func makeMainMenu() -> NSMenu {
         let main = NSMenu()
 
-        let app = submenu(of: main, title: "PaperLibrary")
-        app.addItem(withTitle: "About PaperLibrary", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        let app = submenu(of: main, title: "Quillo")
+        app.addItem(withTitle: "About Quillo", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         app.addItem(.separator())
         app.addItem(withTitle: "Check for Updates…", action: #selector(UpdateController.checkForUpdates(_:)), keyEquivalent: "")
             .target = MainActor.assumeIsolated { UpdateController.shared }
         app.addItem(withTitle: "Settings…", action: #selector(showSettings(_:)), keyEquivalent: ",").target = self
         app.addItem(withTitle: "Install Chrome Extension…", action: #selector(installChromeExtension(_:)), keyEquivalent: "").target = self
         app.addItem(.separator())
-        app.addItem(withTitle: "Hide PaperLibrary", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        app.addItem(withTitle: "Hide Quillo", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         app.addItem(withTitle: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
             .keyEquivalentModifierMask = [.command, .option]
         app.addItem(withTitle: "Show All", action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")
         app.addItem(.separator())
-        app.addItem(withTitle: "Quit PaperLibrary", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        app.addItem(withTitle: "Quit Quillo", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
         let file = submenu(of: main, title: "File")
         file.addItem(withTitle: "Add by Identifier…", action: #selector(addByIdentifier(_:)), keyEquivalent: "N").target = self

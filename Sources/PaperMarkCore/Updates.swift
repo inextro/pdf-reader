@@ -37,7 +37,7 @@ public enum Updates {
         /// release.sh가 올리는 PaperMark-<버전>.zip
         public var zip: Asset? { zip(for: "PaperMark") }
 
-        /// release.sh가 올리는 <앱 이름>-<버전>.zip(PaperMark, PaperLibrary)
+        /// release.sh가 올리는 <앱 이름>-<버전>.zip(PaperMark, Quillo)
         public func zip(for appName: String) -> Asset? { assets.first { $0.name == "\(appName)-\(version).zip" } }
 
         /// 설명 끝의 설치 안내("---" 아래)는 앱 안에서는 필요 없어서 뺀다.
@@ -111,6 +111,17 @@ public enum Updates {
         guard info["CFBundleIdentifier"] as? String == bundleID else { throw UpdateError.notTheApp("bundle ID") }
         guard info["CFBundleShortVersionString"] as? String == version else { throw UpdateError.notTheApp("version") }
         return app
+    }
+
+    /// 앱 이름이 바뀐 뒤, 옛 이름의 번들(예: PaperLibrary.app)을 새 이름(Quillo.app)으로 옮긴다.
+    /// 옛 앱의 업데이트는 설치된 파일 자리에 새 앱을 넣으므로 파일 이름이 그대로 남기 때문이다.
+    /// 옮겼으면 새 위치를 돌려준다. 파일 이름이 옛 이름이 아니거나, 같은 이름의 앱이 이미 있거나, 옮기지 못하면 nil.
+    public static func rename(_ bundle: URL, from oldName: String, to appName: String) -> URL? {
+        guard bundle.lastPathComponent == "\(oldName).app", oldName != appName else { return nil }
+        let target = bundle.deletingLastPathComponent().appendingPathComponent("\(appName).app")
+        guard !FileManager.default.fileExists(atPath: target.path) else { return nil }
+        do { try FileManager.default.moveItem(at: bundle, to: target) } catch { return nil }
+        return target
     }
 
     /// 실행 중인 앱 자리에 새 앱을 넣는다. 이미 떠 있는 프로세스는 옛 파일로 계속 돌고, 다시 실행하면 새 앱이 뜬다.

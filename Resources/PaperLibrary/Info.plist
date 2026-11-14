@@ -5,9 +5,9 @@
 	<key>CFBundleIdentifier</key>
 	<string>com.inextro.paperlibrary</string>
 	<key>CFBundleName</key>
-	<string>PaperLibrary</string>
+	<string>Quillo</string>
 	<key>CFBundleDisplayName</key>
-	<string>PaperLibrary</string>
+	<string>Quillo</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<key>CFBundleExecutable</key>

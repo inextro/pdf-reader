@@ -1,7 +1,7 @@
-# PaperMark and PaperLibrary
+# PaperMark and Quillo
 
 **Free, open-source Mac apps for reading and keeping papers.** PaperMark is a PDF reader that lets you highlight
-in any color you like. PaperLibrary is a paper library, a lighter Zotero, that saves papers from Chrome and opens
+in any color you like. Quillo is a paper library, a lighter Zotero, that saves papers from Chrome and opens
 them in PaperMark.
 
 ## PaperMark
@@ -10,8 +10,8 @@ PaperMark is a small, native Mac app for reading and marking up papers. Drag ove
 highlighted in your current color. Your highlights are saved into the PDF itself as standard
 annotations, so they show up in PDF Expert on iPad and in other PDF readers too.
 
-It comes with **PaperLibrary**, a companion app that keeps your papers' bibliographic data, collections, and tags,
-and opens each paper in PaperMark. See [PaperLibrary](#paperlibrary) below.
+It comes with **Quillo**, a companion app that keeps your papers' bibliographic data, collections, and tags,
+and opens each paper in PaperMark. See [Quillo](#quillo) below.
 
 ## Why
 
@@ -63,16 +63,16 @@ palette, then keep going on another device.
   **Install and Relaunch** to update in place, or use **PaperMark → Check for Updates…** any time. Turn off the
   daily check in Settings (`⌘,`).
 
-## PaperLibrary
+## Quillo
 
-PaperLibrary is a paper library app, built as a lighter replacement for Zotero. It keeps the bibliographic data
+Quillo (called PaperLibrary up to version 1.0.4) is a paper library app, built as a lighter replacement for Zotero. It keeps the bibliographic data
 in a local database and leaves the PDFs as plain files in a folder you choose (for example in Google Drive).
 Double-click a paper to read it in PaperMark.
 
 - **Collections are folders.** Your workspace is a folder, and each collection is a folder inside it. A paper
   lives in one folder with its PDF, and can also appear in other collections as a reference (`⌥`-drag or
   **Add Reference**). Changes you make in Finder show up in the library.
-- **Save from Chrome.** The **Save to PaperLibrary** extension adds the paper on the current page, with its PDF, to the
+- **Save from Chrome.** The **Save to Quillo** extension adds the paper on the current page, with its PDF, to the
   collection selected in the sidebar. It reads the page's metadata and fills in the rest from CrossRef and arXiv.
   If the paper is already in the library, it asks before updating it.
 - **Add by DOI or arXiv ID** (`⇧⌘N`).
@@ -83,13 +83,13 @@ Double-click a paper to read it in PaperMark.
 - **Fix metadata in place.** Click any field in the info panel to edit it, like in Zotero. Fields you edit are
   remembered and not overwritten when the paper is saved again from the browser.
 - **Copy citations** in APA, ACM, or IEEE style (`⇧⌘C`), or copy the citation key or DOI.
-- **Backup.** The library is also written as `PaperLibrary.json` in your workspace folder.
+- **Backup.** The library is also written as `Quillo.json` in your workspace folder.
 - **Updates itself**, like PaperMark: once a day it checks for a new release, and **Install and Relaunch** updates it
-  in place. Use **PaperLibrary → Check for Updates…** any time, or turn off the daily check in Settings (`⌘,`). When
-  an update changes the Chrome extension, PaperLibrary asks you to click **Reload** on it in Chrome.
+  in place. Use **Quillo → Check for Updates…** any time, or turn off the daily check in Settings (`⌘,`). When
+  an update changes the Chrome extension, Quillo asks you to click **Reload** on it in Chrome.
 
-To install the Chrome extension, choose **PaperLibrary → Install Chrome Extension…** and follow the steps. The
-extension is not in the Chrome Web Store; it is loaded unpacked from a folder PaperLibrary keeps up to date.
+To install the Chrome extension, choose **Quillo → Install Chrome Extension…** and follow the steps. The
+extension is not in the Chrome Web Store; it is loaded unpacked from a folder Quillo keeps up to date.
 
 ## Release notes
 
@@ -111,16 +111,16 @@ you have no unsaved edits, PaperMark reloads it.
 Requires macOS 14 (Sonoma) or later. Runs natively on Apple Silicon and Intel Macs.
 
 1. Download `PaperMark-<version>.zip` from the [latest release](https://github.com/inextro/pdf-reader/releases/latest).
-   For the library app, also download `PaperLibrary-<version>.zip`.
-2. Unzip it and move `PaperMark.app` (and `PaperLibrary.app`) to your Applications folder.
+   For the library app, also download `Quillo-<version>.zip`.
+2. Unzip it and move `PaperMark.app` (and `Quillo.app`) to your Applications folder.
 3. The apps are not notarized by Apple, so macOS blocks them the first time. Open each one once, then go to
    **System Settings → Privacy & Security** and click **Open Anyway**.
    Alternatively, run `xattr -dr com.apple.quarantine /Applications/PaperMark.app` in Terminal.
-4. For PaperLibrary's Chrome extension, choose **PaperLibrary → Install Chrome Extension…** and follow the steps.
+4. For Quillo's Chrome extension, choose **Quillo → Install Chrome Extension…** and follow the steps.
 
 ### Install with a coding agent
 
-If you use Claude Code or another coding agent, you can ask it to "install PaperMark and PaperLibrary from
+If you use Claude Code or another coding agent, you can ask it to "install PaperMark and Quillo from
 github.com/inextro/pdf-reader". These are the steps for the agent. They need only the macOS command line tools
 (`curl`, `ditto`), not `gh`.
 
@@ -128,7 +128,7 @@ github.com/inextro/pdf-reader". These are the steps for the agent. They need onl
 # 1. Download the latest release and unzip it into a new, empty folder.
 DIR="$(mktemp -d)"
 cd "$DIR"
-for app in PaperMark PaperLibrary; do
+for app in PaperMark Quillo; do
   url="$(curl -fsSL https://api.github.com/repos/inextro/pdf-reader/releases/latest \
     | grep -o "https://[^\"]*/$app-[0-9.]*\.zip" | head -1)"
   curl -fsSL -o "$app.zip" "$url"
@@ -136,41 +136,42 @@ for app in PaperMark PaperLibrary; do
 done
 
 # 2. Quit running copies, then move the apps to /Applications (replacing older versions).
-osascript -e 'tell application "PaperLibrary" to quit' -e 'tell application "PaperMark" to quit' 2>/dev/null
-for app in PaperMark PaperLibrary; do
+osascript -e 'tell application id "com.inextro.paperlibrary" to quit' -e 'tell application "PaperMark" to quit' 2>/dev/null
+rm -rf /Applications/PaperLibrary.app  # Quillo's name up to 1.0.4
+for app in PaperMark Quillo; do
   rm -rf "/Applications/$app.app"
   ditto "$app.app" "/Applications/$app.app"
   xattr -dr com.apple.quarantine "/Applications/$app.app" 2>/dev/null || true
 done
 
-# 3. Put the Chrome extension where PaperLibrary keeps it up to date.
+# 3. Put the Chrome extension where Quillo keeps it up to date.
 EXT="$HOME/Library/Application Support/PaperLibrary/ChromeExtension"
 mkdir -p "$(dirname "$EXT")"
 rm -rf "$EXT"
-ditto /Applications/PaperLibrary.app/Contents/Resources/ChromeExtension "$EXT"
-open -g /Applications/PaperLibrary.app
+ditto /Applications/Quillo.app/Contents/Resources/ChromeExtension "$EXT"
+open -g /Applications/Quillo.app
 ```
 
 The agent can't load the Chrome extension for you, so do this once by hand. Open `chrome://extensions`, turn on
 **Developer mode** (top right), click **Load unpacked**, and choose
 `~/Library/Application Support/PaperLibrary/ChromeExtension` (press `⌘⇧G` in the dialog and paste the path).
-Then pin **Save to PaperLibrary** from the puzzle icon.
+Then pin **Save to Quillo** from the puzzle icon.
 
-When PaperLibrary opens for the first time, it asks you to choose your workspace folder or import your Zotero
-library. You can't use PaperLibrary until you do one of these. PaperMark asks once whether to become your
+When Quillo opens for the first time, it asks you to choose your workspace folder or import your Zotero
+library. You can't use Quillo until you do one of these. PaperMark asks once whether to become your
 default PDF app. From version 1.0.3, both apps update themselves from inside the app. If you installed PaperLibrary
-1.0.2 or earlier, run the same steps once more to get 1.0.3.
+1.0.2 or earlier, run the same steps once more. PaperLibrary 1.0.3 and 1.0.4 update to Quillo by themselves.
 
 ### Default PDF app
 
-If you use PaperLibrary, PaperMark asks once whether to become your default PDF app. If you agree, PDFs inside
-your PaperLibrary workspace open in PaperMark, and every other PDF opens in Preview. This is handy for
+If you use Quillo, PaperMark asks once whether to become your default PDF app. If you agree, PDFs inside
+your Quillo workspace open in PaperMark, and every other PDF opens in Preview. This is handy for
 launchers like Raycast or Alfred, which always use the system default app. Change it later with
 **PaperMark → Default PDF App…**.
 
 This replaces the separate PDFRouter app, which you can delete.
 
-Without PaperLibrary, make PaperMark the default PDF app the usual way: select a PDF in Finder, press `⌘I`,
+Without Quillo, make PaperMark the default PDF app the usual way: select a PDF in Finder, press `⌘I`,
 choose PaperMark under **Open with**, and click **Change All…**.
 
 ## Keyboard shortcuts
@@ -205,7 +206,7 @@ Mouse:
 - There is no annotation-level merge. If you edit the same file on two devices before the sync
   finishes, the sync service decides which version wins (Google Drive keeps both as a conflict copy).
 - macOS only. On iPad, use any reader that supports standard PDF annotations.
-- When PaperMark is the default PDF app with a PaperLibrary workspace, a PDF outside the workspace goes to
+- When PaperMark is the default PDF app with a Quillo workspace, a PDF outside the workspace goes to
   Preview even if you choose **Open With → PaperMark** in Finder. Open it from PaperMark's **File → Open…** instead.
 
 ## Build from source
@@ -216,7 +217,7 @@ Needs the Xcode Command Line Tools (`xcode-select --install`). Full Xcode is not
 ./scripts/build-app.sh                  # build/PaperMark.app (universal)
 ./scripts/build-app.sh --install        # also copy it to ~/Applications
 ./scripts/build-app.sh --zip            # also create build/PaperMark-<version>.zip
-./scripts/build-app.sh --library        # build/PaperLibrary.app (takes the same --install and --zip)
+./scripts/build-app.sh --library        # build/Quillo.app (takes the same --install and --zip)
 ./scripts/build-app.sh --dev --install  # quick arm64 debug build for trying changes
 swift run pmcheck /tmp/pmcheck          # run the annotation round-trip checks
 swift scripts/make-icon.swift .         # redraw Resources/AppIcon.icns
@@ -235,10 +236,10 @@ The code is Swift and PDFKit, organized as:
 - `Sources/PaperMarkLibrary`: the paper library (SQLite database, Zotero import, JSON backup).
   No UI either, so `pmcheck` tests it, including an import of `~/Zotero/zotero.sqlite` into a temporary database when it exists.
 - `Sources/PaperMark`: the app (document, window, toolbar, palette, settings).
-- `Sources/PaperLibrary`: the PaperLibrary app (library window, info panel, workspace sync, and the local server
-  the Chrome extension talks to). It opens PDFs in PaperMark.
-- `Extension/Chrome`: the "Save to PaperLibrary" Chrome extension. `build-app.sh --library` puts it inside
-  PaperLibrary.app.
+- `Sources/PaperLibrary`: the Quillo app (library window, info panel, workspace sync, and the local server
+  the Chrome extension talks to). The target, its executable, and its bundle ID keep the old name PaperLibrary. It opens PDFs in PaperMark.
+- `Extension/Chrome`: the "Save to Quillo" Chrome extension. `build-app.sh --library` puts it inside
+  Quillo.app.
 - `Sources/pmcheck`: a command-line check that creates PDFs, annotates them, saves, and reloads.
 
 ## License

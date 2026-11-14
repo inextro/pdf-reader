@@ -59,7 +59,7 @@ final class Connector {
         do {
             switch (request.method, request.path) {
             case ("GET", "/ping"):
-                return .json(["app": "PaperLibrary", "version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] ?? "dev"])
+                return .json(["app": "Quillo", "version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] ?? "dev"])
             case ("GET", "/collections"):
                 return .json(["collections": collectionList(), "selected": LibraryStore.shared.selectedCollection.map { $0 as Any } ?? NSNull()])
             case ("POST", "/save"):
@@ -135,7 +135,7 @@ final class Connector {
         }
         store.didModify()
         guard let entry = store.items.first(where: { $0.id == id }) else { throw Failure(status: 500, message: "The paper was not saved.") }
-        if Settings.pdfFolder == nil { warnings.append("Choose a folder for new PDFs in PaperLibrary Settings.") }
+        if Settings.pdfFolder == nil { warnings.append("Choose a folder for new PDFs in Quillo Settings.") }
         var json = itemJSON(entry)
         json["existing"] = false
         json["collection"] = target.map { $0 as Any } ?? NSNull()
@@ -155,7 +155,7 @@ final class Connector {
             throw Failure(status: 404, message: "The paper is no longer in the library.")
         }
         guard request.body.starts(with: Data("%PDF-".utf8)) else { throw Failure(message: "The downloaded file is not a PDF.") }
-        guard let pdfFolder = Settings.pdfFolder else { throw Failure(message: "Choose a folder for new PDFs in PaperLibrary Settings.") }
+        guard let pdfFolder = Settings.pdfFolder else { throw Failure(message: "Choose a folder for new PDFs in Quillo Settings.") }
 
         // PDF만 보고 저장한 경우(PDF 탭): 첫 페이지의 DOI·arXiv 번호로 서지 정보를 다시 채운다.
         if entry.doi == nil && entry.arxivID == nil, let found = Self.identify(request.body) {
@@ -243,8 +243,8 @@ final class Connector {
     @MainActor
     private func openLibrary() throws -> Library {
         let store = LibraryStore.shared
-        guard !store.isImporting else { throw Failure(status: 409, message: "PaperLibrary is importing from Zotero. Try again shortly.") }
-        guard store.folder != nil else { throw Failure(status: 409, message: "Open PaperLibrary and choose your workspace folder first.") }
+        guard !store.isImporting else { throw Failure(status: 409, message: "Quillo is importing from Zotero. Try again shortly.") }
+        guard store.folder != nil else { throw Failure(status: 409, message: "Open Quillo and choose your workspace folder first.") }
         guard let library = store.library else {
             throw Failure(status: 500, message: "The library could not be opened: \(store.loadError?.localizedDescription ?? "")")
         }

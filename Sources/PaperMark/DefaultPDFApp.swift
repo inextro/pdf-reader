@@ -51,8 +51,8 @@ enum DefaultPDFApp {
         alert.messageText = isDefault ? "PaperMark is your default PDF app." : "Use PaperMark as your default PDF app?"
         let folder = PDFRouting.workspaceFolder().map { ($0.path as NSString).abbreviatingWithTildeInPath }
         alert.informativeText = folder.map {
-            "PDFs inside your PaperLibrary workspace (\($0)) will open in PaperMark. Every other PDF will open in Preview."
-        } ?? "Set a workspace in PaperLibrary first. Until then, every PDF will open in Preview."
+            "PDFs inside your Quillo workspace (\($0)) will open in PaperMark. Every other PDF will open in Preview."
+        } ?? "Set a workspace in Quillo first. Until then, every PDF will open in Preview."
         if isDefault {
             alert.addButton(withTitle: "OK")
             alert.addButton(withTitle: "Use Preview Instead")

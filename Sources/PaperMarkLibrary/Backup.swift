@@ -3,7 +3,9 @@ import Foundation
 /// 라이브러리 전체를 JSON 하나로 내보낸다(Drive의 라이브러리 폴더에 두는 백업).
 /// 다른 기기의 DB에서도 그대로 읽히도록 내부 id 대신 key로 서로를 가리킨다.
 public enum LibraryBackup {
-    public static let fileName = "PaperLibrary.json"
+    public static let fileName = "Quillo.json"
+    /// 앱 이름이 PaperLibrary였을 때의 백업 파일. 남아 있으면 새 이름으로 옮겨 쓴다.
+    public static let oldFileName = "PaperLibrary.json"
 
     public struct File: Codable, Equatable {
         public var version = 1
@@ -61,6 +63,10 @@ public enum LibraryBackup {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         let url = folder.appendingPathComponent(fileName)
+        let old = folder.appendingPathComponent(oldFileName)
+        let files = FileManager.default
+        // 새 파일이 아직 없을 때만 옮긴다. 둘 다 있으면 다른 기기의 옛 버전이 쓰는 것이므로 그대로 둔다.
+        if files.fileExists(atPath: old.path), !files.fileExists(atPath: url.path) { try? files.moveItem(at: old, to: url) }
         try encoder.encode(make(from: library)).write(to: url, options: .atomic)
         return url
     }

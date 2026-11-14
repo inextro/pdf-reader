@@ -3,12 +3,12 @@ import PaperMarkCore
 
 /// 새 버전 알림과 설치. 앱을 켤 때와 그 뒤 하루마다 GitHub 최신 릴리스를 확인하고,
 /// 새 버전이 있으면 패치 노트와 함께 묻는다. Install을 누르면 zip을 받아 앱을 바꾸고 다시 실행한다.
-/// PaperMark와 PaperLibrary가 같이 쓴다. 같은 릴리스에서 각자 <앱 이름>-<버전>.zip을 받는다.
+/// PaperMark와 Quillo가 같이 쓴다. 같은 릴리스에서 각자 <앱 이름>-<버전>.zip을 받는다.
 @MainActor
 public final class UpdateController: NSObject {
     public static let shared = UpdateController()
 
-    /// 번들 이름(PaperMark, PaperLibrary). 릴리스의 zip 이름과 zip 안의 앱 이름이 이것이다.
+    /// 번들 이름(PaperMark, Quillo). 릴리스의 zip 이름과 zip 안의 앱 이름이 이것이다.
     private let appName = Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "PaperMark"
 
     private static let autoCheckKey = "checksForUpdates", lastCheckKey = "lastUpdateCheck", skippedKey = "skippedVersion"
@@ -158,12 +158,27 @@ public final class UpdateController: NSObject {
 
     /// 이 프로세스가 끝나기를 기다렸다가 새 앱을 여는 셸을 띄우고 끝낸다. 대기 중인 저장은 문서가 끝낼 때 마친다.
     private func relaunch(_ app: URL) {
+        Self.openAfterExit(app)
+        NSApp.terminate(nil)
+    }
+
+    nonisolated private static func openAfterExit(_ app: URL) {
         let shell = Process()
         shell.executableURL = URL(fileURLWithPath: "/bin/sh")
         shell.arguments = ["-c", "while kill -0 \(ProcessInfo.processInfo.processIdentifier) 2>/dev/null; do sleep 0.2; done; open \"$0\"",
                            app.path]
         try? shell.run()
-        NSApp.terminate(nil)
+    }
+
+    /// 앱 이름이 바뀐 뒤 처음 켤 때 옛 이름의 앱 파일(예: PaperLibrary.app)을 지금 이름으로 옮기고 거기서 다시 켠다.
+    /// 옛 버전의 업데이트는 설치된 파일 자리에 새 앱을 넣어서 파일 이름이 그대로 남기 때문이다.
+    /// 번들 안의 파일을 읽기 전에 옮겨야 하므로 NSApplication.run() 앞에서 부른다. 옮기지 못하면 그대로 켠다.
+    nonisolated public static func adoptCurrentName(from oldName: String) {
+        guard let appName = Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String,
+              let moved = Updates.rename(Bundle.main.bundleURL, from: oldName, to: appName) else { return }
+        LSRegisterURL(moved as CFURL, true)
+        openAfterExit(moved)
+        exit(0)
     }
 
     private func inform(_ title: String, _ text: String) {

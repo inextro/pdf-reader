@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.5
+
+- Changed: PaperLibrary is now called **Quillo**. Your library, settings, and workspace stay as they are. When
+  PaperLibrary updates itself to this version, it renames its app file to `Quillo.app` on first launch. The backup
+  in your workspace folder is now `Quillo.json` (the old `PaperLibrary.json` is renamed).
+- Changed: The Chrome extension is now **Save to Quillo**. Quillo asks you to click **Reload** on it in Chrome.
+- PaperMark has no visible changes in this version.
+
 ## 1.0.4
 
 - New: Journal articles numbered by article instead of by page (ACM Transactions, Elsevier, Springer) get an

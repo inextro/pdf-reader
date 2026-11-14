@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
-  "name": "Save to PaperLibrary",
+  "name": "Save to Quillo",
   "version": "1.0.0",
-  "description": "Save the paper on this page, with its PDF, to PaperLibrary.",
+  "description": "Save the paper on this page, with its PDF, to Quillo.",
   "action": {
-    "default_title": "Save to PaperLibrary",
+    "default_title": "Save to Quillo",
     "default_popup": "popup.html",
     "default_icon": { "16": "icons/icon-16.png", "32": "icons/icon-32.png" }
   },

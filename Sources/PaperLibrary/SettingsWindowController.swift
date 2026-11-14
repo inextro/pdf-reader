@@ -2,7 +2,7 @@ import AppKit
 import AppUpdater
 import PaperMarkLibrary
 
-/// PaperLibrary > Settings…(⌘,). 브라우저 확장으로 논문을 넣을 때 서지 정보를 채우는 방식과 PDF 저장 위치를 고른다.
+/// Quillo > Settings…(⌘,). 브라우저 확장으로 논문을 넣을 때 서지 정보를 채우는 방식과 PDF 저장 위치를 고른다.
 final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
     private let libraryFolderLabel = NSTextField(labelWithString: "")
     private let pdfFolderLabel = NSTextField(labelWithString: "")
@@ -41,7 +41,7 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
     init() {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 420),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        window.title = "PaperLibrary Settings"
+        window.title = "Quillo Settings"
         window.isReleasedWhenClosed = false
         super.init(window: window)
 
