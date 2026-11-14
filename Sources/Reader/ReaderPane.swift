@@ -21,7 +21,8 @@ private final class HighlightAction: NSObject {
     }
 }
 
-final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSWindowDelegate, NSMenuItemValidation {
+/// PDF 탭 하나: 왼쪽 목차 사이드바, 오른쪽 PDF, 형광펜 툴바. Quillo 창(TabbedWindowController)에 탭으로 붙는다.
+final class ReaderPane: Pane, NSToolbarDelegate, NSMenuItemValidation {
     private let pdfView = ReaderPDFView()
     private var splitController: NSSplitViewController!
     private var sidebarContent: SidebarViewController!
@@ -51,29 +52,15 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
     // 다시 열 때 갈 마지막 페이지. 이동하기 전까지는 페이지 변경을 기록하지 않는다(처음 그릴 때 0쪽으로 덮어쓰지 않게).
     private var pageToRestore: Int?
 
-    private var pmDocument: PMDocument? { document as? PMDocument }
+    let pmDocument: PMDocument
+    /// 탭이 보일 때만 창이 있다. 다른 탭이 앞에 있으면 nil.
+    private var window: NSWindow? { viewIfLoaded?.window }
+    private var didLayOutOnce = false
 
     init(document: PMDocument) {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 980, height: 1180),
-                              // fullSizeContentView: PDF가 반투명 툴바 아래까지 깔려서 스크롤하면 툴바 뒤로 비친다.
-                              styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
-                              backing: .buffered, defer: false)
-        window.minSize = NSSize(width: 520, height: 400)
-        // 다시 열 파일과 페이지는 Session이 맡는다. 시스템 창 복원까지 켜 두면 지난 창이 먼저 살아나서
-        // 앱 시작 흐름(작업 폴더 탭, 직전 파일 열기)을 건너뛰게 된다.
-        window.isRestorable = false
-        // 시스템 설정("문서를 열 때 탭 사용")과 관계없이 새 PDF는 항상 지금 창의 탭으로 연다.
-        window.tabbingMode = .preferred
-        window.toolbarStyle = .expanded   // 제목 표시줄(파일 이름) 아래에 툴바를 따로 둔다
-        super.init(window: window)
-        window.delegate = self
-        // 저장된 창 크기가 없으면(첫 실행) 화면의 쓸 수 있는 영역 높이에 맞춰 연다.
-        if !window.setFrameUsingName("PaperMarkDocumentWindow"), let visible = NSScreen.main?.visibleFrame {
-            let size = NSSize(width: min(980, visible.width), height: visible.height)
-            window.setFrame(NSRect(origin: NSPoint(x: visible.midX - size.width / 2, y: visible.minY), size: size),
-                            display: false)
-        }
-        window.setFrameAutosaveName("PaperMarkDocumentWindow")
+        pmDocument = document
+        super.init(nibName: nil, bundle: nil)
+        title = document.displayName
 
         pdfView.autoScales = true
         pdfView.displayMode = .singlePageContinuous
@@ -82,12 +69,8 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
         pageToRestore = document.fileURL.flatMap(Session.lastPage(of:))
         pdfView.highlightMenuItems = { [weak self] in self?.menuItems(for: $0) ?? [] }
         pdfView.selectionMenuItems = { [weak self] in self?.selectionMenuItems() ?? [] }
-        // contentViewController로 넣으면 창이 내용의 fitting size(최소 크기)로 줄어들어서 뷰만 붙인다.
         splitController = makeSplitViewController(fileURL: document.fileURL)
-        window.contentView = splitController.view
-        applyDefaultSidebarWidth()
-        // 새 탭에서는 사이드바(파일 트리)가 접혀 있으면 안 된다.
-        if document.fileURL == nil { splitController.splitViewItems.first?.isCollapsed = false }
+        addChild(splitController)
 
         modeButton.setButtonType(.pushOnPushOff)
         modeButton.bezelStyle = .toolbar
@@ -105,7 +88,7 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
         let toolbar = NSToolbar(identifier: "PaperMarkToolbar")
         toolbar.delegate = self
         toolbar.displayMode = .iconOnly
-        window.toolbar = toolbar
+        self.toolbar = toolbar
 
         NotificationCenter.default.addObserver(self, selector: #selector(colorStoreChanged),
                                                name: ColorStore.didChange, object: nil)
@@ -124,19 +107,69 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
-    /// 왼쪽은 사이드바(목차 또는 파일 트리, ⌘B로 접기), 오른쪽은 PDF.
+    override func loadView() {
+        // 분할 뷰를 감싸는 뷰를 둔다. 이 칸이 응답자 체인에서 분할 뷰 컨트롤러 뒤에 오게 한다.
+        let view = NSView()
+        let split = splitController.view
+        split.frame = view.bounds
+        split.autoresizingMask = [.width, .height]
+        view.addSubview(split)
+        self.view = view
+    }
+
+    // MARK: 탭
+
+    override var tabTitle: String { pmDocument.displayName }
+    override var tabToolTip: String? { pmDocument.fileURL.map { ($0.path as NSString).abbreviatingWithTildeInPath } }
+    override var representedURL: URL? { pmDocument.fileURL }
+    override var paneUndoManager: UndoManager? { pmDocument.undoManager }
+    override var preferredFirstResponder: NSView? { pdfView }
+
+    override func paneDidActivate() {
+        if !didLayOutOnce {
+            didLayOutOnce = true
+            applyDefaultSidebarWidth()
+        }
+        syncSidebar()
+        // 창 크기가 정해진 다음에 마지막으로 보던 페이지로 간다.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let index = self.pageToRestore else { return }
+            self.pageToRestore = nil
+            if let page = self.pdfView.document?.page(at: index) { self.pdfView.go(to: page) }
+        }
+    }
+
+    override func paneWillDeactivate() {
+        // 분할선을 끌어 접은 것도 다른 PDF 탭이 따르게 떠날 때 상태를 남긴다.
+        UserDefaults.standard.set(sidebarCollapsed, forKey: Self.sidebarCollapsedKey)
+        releaseSpace()
+        translateHeld = false
+    }
+
+    override func paneDidResignKey() {
+        releaseSpace()
+        translateHeld = false
+    }
+
+    /// 사용자가 탭을 닫았다. 다음 실행 때 다시 열 목록에서 빼고 문서를 닫는다.
+    override func paneDidClose() {
+        if let url = pmDocument.fileURL { Session.didCloseByUser(url) }
+        if let eventMonitor { NSEvent.removeMonitor(eventMonitor) }
+        eventMonitor = nil
+        NotificationCenter.default.removeObserver(self)
+        pmDocument.closeFromTab()
+    }
+
+    /// 왼쪽은 사이드바(목차, ⌘B로 접기), 오른쪽은 PDF.
     private func makeSplitViewController(fileURL: URL?) -> NSSplitViewController {
         sidebarContent = SidebarViewController(pdfView: pdfView)
-        sidebarContent.files.documentURL = fileURL
-        sidebarContent.isStartPage = fileURL == nil
-        if fileURL == nil { sidebarContent.files.didOpen = { [weak self] in self?.closeStartPage() } }
         let sidebar = NSSplitViewItem(sidebarWithViewController: sidebarContent)
         sidebar.minimumThickness = 120
         sidebar.maximumThickness = 400
         sidebar.canCollapse = true
 
         let mainContent = NSViewController()
-        mainContent.view = fileURL == nil ? makeStartView() : pdfView
+        mainContent.view = pdfView
         let main = NSSplitViewItem(viewController: mainContent)
         main.minimumThickness = 360
 
@@ -160,74 +193,32 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
         splitController.splitView.setPosition(Self.defaultSidebarWidth, ofDividerAt: 0)
     }
 
-    /// 탭이 하나뿐이어도 탭 막대를 보인다. 한 번 켜면 시스템이 기억하므로 꺼져 있을 때만 켠다.
-    private func showTabBar() {
-        guard let window, window.tabGroup?.isTabBarVisible == false else { return }
-        window.toggleTabBar(nil)
-    }
-
-    /// 탭 막대의 + 버튼으로 연 새 탭(PDF 없는 문서): 빈 화면 대신 안내와 열기 버튼을 두고 사이드바에 파일 트리를 연다.
-    /// 여기서 PDF를 열면 이 탭은 닫혀서 그 PDF로 바뀐 것처럼 보인다.
-    private func makeStartView() -> NSView {
-        let icon = NSImageView()
-        icon.image = NSImage(systemSymbolName: "doc.text.magnifyingglass", accessibilityDescription: nil)
-        icon.symbolConfiguration = .init(pointSize: 40, weight: .light)
-        icon.contentTintColor = .tertiaryLabelColor
-        let label = NSTextField(labelWithString: "Double-click a PDF in the sidebar to open it.")
-        label.textColor = .secondaryLabelColor
-        let button = NSButton(title: "Open…", target: self, action: #selector(openFromStartPage(_:)))
-        let stack = NSStackView(views: [icon, label, button])
-        stack.orientation = .vertical
-        stack.spacing = 12
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        let view = NSView()
-        view.addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            stack.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-        ])
-        return view
-    }
-
-    @objc private func openFromStartPage(_ sender: Any?) {
-        guard let window else { return }
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.pdf]
-        panel.allowsMultipleSelection = true
-        panel.directoryURL = NSDocumentController.shared.recentDocumentURLs.first?.deletingLastPathComponent()
-        panel.beginSheetModal(for: window) { [weak self] response in
-            guard response == .OK else { return }
-            for url in panel.urls {
-                NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { document, _, error in
-                    if let error { NSApp.presentError(error) }
-                    if document != nil { self?.closeStartPage() }
-                }
-            }
-        }
-    }
-
-    private func closeStartPage() {
-        guard let document = pmDocument, document.fileURL == nil else { return }
-        document.close()
-    }
-
-    /// 제목 옆 아이콘: PDF 파일 아이콘(대개 밋밋한 흰 문서) 대신 PaperMark 아이콘을 보인다.
-    /// 아이콘을 끌어 파일을 옮기거나 ⌘클릭으로 경로를 보는 기능은 그대로다.
-    override func synchronizeWindowTitleWithDocumentName() {
-        super.synchronizeWindowTitleWithDocumentName()
-        window?.standardWindowButton(.documentIconButton)?.image = NSApp.applicationIconImage
-    }
+    /// 리더 사이드바를 접었는지. PDF 탭끼리는 같이 따르고, 서재 칸과는 따로다.
+    static let sidebarCollapsedKey = "readerSidebarCollapsed"
 
     @objc func toggleSidebar(_ sender: Any?) {
         splitController.toggleSidebar(sender)
     }
 
+    /// File > Save(⌘S). 문서가 창 컨트롤러 없이 탭으로 보여서 응답자 체인에 문서가 없다.
+    @objc func save(_ sender: Any?) {
+        pmDocument.save(sender)
+    }
+
     private var sidebarCollapsed: Bool { splitController.splitViewItems.first?.isCollapsed ?? true }
+
+    /// 다른 PDF 탭에서 사이드바를 접거나 폈으면 이 탭도 맞춘다.
+    private func syncSidebar() {
+        guard let item = splitController.splitViewItems.first,
+              UserDefaults.standard.object(forKey: Self.sidebarCollapsedKey) != nil else { return }
+        let collapsed = UserDefaults.standard.bool(forKey: Self.sidebarCollapsedKey)
+        if item.isCollapsed != collapsed { item.isCollapsed = collapsed }
+    }
 
     /// 다른 기기에서 바뀐 파일을 다시 읽었을 때: 보던 쪽을 유지한다.
     func documentDidReload() {
         let pageIndex = pdfView.currentPage.flatMap { pdfView.document?.index(for: $0) } ?? 0
-        pdfView.document = pmDocument?.pdf
+        pdfView.document = pmDocument.pdf
         if let page = pdfView.document?.page(at: min(pageIndex, max((pdfView.document?.pageCount ?? 1) - 1, 0))) {
             pdfView.go(to: page)
         }
@@ -240,7 +231,7 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
         // EventTypeMask에는 찾아보기(.quickLook) 멤버가 없어서 이벤트 종류 값으로 만든다.
         let quickLookMask = NSEvent.EventTypeMask(rawValue: 1 << NSEvent.EventType.quickLook.rawValue)
         eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp, .otherMouseDown, .swipe, .keyDown, .keyUp, .pressure, quickLookMask]) { [weak self] event in
-            guard let self, event.window === self.window else { return event }
+            guard let self, let window = self.window, event.window === window else { return event }
             if event.type == .keyDown || event.type == .keyUp { return self.handleKey(event) ? nil : event }
             // 마우스 옆 버튼: 뒤로는 링크를 누른 자리로 돌아가기(없으면 이동 기록 뒤로), 앞으로는 이동 기록 앞으로.
             // 보통은 3·4번 버튼으로 오지만, Logi Options+는 옆 버튼을 세 손가락 쓸기(swipe)로 바꿔 보낸다.
@@ -320,18 +311,6 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
         ColorStore.shared.eraserMode = false
     }
 
-    // 스페이스바를 누른 채 다른 창으로 가면 keyUp이 오지 않으므로 여기서 끈다.
-    func windowDidResignKey(_ notification: Notification) {
-        releaseSpace()
-        translateHeld = false
-    }
-
-    // 창으로 돌아올 때 파일 트리를 다시 읽고(다른 곳에서 파일이 바뀌었을 수 있다) 이 창의 PDF를 보여 준다.
-    func windowDidBecomeKey(_ notification: Notification) {
-        showTabBar()
-        if sidebarContent.showsFiles, !sidebarCollapsed { sidebarContent.files.reload(revealDocument: true) }
-    }
-
     /// 지우개 이벤트를 처리했으면 true(PDFView에 넘기지 않음).
     private func handleEraser(_ event: NSEvent, inPDF: Bool) -> Bool {
         switch event.type {
@@ -352,7 +331,7 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
         case .leftMouseUp:
             guard let erased = erasedDuringDrag else { return false }
             erasedDuringDrag = nil
-            pmDocument?.didRemove(erased, actionName: "Erase")
+            pmDocument.didRemove(erased, actionName: "Erase")
             return true
         default:
             return false
@@ -394,7 +373,7 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
         let highlights = Highlights.make(from: selection, color: color, author: author)
         guard !highlights.isEmpty else { return }
         let merged = Highlights.merge(highlights, color: color, author: author)
-        pmDocument?.replace(merged.removed, with: merged.added, actionName: "Highlight")
+        pmDocument.replace(merged.removed, with: merged.added, actionName: "Highlight")
         pdfView.clearSelection()
     }
 
@@ -505,13 +484,13 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
     @objc private func removeHighlight(_ sender: NSMenuItem) {
         guard let action = sender.representedObject as? HighlightAction else { return }
         let h = action.highlight
-        pmDocument?.replace(Markups.removalSet(for: h.annotation, on: h.page), with: [],
+        pmDocument.replace(Markups.removalSet(for: h.annotation, on: h.page), with: [],
                             actionName: "Remove \(Markups.displayName(of: h.annotation))")
     }
 
     @objc private func recolorHighlight(_ sender: NSMenuItem) {
         guard let action = sender.representedObject as? HighlightAction, let color = action.color else { return }
-        pmDocument?.recolor(action.highlight, to: color)
+        pmDocument.recolor(action.highlight, to: color)
     }
 
     // MARK: 검색
@@ -539,14 +518,14 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
 
     private func showCurrentResult() {
         guard !results.isEmpty else {
-            window?.subtitle = "No results for “\(lastQuery)”"
+            windowSubtitle = "No results for “\(lastQuery)”"
             NSSound.beep()
             return
         }
         let result = results[resultIndex]
         pdfView.go(to: result)
         pdfView.setCurrentSelection(result, animate: true)
-        window?.subtitle = "“\(lastQuery)” \(resultIndex + 1) / \(results.count)"
+        windowSubtitle = "“\(lastQuery)” \(resultIndex + 1) / \(results.count)"
     }
 
     private func clearSearch() {
@@ -554,7 +533,7 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
         lastQuery = ""
         resultIndex = 0
         pdfView.highlightedSelections = nil
-        window?.subtitle = ""
+        windowSubtitle = ""
     }
 
     @objc func focusSearch(_ sender: Any?) {
@@ -577,12 +556,6 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
     }
     @objc func goForward(_ sender: Any?) {
         if pdfView.canRedoLinkJump { pdfView.redoLinkJump() } else { pdfView.goForward(sender) }
-    }
-
-    // MARK: 실행 취소 (창이 문서의 undo manager를 쓰게 한다)
-
-    func windowWillReturnUndoManager(_ window: NSWindow) -> UndoManager? {
-        document?.undoManager ?? nil
     }
 
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
@@ -611,63 +584,10 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
         }
     }
 
-    // 사용자가 창을 닫을 때만 불린다(앱을 끄면서 닫히는 창은 아님). 다음 실행 때 다시 열 목록에서 뺀다.
-    // 마지막 PDF 탭을 닫으면 창이 사라지지 않게 시작 탭(파일 트리)을 연다. 아직 이 창이 떠 있어서 새 탭은 이 창에 붙는다.
-    // 시작 탭을 닫으면 창도 닫힌다.
-    func windowShouldClose(_ sender: NSWindow) -> Bool {
-        if let url = pmDocument?.fileURL {
-            Session.didCloseByUser(url)
-            if NSDocumentController.shared.documents.allSatisfy({ $0 === pmDocument }) {
-                NSDocumentController.shared.newDocument(sender)
-            }
-        }
-        return true
-    }
-
-    override func showWindow(_ sender: Any?) {
-        joinExistingWindow()
-        super.showWindow(sender)
-        // 창 크기가 정해진 다음에 마지막으로 보던 페이지로 간다.
-        DispatchQueue.main.async { [weak self] in
-            guard let self, let index = self.pageToRestore else { return }
-            self.pageToRestore = nil
-            if let page = self.pdfView.document?.page(at: index) { self.pdfView.go(to: page) }
-        }
-    }
-
-    /// 처음 띄우는 창이면 이미 열린 문서 창의 탭으로 붙인다. tabbingMode만으로는 PaperMark가 뒤에 있을 때
-    /// (Finder, Raycast, PDFRouter로 열 때) 붙을 주 창이 없어서 새 창이 따로 뜬다.
-    private func joinExistingWindow() {
-        guard let window, !window.isVisible, (window.tabGroup?.windows.count ?? 1) <= 1 else { return }
-        let others = NSApp.orderedWindows.filter {
-            $0 !== window && $0.windowController is DocumentWindowController && $0.isVisible && !$0.isMiniaturized
-        }
-        guard let target = NSApp.mainWindow.flatMap({ main in others.first { $0 === main } }) ?? others.first else { return }
-        Self.addTab(window, to: target)
-    }
-
-    /// target 창의 탭으로 붙인다. 새 탭(PDF 없는 시작 탭)은 늘 맨 오른쪽에 둔다:
-    /// 새 탭은 맨 끝에 붙이고, PDF는 target 오른쪽에 붙이되 그 자리가 새 탭보다 오른쪽이면 새 탭 왼쪽에 넣는다.
-    static func addTab(_ window: NSWindow, to target: NSWindow) {
-        let tabs = target.tabGroup?.windows ?? [target]
-        if isStartTab(window) {
-            (tabs.last ?? target).addTabbedWindow(window, ordered: .above)
-        } else if let start = tabs.firstIndex(where: isStartTab), let at = tabs.firstIndex(of: target), start <= at {
-            tabs[start].addTabbedWindow(window, ordered: .below)
-        } else {
-            target.addTabbedWindow(window, ordered: .above)
-        }
-    }
-
-    private static func isStartTab(_ window: NSWindow) -> Bool {
-        guard let document = (window.windowController as? DocumentWindowController)?.pmDocument else { return false }
-        return document.fileURL == nil
-    }
-
     // 앱을 끌 때는 창이 닫히지 않을 수 있어서 페이지가 바뀔 때마다 기록한다.
     @objc private func pageChanged(_ note: Notification) {
         updatePageLabel()
-        guard pageToRestore == nil, let url = pmDocument?.fileURL, let page = pdfView.currentPage,
+        guard pageToRestore == nil, let url = pmDocument.fileURL, let page = pdfView.currentPage,
               let index = pdfView.document?.index(for: page) else { return }
         Session.setLastPage(index, of: url)
     }
@@ -681,16 +601,10 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
         pageLabel.stringValue = "\(document.index(for: page) + 1) / \(document.pageCount)"
     }
 
-    func windowWillClose(_ notification: Notification) {
-        if let eventMonitor { NSEvent.removeMonitor(eventMonitor) }
-        eventMonitor = nil
-        NotificationCenter.default.removeObserver(self)
-    }
-
     // MARK: 툴바
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.toggleSidebar, .sidebarTrackingSeparator, .highlightMode, .eraser, .palette, .pageNumber, .flexibleSpace, .search]
+        [.quilloSidebar, .highlightMode, .eraser, .palette, .pageNumber, .flexibleSpace, .search]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -700,6 +614,8 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
     func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier identifier: NSToolbarItem.Identifier,
                  willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
         switch identifier {
+        case .quilloSidebar:
+            return .quilloSidebar()
         case .highlightMode:
             let item = NSToolbarItem(itemIdentifier: identifier)
             item.label = "Highlight Mode"
@@ -737,6 +653,13 @@ final class DocumentWindowController: NSWindowController, NSToolbarDelegate, NSW
 /// 사이드바 분할선은 1pt라 잡히는 폭이 분할선 주변 4pt 남짓뿐이다. 그런데 바로 오른쪽 PDF 여백까지
 /// 경계처럼 보여서, 보이는 경계를 잡으면 끌리지 않았다. 잡는 범위를 그 여백까지 넓힌다.
 private final class SidebarSplitViewController: NSSplitViewController {
+    /// ⌘B, 툴바 버튼: 다른 PDF 탭도 따르도록 접었는지 남긴다.
+    override func toggleSidebar(_ sender: Any?) {
+        let willCollapse = !(splitViewItems.first?.isCollapsed ?? true)
+        UserDefaults.standard.set(willCollapse, forKey: ReaderPane.sidebarCollapsedKey)
+        super.toggleSidebar(sender)
+    }
+
     override func splitView(_ splitView: NSSplitView, effectiveRect proposedEffectiveRect: NSRect,
                             forDrawnRect drawnRect: NSRect, ofDividerAt dividerIndex: Int) -> NSRect {
         let rect = super.splitView(splitView, effectiveRect: proposedEffectiveRect,

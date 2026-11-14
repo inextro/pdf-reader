@@ -1,13 +1,50 @@
 import AppKit
 import AppUpdater
+import PaperMarkLibrary
+import Reader
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private lazy var libraryWindow = LibraryWindowController()
+    private lazy var library = LibraryPane()
+    /// Quillo 창: 탭 막대 맨 앞에 서재 칸, 그 뒤로 PDF 탭.
+    private lazy var mainWindow = TabbedWindowController(pinned: library)
     private lazy var settingsWindow = SettingsWindowController()
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
+    // 켜지는 동안(첫 0.5초) 받은 PDF를 모두 Preview로 넘겼으면, Quillo는 창 없이 다시 꺼진다.
+    private var isLaunching = true, receivedPDFsAtLaunch = false, forwardedOnly = false
+    private var pendingForwards = 0, quitAfterForwarding = false
+    private var started = false
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        // 메뉴(색, 단축키)가 설정을 읽기 전에 PaperMark 설정을 가져온다.
+        PaperMarkSettings.importOnce()
         NSApp.mainMenu = makeMainMenu()
+    }
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        guard receivedPDFsAtLaunch else {
+            isLaunching = false
+            start()
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            self.isLaunching = false
+            if self.forwardedOnly, !self.started {
+                // PDF를 Preview로 넘기려고만 켜졌다.
+                self.quitAfterForwarding = true
+                if self.pendingForwards == 0 { NSApp.terminate(nil) }
+                return
+            }
+            self.start()
+        }
+    }
+
+    /// 창을 띄우고 서재 일(확장 서버, workspace 감시, 업데이트 확인)을 시작한다. 지난번에 열려 있던 PDF도 다시 연다.
+    private func start() {
+        guard !started else { return }
+        started = true
         showLibrary(nil)
+        reopenLastPDFs()
         // 브라우저 확장이 논문을 보내는 로컬 서버
         Connector.shared.start()
         // workspace 폴더와 컬렉션을 맞추고 폴더를 감시한다.
@@ -17,12 +54,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // workspace가 없으면 쓸 수 없다(컬렉션 = 그 안의 폴더, PDF도 거기 둔다). 고를 때까지 묻고, 고른 뒤에 확장 설치를 권한다.
         DispatchQueue.main.async {
             self.requireWorkspace {
-                if extensionUpdated { ChromeExtension.announceUpdate(in: self.libraryWindow.window) }
-                ChromeExtension.offerOnFirstLaunch(in: self.libraryWindow.window)
+                if extensionUpdated { ChromeExtension.announceUpdate(in: self.mainWindow.window) }
+                ChromeExtension.offerOnFirstLaunch(in: self.mainWindow.window)
                 // 새 버전 확인(켤 때 잠시 뒤 한 번, 그 뒤 하루마다). workspace를 고르는 중에는 묻지 않는다.
                 UpdateController.shared.start()
                 // 예전에 저장한 학술지 논문의 논문 번호(한 번만).
                 LibraryStore.shared.fillArticleNumbers()
+                // workspace 안의 PDF는 Quillo로, 나머지는 Preview로 열지 처음 한 번 묻는다.
+                DefaultPDFApp.askOnce()
+            }
+        }
+    }
+
+    /// 앱을 끌 때 열려 있던 PDF를 탭으로 다시 붙인다. 고르지는 않아서 서재 칸이 앞에 있다.
+    private func reopenLastPDFs() {
+        for url in Session.files where FileManager.default.fileExists(atPath: url.path) {
+            NSDocumentController.shared.openDocument(withContentsOf: url, display: false) { document, _, error in
+                if let error { NSLog("%@", "Quillo: could not reopen \(url.lastPathComponent): \(error)") }
+                document?.makeWindowControllers()
             }
         }
     }
@@ -30,7 +79,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// workspace를 정하지 않았으면 고르게 한다. 폴더를 고르거나 Zotero에서 가져와야 넘어가고, 아니면 앱을 끈다.
     private func requireWorkspace(then next: @escaping () -> Void) {
         guard LibraryStore.shared.folder == nil else { next(); return }
-        guard let window = libraryWindow.window else { return }
+        guard let window = mainWindow.window else { return }
         let again = { DispatchQueue.main.async { self.requireWorkspace(then: next) } }
         let alert = NSAlert()
         alert.messageText = "Choose your workspace folder"
@@ -64,24 +113,58 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// `paperlibrary://`: 확장 팝업의 "Open Quillo" 버튼이 앱을 켤 때 쓴다.
+    /// PDF 파일(Finder, Raycast, 다음으로 열기)과 `paperlibrary://`(확장 팝업의 "Open Quillo" 버튼).
+    /// Quillo가 기본 PDF 앱으로 받은 workspace 밖의 PDF는 Preview로 넘긴다.
     func application(_ application: NSApplication, open urls: [URL]) {
-        showLibrary(nil)
+        let pdfs = urls.filter(\.isFileURL)
+        if pdfs.count < urls.count {
+            forwardedOnly = false
+            if started { showLibrary(nil) } else if !isLaunching { start() }
+        }
+        guard !pdfs.isEmpty else { return }
+        let (open, forward) = DefaultPDFApp.split(pdfs, sender: DefaultPDFApp.currentSender)
+        if isLaunching {
+            receivedPDFsAtLaunch = true
+            forwardedOnly = open.isEmpty && (forwardedOnly || !started)
+        }
+        if !open.isEmpty {
+            start()
+            for url in open {
+                NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { _, _, error in
+                    if let error { NSApp.presentError(error) }
+                }
+            }
+        }
+        guard !forward.isEmpty else { return }
+        pendingForwards += 1
+        DefaultPDFApp.forward(forward) { [self] in
+            pendingForwards -= 1
+            if quitAfterForwarding, pendingForwards == 0 { NSApp.terminate(nil) }
+        }
     }
+
+    func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool { false }
 
     /// 창을 닫아도 앱은 남는다. Dock 아이콘을 누르면 다시 보인다.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !flag { showLibrary(nil) }
+        if !flag {
+            if started { mainWindow.showWindow(nil) } else { start() }
+        }
         return false
     }
 
-    @objc private func showLibrary(_ sender: Any?) {
-        libraryWindow.showWindow(nil)
+    // MARK: 서재 칸
+
+    /// Window > Library(⌘L): 서재 칸으로 가서 창을 앞으로.
+    @objc func showLibrary(_ sender: Any?) {
+        mainWindow.showLibrary(sender)
     }
+
+    @objc private func askDefaultPDFApp(_ sender: Any?) { DefaultPDFApp.ask() }
 
     @objc private func addByIdentifier(_ sender: Any?) {
         showLibrary(nil)
-        libraryWindow.addByIdentifier(sender)
+        library.addByIdentifier(sender)
     }
 
     @objc private func showSettings(_ sender: Any?) {
@@ -90,7 +173,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func importFromZotero(_ sender: Any?) {
         showLibrary(nil)
-        LibraryStore.shared.importFromZotero(in: libraryWindow.window)
+        LibraryStore.shared.importFromZotero(in: mainWindow.window)
     }
 
     /// PDF가 있는 폴더를 바꾼다. DB의 PDF 경로는 이 폴더 기준이라, PDF 폴더를 옮겼을 때 쓴다.
@@ -100,7 +183,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.directoryURL = LibraryStore.shared.folder ?? LibraryStore.googleDriveFolder()
-        guard let window = libraryWindow.window else { return }
+        guard let window = mainWindow.window else { return }
         panel.beginSheetModal(for: window) { response in
             if response == .OK, let url = panel.url { LibraryStore.shared.folder = url }
         }
@@ -119,6 +202,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         app.addItem(withTitle: "Check for Updates…", action: #selector(UpdateController.checkForUpdates(_:)), keyEquivalent: "")
             .target = MainActor.assumeIsolated { UpdateController.shared }
         app.addItem(withTitle: "Settings…", action: #selector(showSettings(_:)), keyEquivalent: ",").target = self
+        app.addItem(withTitle: "Default PDF App…", action: #selector(askDefaultPDFApp(_:)), keyEquivalent: "").target = self
         app.addItem(withTitle: "Install Chrome Extension…", action: #selector(installChromeExtension(_:)), keyEquivalent: "").target = self
         app.addItem(.separator())
         app.addItem(withTitle: "Hide Quillo", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
@@ -128,13 +212,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         app.addItem(.separator())
         app.addItem(withTitle: "Quit Quillo", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
+        let reader = ReaderMenus.shared
         let file = submenu(of: main, title: "File")
+        reader.addOpenItems(to: file)
+        file.addItem(.separator())
         file.addItem(withTitle: "Add by Identifier…", action: #selector(addByIdentifier(_:)), keyEquivalent: "N").target = self
         file.addItem(.separator())
         file.addItem(withTitle: "Import from Zotero…", action: #selector(importFromZotero(_:)), keyEquivalent: "I").target = self
         file.addItem(withTitle: "Change PDF Folder…", action: #selector(changeFolder(_:)), keyEquivalent: "").target = self
         file.addItem(.separator())
-        file.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        // ⌘W는 PDF 탭을 닫는다(서재 칸에서는 창을 닫는다). 창을 닫아도 탭은 그대로 남는다.
+        file.addItem(withTitle: "Close Tab", action: #selector(TabbedWindowController.closeTab(_:)), keyEquivalent: "w")
+        file.addItem(withTitle: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "W")
+        file.addItem(withTitle: "Save", action: #selector(NSDocument.save(_:)), keyEquivalent: "s")
 
         let edit = submenu(of: main, title: "Edit")
         edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
@@ -147,22 +237,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         edit.addItem(withTitle: "Delete…", action: #selector(LibraryView.deletePapers(_:)), keyEquivalent: "\u{8}")
         edit.addItem(.separator())
-        edit.addItem(withTitle: "Find…", action: #selector(LibraryWindowController.focusSearch(_:)), keyEquivalent: "f")
+        // Find…는 서재 탭에서는 서재 검색, PDF 탭에서는 문서 검색으로 간다(둘 다 focusSearch:).
+        reader.addFindItems(to: edit)
+
+        main.addItem(withTitle: "Highlight", action: nil, keyEquivalent: "").submenu = reader.makeHighlightMenu()
 
         let view = submenu(of: main, title: "View")
-        view.addItem(withTitle: "Show Sidebar", action: #selector(NSSplitViewController.toggleSidebar(_:)), keyEquivalent: "s")
-            .keyEquivalentModifierMask = [.command, .control]
-        view.addItem(withTitle: "Show Inspector", action: #selector(NSSplitViewController.toggleInspector(_:)), keyEquivalent: "i")
+        reader.addViewItems(to: view)
+        view.addItem(.separator())
+        view.addItem(withTitle: "Show Inspector", action: #selector(LibraryPane.toggleInspector(_:)), keyEquivalent: "i")
             .keyEquivalentModifierMask = [.command, .option]
+
+        main.addItem(withTitle: "Go", action: nil, keyEquivalent: "").submenu = reader.makeGoMenu()
 
         let window = submenu(of: main, title: "Window")
         window.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
         window.addItem(withTitle: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
         window.addItem(.separator())
-        window.addItem(withTitle: "Library", action: #selector(showLibrary(_:)), keyEquivalent: "0").target = self
+        window.addItem(withTitle: "Library", action: #selector(showLibrary(_:)), keyEquivalent: "l").target = self
+        window.addItem(withTitle: "Show Previous Tab", action: #selector(TabbedWindowController.selectPreviousPane(_:)), keyEquivalent: "[")
+            .keyEquivalentModifierMask = [.command, .shift]
+        window.addItem(withTitle: "Show Next Tab", action: #selector(TabbedWindowController.selectNextPane(_:)), keyEquivalent: "]")
+            .keyEquivalentModifierMask = [.command, .shift]
         window.addItem(withTitle: "Bring All to Front", action: #selector(NSApplication.arrangeInFront(_:)), keyEquivalent: "")
         NSApp.windowsMenu = window
 
+        reader.applyShortcutsNow()
         return main
     }
 

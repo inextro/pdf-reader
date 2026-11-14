@@ -2,11 +2,20 @@
 
 ## 1.0.5
 
+- PaperMark is now built into Quillo. If you used PaperMark, delete PaperMark.app and use Quillo.
 - Changed: PaperLibrary is now called **Quillo**. Your library, settings, and workspace stay as they are. When
   PaperLibrary updates itself to this version, it renames its app file to `Quillo.app` on first launch. The backup
   in your workspace folder is now `Quillo.json` (the old `PaperLibrary.json` is renamed).
+- New: Quillo has one window with a tab bar. The library stays at the front of the tab bar, and papers open as
+  tabs after it. `⌘L` goes back to the library (`⌘L` was `⌘0`, which is now Zoom to Fit), `⌘W` closes a paper
+  tab, and `⇧⌘[` / `⇧⌘]` move between tabs. The sidebar shortcut is `⌘B` in both the library and the papers, and
+  each remembers its own sidebar.
+- New: Quillo can be your default PDF app. PDFs inside your workspace open in Quillo, and every other PDF opens in
+  Preview. Quillo asks once; change it with **Quillo → Default PDF App…**.
+- New: Your PaperMark colors, shortcuts, and open files come over the first time Quillo runs. Reader shortcuts are
+  in **Settings → Reader**.
+- Removed: The reader's Files tab (folder tree). The library takes its place.
 - Changed: The Chrome extension is now **Save to Quillo**. Quillo asks you to click **Reload** on it in Chrome.
-- PaperMark has no visible changes in this version.
 
 ## 1.0.4
 

@@ -23,9 +23,30 @@ final class PMDocument: NSDocument {
         return super.validateUserInterfaceItem(item)
     }
 
+    /// 이 문서를 보이는 PDF 탭. 문서는 창 컨트롤러 없이 Quillo 창(TabbedWindowController)의 탭으로 보인다.
+    private(set) weak var pane: ReaderPane?
+
+    /// 탭을 만들어 붙이기만 한다(고르지 않음). 지난번 PDF를 되살릴 때는 이것만 부른다.
     override func makeWindowControllers() {
-        addWindowController(DocumentWindowController(document: self))
         if let fileURL { Session.didOpen(fileURL) }
+        guard pane == nil else { return }
+        pane = MainActor.assumeIsolated {
+            guard let host = TabbedWindowController.shared else { return nil }
+            let pane = ReaderPane(document: self)
+            host.add(pane, select: false)
+            return pane
+        }
+    }
+
+    /// 열거나 이미 열린 PDF를 다시 열면 그 탭을 고르고 창을 앞으로.
+    override func showWindows() {
+        guard let pane else { return }
+        MainActor.assumeIsolated {
+            guard let host = pane.host else { return }
+            host.select(pane)
+            host.showWindow(nil)
+            host.window?.makeKeyAndOrderFront(nil)
+        }
     }
 
     override func read(from data: Data, ofType typeName: String) throws {
@@ -40,9 +61,7 @@ final class PMDocument: NSDocument {
         }
         pdf = document
         undoManager?.removeAllActions()
-        for case let controller as DocumentWindowController in windowControllers {
-            controller.documentDidReload()
-        }
+        if let pane { MainActor.assumeIsolated { pane.documentDidReload() } }
     }
 
     override func data(ofType typeName: String) throws -> Data {
@@ -96,12 +115,20 @@ final class PMDocument: NSDocument {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: work)
     }
 
-    private func saveNow() {
+    private func saveNow(then done: (() -> Void)? = nil) {
         pendingSave = nil
-        guard let url = fileURL, let type = fileType else { return }
+        guard let url = fileURL, let type = fileType else { done?(); return }
         save(to: url, ofType: type, for: .saveOperation) { [weak self] error in
             if let error { self?.presentError(error) }
+            done?()
         }
+    }
+
+    /// 탭을 닫을 때: 대기 중인 저장을 끝내고 문서를 닫는다.
+    func closeFromTab() {
+        guard let work = pendingSave else { close(); return }
+        work.cancel()
+        saveNow { [weak self] in self?.close() }
     }
 
     // 창을 닫거나 앱을 끌 때 대기 중인 저장을 먼저 끝내서 "저장할까요?" 창이 뜨지 않게 한다.

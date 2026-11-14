@@ -9,7 +9,7 @@ final class ReaderPDFView: PDFView {
     var selectionMenuItems: (() -> [NSMenuItem])?
 
     // Force Click(세게 누르기)은 macOS 데이터 감지로 이어져서 "84 × 84 × 4" 같은 숫자를 전화번호로 보고
-    // 연락처 카드를 띄운다. 그 제스처 인식기를 끈다. 찾아보기 이벤트는 DocumentWindowController가 막는다.
+    // 연락처 카드를 띄운다. 그 제스처 인식기를 끈다. 찾아보기 이벤트는 ReaderPane가 막는다.
     override var document: PDFDocument? {
         didSet {
             disableImmediateActions()

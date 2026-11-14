@@ -1,6 +1,7 @@
 import AppKit
 import AppUpdater
 import PaperMarkLibrary
+import Reader
 
 /// Quillo > Settings…(⌘,). 브라우저 확장으로 논문을 넣을 때 서지 정보를 채우는 방식과 PDF 저장 위치를 고른다.
 final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
@@ -109,13 +110,14 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         ])
         Style.enlarge(content)
 
-        // 탭 두 개: 논문 넣기(지금까지의 설정), 보기(표의 열, 정보 패널 칸).
+        // 탭: 논문 넣기, 보기(표의 열, 정보 패널 칸), 검색, 우클릭 메뉴, 리더(PDF 단축키).
         let tabs = NSTabViewController()
         tabs.tabStyle = .toolbar
         for (view, title, symbol) in [(content, "Adding Papers", "square.and.arrow.down"),
                                       (makeDisplayTab(), "Display", "rectangle.split.3x1"),
                                       (makeSearchTab(), "Search", "magnifyingglass"),
-                                      (makeMenuTab(), "Menu", "contextualmenu.and.cursorarrow")] {
+                                      (makeMenuTab(), "Menu", "contextualmenu.and.cursorarrow"),
+                                      (ReaderSettingsView(), "Reader", "highlighter")] {
             let controller = NSViewController()
             controller.view = view
             controller.title = title

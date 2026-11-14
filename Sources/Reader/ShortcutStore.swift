@@ -66,6 +66,16 @@ final class ShortcutStore {
             Shortcut(key: "c", modifiers: cmd): "Copy", Shortcut(key: "a", modifiers: cmd): "Select All",
             Shortcut(key: "h", modifiers: cmd): "Hide", Shortcut(key: "h", modifiers: [.command, .option]): "Hide Others",
             Shortcut(key: "m", modifiers: cmd): "Minimize", Shortcut(key: ",", modifiers: cmd): "Settings",
+            // Quillo 서재 메뉴
+            Shortcut(key: "l", modifiers: cmd): "Library", Shortcut(key: "x", modifiers: cmd): "Cut",
+            Shortcut(key: "v", modifiers: cmd): "Paste", Shortcut(key: "\u{8}", modifiers: cmd): "Delete",
+            Shortcut(key: "n", modifiers: [.command, .shift]): "Add by Identifier",
+            Shortcut(key: "i", modifiers: [.command, .shift]): "Import from Zotero",
+            Shortcut(key: "c", modifiers: [.command, .shift]): "Copy Citation",
+            Shortcut(key: "i", modifiers: [.command, .option]): "Show Inspector",
+            Shortcut(key: "w", modifiers: [.command, .shift]): "Close Window",
+            Shortcut(key: "[", modifiers: [.command, .shift]): "Show Previous Tab",
+            Shortcut(key: "]", modifiers: [.command, .shift]): "Show Next Tab",
         ]
     }()
 

@@ -1,28 +1,14 @@
 import AppKit
-import AppUpdater
 import PaperMarkCore
 
-/// 설정 창(⌘,): 명령마다 단축키 칸을 누르고 새 키를 누르면 바뀐다.
-final class SettingsWindowController: NSWindowController {
-    static let shared = SettingsWindowController()
-
+/// Quillo 설정 창의 Reader 탭: 명령마다 단축키 칸을 누르고 새 키를 누르면 바뀐다.
+@MainActor
+public final class ReaderSettingsView: NSStackView {
     private var recorders: [ShortcutRecorder] = []
     private let message = NSTextField(labelWithString: "")
 
-    private init() {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 600),
-                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        window.title = "Settings"
-        super.init(window: window)
-        window.contentView = makeContent()
-        window.center()
-        NotificationCenter.default.addObserver(self, selector: #selector(refresh),
-                                               name: ShortcutStore.didChange, object: nil)
-    }
-
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
-
-    private func makeContent() -> NSView {
+    public init() {
+        super.init(frame: .zero)
         let grid = NSGridView()
         grid.rowSpacing = 6
         grid.columnSpacing = 16
@@ -36,24 +22,22 @@ final class SettingsWindowController: NSWindowController {
         grid.column(at: 1).width = 140
 
         let hint = NSTextField(wrappingLabelWithString:
-            "Click a shortcut and press the new keys. Delete clears it, Esc cancels.")
+            "Shortcuts for reading PDFs. Click a shortcut and press the new keys. Delete clears it, Esc cancels.")
         hint.textColor = .secondaryLabelColor
-        hint.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
         message.textColor = .systemOrange
-        message.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
         let reset = NSButton(title: "Restore Defaults", target: self, action: #selector(restoreDefaults(_:)))
-        let updates = NSButton(checkboxWithTitle: "Check for updates automatically", target: self,
-                               action: #selector(toggleUpdateChecks(_:)))
-        updates.state = UpdateController.shared.checksAutomatically ? .on : .off
 
-        let stack = NSStackView(views: [updates, grid, hint, message, reset])
-        stack.orientation = .vertical
-        stack.alignment = .centerX
-        stack.spacing = 12
-        stack.edgeInsets = NSEdgeInsets(top: 20, left: 24, bottom: 20, right: 24)
-        hint.preferredMaxLayoutWidth = 360
-        return stack
+        for view in [grid, hint, message, reset] { addArrangedSubview(view) }
+        orientation = .vertical
+        alignment = .centerX
+        spacing = 12
+        edgeInsets = NSEdgeInsets(top: 20, left: 24, bottom: 20, right: 24)
+        hint.preferredMaxLayoutWidth = 380
+        NotificationCenter.default.addObserver(self, selector: #selector(refresh),
+                                               name: ShortcutStore.didChange, object: nil)
     }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     @objc private func refresh() {
         recorders.forEach { $0.refresh() }
@@ -61,10 +45,6 @@ final class SettingsWindowController: NSWindowController {
 
     private func show(_ text: String) {
         message.stringValue = text
-    }
-
-    @objc private func toggleUpdateChecks(_ sender: NSButton) {
-        UpdateController.shared.checksAutomatically = sender.state == .on
     }
 
     @objc private func restoreDefaults(_ sender: Any?) {

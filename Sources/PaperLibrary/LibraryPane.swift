@@ -1,8 +1,10 @@
 import AppKit
 import PaperMarkLibrary
+import Reader
 
-/// 라이브러리 창 하나: 왼쪽 사이드바(컬렉션·태그), 오른쪽 서지 표, 툴바 검색.
-final class LibraryWindowController: NSWindowController, NSToolbarDelegate, NSSearchFieldDelegate, NSWindowDelegate {
+/// 서재 칸: 왼쪽 사이드바(컬렉션·태그), 가운데 서지 표, 오른쪽 정보 패널, 툴바 검색.
+/// Quillo 창의 탭 막대 맨 앞에 고정된다.
+final class LibraryPane: Pane, NSToolbarDelegate, NSSearchFieldDelegate, NSMenuItemValidation {
     private let sidebar = LibrarySidebarView()
     private let libraryView = LibraryView()
     private let infoView = ItemInfoView()
@@ -17,17 +19,12 @@ final class LibraryWindowController: NSWindowController, NSToolbarDelegate, NSSe
     /// 정보 패널을 펴는 것은 고른 논문이 바뀔 때만이다(내용만 바뀌었을 때는 정보 버튼으로 접은 상태를 둔다).
     private var shownIDs: Set<Int64> = []
 
-    init() {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1100, height: 700),
-                              styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
-                              backing: .buffered, defer: false)
-        window.title = "Quillo"
-        window.isReleasedWhenClosed = false
-        window.minSize = NSSize(width: 640, height: 360)
-        super.init(window: window)
-        window.delegate = self
+    private let split = NSSplitViewController()
 
-        let split = NSSplitViewController()
+    init() {
+        super.init(nibName: nil, bundle: nil)
+        title = "Quillo"
+
         let sidebarItem = NSSplitViewItem(sidebarWithViewController: Self.controller(for: sidebar))
         sidebarItem.minimumThickness = 160
         sidebarItem.maximumThickness = 360
@@ -40,14 +37,12 @@ final class LibraryWindowController: NSWindowController, NSToolbarDelegate, NSSe
         infoItem.preferredThicknessFraction = 0.28
         split.addSplitViewItem(infoItem)
         split.splitView.autosaveName = "LibrarySplit"
-        window.contentViewController = split
-        window.setContentSize(NSSize(width: 1100, height: 700))
+        addChild(split)
 
         let toolbar = NSToolbar(identifier: "PaperLibraryToolbar")
         toolbar.delegate = self
         toolbar.displayMode = .iconOnly
-        window.toolbar = toolbar
-        window.toolbarStyle = .unified
+        self.toolbar = toolbar
         searchItem.searchField.font = Style.font
         searchItem.searchField.controlSize = .large
         searchItem.searchField.sendsSearchStringImmediately = true
@@ -86,22 +81,53 @@ final class LibraryWindowController: NSWindowController, NSToolbarDelegate, NSSe
             self?.infoView.show($0)
             self?.updateInfoPanel(selection: Set($0.map(\.id)))
         }
-        libraryView.onCountChange = { [weak window] count in
-            window?.subtitle = "\(count) item\(count == 1 ? "" : "s")"
+        libraryView.onCountChange = { [weak self] count in
+            self?.windowSubtitle = "\(count) item\(count == 1 ? "" : "s")"
         }
         libraryView.filter = sidebar.selection
         LibraryStore.shared.selectedCollection = if case .collection(let id) = sidebar.selection { id } else { nil }
-        window.subtitle = "\(LibraryStore.shared.items.count) items"
+        windowSubtitle = "\(LibraryStore.shared.items.count) items"
         updateInfoPanel(selection: Set(libraryView.selectedItems.map(\.id)))
-
-        window.center()
-        window.setFrameAutosaveName("LibraryWindow")
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
-    /// ⌘Z가 라이브러리 지우기를 되돌리도록 창의 되돌리기를 LibraryStore 것으로 쓴다.
-    func windowWillReturnUndoManager(_ window: NSWindow) -> UndoManager? { LibraryStore.shared.undoManager }
+    override func loadView() {
+        // 분할 뷰를 감싸는 뷰를 둔다. 이 칸이 응답자 체인에서 분할 뷰 컨트롤러 뒤에 오게 한다.
+        let view = NSView()
+        split.view.frame = view.bounds
+        split.view.autoresizingMask = [.width, .height]
+        view.addSubview(split.view)
+        self.view = view
+    }
+
+    // MARK: 칸
+
+    override var showsWindowTitle: Bool { true }
+    override var tabTitle: String { "Library" }
+    override var tabImage: NSImage? { NSImage(systemSymbolName: "books.vertical", accessibilityDescription: "Library") }
+    override var tabToolTip: String? { "Library (⌘L)" }
+    /// ⌘Z가 라이브러리 지우기를 되돌리도록 LibraryStore의 실행 취소 기록을 쓴다.
+    override var paneUndoManager: UndoManager? { LibraryStore.shared.undoManager }
+    override var preferredFirstResponder: NSView? { libraryView.tableView }
+
+    /// 서재 사이드바는 PDF 탭의 사이드바와 따로 접고 편다(분할 뷰가 상태를 기억한다).
+    @objc func toggleSidebar(_ sender: Any?) { split.toggleSidebar(sender) }
+    @objc func toggleInspector(_ sender: Any?) { split.toggleInspector(sender) }
+
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        switch item.action {
+        case #selector(toggleSidebar(_:)):
+            item.title = split.splitViewItems.first?.isCollapsed == true ? "Show Sidebar" : "Hide Sidebar"
+        case #selector(toggleInspector(_:)):
+            item.title = infoItem.isCollapsed ? "Show Inspector" : "Hide Inspector"
+        default:
+            break
+        }
+        return true
+    }
+
+    private var window: NSWindow? { viewIfLoaded?.window }
 
     private static func controller(for view: NSView) -> NSViewController {
         let controller = NSViewController()
@@ -133,8 +159,9 @@ final class LibraryWindowController: NSWindowController, NSToolbarDelegate, NSSe
     }
 
     @objc func addByIdentifier(_ sender: Any?) {
-        guard let window else { return }
-        if !window.isVisible { showWindow(nil) }
+        // 다른 탭을 보고 있으면 서재 칸으로 먼저 간다(툴바의 버튼에 팝오버를 붙인다).
+        if window == nil { host?.showLibrary(nil) }
+        guard window != nil else { return }
         if addPopover.isShown { addPopover.performClose(nil) } else { addPopover.show(relativeTo: addItem) }
     }
 
@@ -194,7 +221,7 @@ final class LibraryWindowController: NSWindowController, NSToolbarDelegate, NSSe
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         // 정보 버튼은 검색 칸 바로 옆에 둔다. 정보 패널 위로 툴바를 나누면(inspectorTrackingSeparator)
         // 패널이 열렸을 때 버튼만 패널 위 빈 줄에 따로 남는다.
-        [.toggleSidebar, .sidebarTrackingSeparator, .flexibleSpace, addItem.itemIdentifier, searchItem.itemIdentifier,
+        [.quilloSidebar, .flexibleSpace, addItem.itemIdentifier, searchItem.itemIdentifier,
          infoToggleItem.itemIdentifier]
     }
 
@@ -204,6 +231,7 @@ final class LibraryWindowController: NSWindowController, NSToolbarDelegate, NSSe
 
     func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
                  willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
-        [searchItem, addItem, infoToggleItem].first { $0.itemIdentifier == itemIdentifier }
+        if itemIdentifier == .quilloSidebar { return .quilloSidebar() }
+        return [searchItem, addItem, infoToggleItem].first { $0.itemIdentifier == itemIdentifier }
     }
 }

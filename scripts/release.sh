@@ -1,19 +1,18 @@
 #!/usr/bin/env bash
-# GitHub Release를 만든다. PaperMark와 Quillo(예전 PaperLibrary)의 zip을 같은 릴리스에 올린다.
-# 버전은 Resources/Info.plist의 CFBundleShortVersionString이고, Quillo(Resources/PaperLibrary/Info.plist)도 같은 버전이어야 한다.
-# 배포 전에: 1) 두 Info.plist 버전을 올리고 2) CHANGELOG.md 맨 위에 "## <버전>" 칸을 쓰고 3) 커밋·push.
-# 각 앱의 업데이트 확인은 이름이 <자기 이름>-<버전>.zip인 파일만 받으므로 여러 zip이 같이 있어도 된다.
+# GitHub Release를 만든다. Quillo(예전 PaperLibrary, PDF 리더 PaperMark를 품었다)의 zip을 올린다.
+# 버전은 Resources/PaperLibrary/Info.plist의 CFBundleShortVersionString이다.
+# 배포 전에: 1) Info.plist 버전(CFBundleShortVersionString, CFBundleVersion)을 올리고 2) CHANGELOG.md 맨 위에 "## <버전>" 칸을 쓰고 3) 커밋·push.
+# 앱의 업데이트 확인은 이름이 <자기 이름>-<버전>.zip인 파일만 받는다.
 # PaperLibrary-<버전>.zip은 1.0.4 이하 PaperLibrary가 Quillo로 업데이트하는 데 쓴다(내용은 Quillo와 같다).
+# PaperMark는 1.0.4가 마지막이라 zip을 올리지 않는다. PaperMark 1.0.4는 새 릴리스 노트를 보여 주고 Install을 누르면 릴리스 페이지를 연다.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
+VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/PaperLibrary/Info.plist)"
 TAG="v$VERSION"
 
 fail() { echo "error: $*" >&2; exit 1; }
 
-LIBRARY_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/PaperLibrary/Info.plist)"
-[[ "$LIBRARY_VERSION" == "$VERSION" ]] || fail "Quillo 버전($LIBRARY_VERSION)이 PaperMark 버전($VERSION)과 다르다"
 
 [[ -z "$(git status --porcelain)" ]] || fail "커밋하지 않은 변경이 있다"
 git fetch -q origin
@@ -29,20 +28,17 @@ NOTES="$(awk -v v="## $VERSION" '
 [[ -n "$NOTES" ]] || fail "CHANGELOG.md에 '## $VERSION' 칸이 없다"
 
 ./scripts/build-app.sh --zip
-./scripts/build-app.sh --library --zip
-ZIP="build/PaperMark-$VERSION.zip"
 LIBRARY_ZIP="build/Quillo-$VERSION.zip"
 LEGACY_ZIP="build/PaperLibrary-$VERSION.zip"
-[[ -f "$ZIP" && -f "$LIBRARY_ZIP" && -f "$LEGACY_ZIP" ]] || fail "zip을 만들지 못했다"
+[[ -f "$LIBRARY_ZIP" && -f "$LEGACY_ZIP" ]] || fail "zip을 만들지 못했다"
 
-git tag -a "$TAG" -m "PaperMark $VERSION"
+git tag -a "$TAG" -m "Quillo $VERSION"
 git push -q origin "$TAG"
-gh release create "$TAG" "$ZIP" "$LIBRARY_ZIP" "$LEGACY_ZIP" --title "PaperMark $VERSION" --notes "$NOTES
+gh release create "$TAG" "$LIBRARY_ZIP" "$LEGACY_ZIP" --title "Quillo $VERSION" --notes "$NOTES
 
 ---
-- \`PaperMark-$VERSION.zip\`: the PDF reader.
-- \`Quillo-$VERSION.zip\`: the paper library (formerly PaperLibrary). It opens PDFs in PaperMark, so install both. Its Chrome extension is inside the app: choose **Quillo → Install Chrome Extension…**.
+- \`Quillo-$VERSION.zip\`: the paper library with its built-in PDF reader (formerly PaperLibrary and PaperMark). Its Chrome extension is inside the app: choose **Quillo → Install Chrome Extension…**.
 - \`PaperLibrary-$VERSION.zip\`: the same Quillo app, for PaperLibrary 1.0.4 and earlier to update in place. Download Quillo instead.
 
-Unzip each file and move the app to Applications. The apps are not notarized: on first launch, open **System Settings → Privacy & Security** and click **Open Anyway**."
+Unzip it and move Quillo.app to Applications. The app is not notarized: on first launch, open **System Settings → Privacy & Security** and click **Open Anyway**."
 echo "released: $TAG"

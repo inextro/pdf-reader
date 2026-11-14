@@ -27,6 +27,8 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSM
     var selectedItems: [LibraryEntry] { table.selectedRowIndexes.compactMap { rows.indices.contains($0) ? rows[$0] : nil } }
 
     private let table = LibraryTableView()
+    /// 서재 칸을 고르면 키 입력을 받는 표.
+    var tableView: NSTableView { table }
     private let scroll = NSScrollView()
     private let emptyView = NSStackView()
     private let emptyLabel = NSTextField(wrappingLabelWithString: "")
@@ -199,7 +201,7 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSM
             if let window { alert.beginSheetModal(for: window) } else { alert.runModal() }
             return
         }
-        PaperMark.open(url, from: window)
+        PDFOpener.open(url, from: window)
     }
 
     @objc private func importFromZotero(_ sender: Any?) {

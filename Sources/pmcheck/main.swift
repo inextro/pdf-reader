@@ -283,22 +283,6 @@ let tsneAt = stext.range(of: "t-SNE").location
 check(Highlights.word(at: tsneAt + 3, on: sp)?.string == "t-SNE", "더블클릭 ‘t-SNE’²⁵ → 따옴표·위첨자 빼기 (\(Highlights.word(at: tsneAt + 3, on: sp)?.string ?? "nil"))")
 check(snappedSup("t-SNE", offset: 2, length: 2) == "SNE", "드래그 SN → ‘t-SNE’²⁵의 따옴표 빼기 (\(snappedSup("t-SNE", offset: 2, length: 2)))")
 
-// 파일 트리: 폴더와 PDF만, 숨김·패키지는 빼고, 폴더 먼저 Finder 순서(file2 < file10)
-let treeDir = outDir.appendingPathComponent("tree")
-try? FileManager.default.removeItem(at: treeDir)
-for folder in ["b-folder/sub", "A-folder", "Tool.app", ".hidden-folder"] {
-    try FileManager.default.createDirectory(at: treeDir.appendingPathComponent(folder), withIntermediateDirectories: true)
-}
-for file in ["paper10.pdf", "paper2.PDF", "notes.txt", ".hidden.pdf", "b-folder/sub/deep.pdf"] {
-    FileManager.default.createFile(atPath: treeDir.appendingPathComponent(file).path, contents: Data())
-}
-let listed = FileTree.children(of: treeDir).map(\.lastPathComponent)
-check(listed == ["A-folder", "b-folder", "paper2.PDF", "paper10.pdf"], "파일 트리 목록과 순서 (\(listed))")
-let deep = treeDir.appendingPathComponent("b-folder/sub/deep.pdf")
-let path = FileTree.folders(from: treeDir, to: deep)?.map(\.lastPathComponent)
-check(path == ["b-folder", "sub"], "현재 파일까지 펼칠 폴더 (\(path ?? []))")
-check(FileTree.folders(from: treeDir.appendingPathComponent("A-folder"), to: deep) == nil, "root 밖 파일은 nil")
-
 // 문서 안 링크: hyperref처럼 이름 붙인 목적지로 이어진 링크와 GoTo 동작 링크만 잡고, 웹 주소 링크는 뺀다.
 let refs = (1...12).map { "[\($0)] Author \($0). A paper title that is long enough to wrap onto a second line. In Proc. Conf." }
     .joined(separator: "\n")
@@ -730,6 +714,28 @@ check(backup?.items.count == 3 && backup?.deleted.count == 1 && backup?.collecti
       && backupConvnet?.collections == [cnn?.key ?? ""] && backupConvnet?.notes == ["<p>Accepted at CVPR</p>"],
       "JSON 백업은 key로 서로를 가리킨다")
 check(backupURL.lastPathComponent == "Quillo.json", "백업 파일 이름은 Quillo.json")
+// PaperMark 설정 가져오기: 정한 키만, Quillo에 이미 있는 값은 그대로, 한 번만.
+let fakePaperMark = UserDefaults(suiteName: "pmcheck.papermark")!, fakeQuillo = UserDefaults(suiteName: "pmcheck.quillo")!
+for d in [fakePaperMark, fakeQuillo] { d.dictionaryRepresentation().keys.forEach(d.removeObject(forKey:)) }
+fakePaperMark.set(["#FF0000", "#00FF00"], forKey: "presets")
+fakePaperMark.set("#00FF00", forKey: "currentColor")
+fakePaperMark.set(["/a.pdf"], forKey: "openFiles")
+fakePaperMark.set("/Users/x/Drive", forKey: "fileTreeRoot")
+fakePaperMark.set(true, forKey: "checksForUpdates")
+fakeQuillo.set("#0000FF", forKey: "currentColor")
+PaperMarkSettings.importOnce(from: fakePaperMark, into: fakeQuillo)
+check(fakeQuillo.stringArray(forKey: "presets") == ["#FF0000", "#00FF00"] && fakeQuillo.stringArray(forKey: "openFiles") == ["/a.pdf"],
+      "PaperMark 팔레트와 열린 파일 가져오기")
+check(fakeQuillo.string(forKey: "currentColor") == "#0000FF", "Quillo에 이미 있는 값은 덮어쓰지 않기")
+check(fakeQuillo.object(forKey: "fileTreeRoot") == nil && fakeQuillo.object(forKey: "checksForUpdates") == nil,
+      "Files 탭과 업데이트 설정은 가져오지 않기")
+fakePaperMark.set(["#123456"], forKey: "presets")
+fakeQuillo.removeObject(forKey: "presets")
+PaperMarkSettings.importOnce(from: fakePaperMark, into: fakeQuillo)
+check(fakeQuillo.object(forKey: "presets") == nil, "설정 가져오기는 한 번만")
+for d in [fakePaperMark, fakeQuillo] { d.dictionaryRepresentation().keys.forEach(d.removeObject(forKey:)) }
+UserDefaults.standard.removePersistentDomain(forName: "pmcheck.papermark")
+UserDefaults.standard.removePersistentDomain(forName: "pmcheck.quillo")
 // 이름을 바꾸기 전의 PaperLibrary.json만 있으면 Quillo.json으로 옮겨 쓴다. 둘 다 있으면 옛 파일은 두고 새 파일만 쓴다.
 let renameDir = libDir.appendingPathComponent("backup-rename")
 try FileManager.default.createDirectory(at: renameDir, withIntermediateDirectories: true)

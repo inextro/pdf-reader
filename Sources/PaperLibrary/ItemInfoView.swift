@@ -626,7 +626,7 @@ final class ItemInfoView: NSView, NSTextFieldDelegate {
     private var shownItem: LibraryEntry? { store.items.first { $0.key == shownKey } }
 
     @objc private func openPDF(_ sender: Any?) {
-        if let item = shownItem, let url = store.pdfURL(of: item) { PaperMark.open(url, from: window) }
+        if let item = shownItem, let url = store.pdfURL(of: item) { PDFOpener.open(url, from: window) }
     }
 
     @objc private func showInFinder(_ sender: Any?) {
