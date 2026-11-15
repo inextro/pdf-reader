@@ -19,6 +19,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 메뉴(색, 단축키)가 설정을 읽기 전에 PaperMark 설정을 가져온다.
         PaperMarkSettings.importOnce()
         NSApp.mainMenu = makeMainMenu()
+        // Finder 등에서 연 PDF는 AppKit이 문서 컨트롤러로 곧장 보내므로, 거기서 아래 application(_:open:)으로 돌린다.
+        (NSDocumentController.shared as? PMDocumentController)?.externalOpen = { [weak self] urls in
+            self?.application(NSApp, open: urls)
+        }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -115,6 +119,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// PDF 파일(Finder, Raycast, 다음으로 열기)과 `paperlibrary://`(확장 팝업의 "Open Quillo" 버튼).
     /// Quillo가 기본 PDF 앱으로 받은 workspace 밖의 PDF는 Preview로 넘긴다.
+    /// PDF는 AppKit이 이 메서드를 부르지 않고 PMDocumentController.externalOpen을 거쳐 들어온다.
     func application(_ application: NSApplication, open urls: [URL]) {
         let pdfs = urls.filter(\.isFileURL)
         if pdfs.count < urls.count {

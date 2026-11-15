@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Fixed: When Quillo is your default PDF app, PDFs outside your workspace (for example in Downloads) now open in
+  Preview again. They were opening as Quillo tabs.
+
 ## 1.0.5
 
 - PaperMark is now built into Quillo. If you used PaperMark, delete PaperMark.app and use Quillo.

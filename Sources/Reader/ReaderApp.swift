@@ -2,7 +2,31 @@ import AppKit
 
 /// 리더의 문서 컨트롤러. 앱에서 처음 만든 NSDocumentController 인스턴스가 shared가 되므로
 /// Quillo의 main.swift가 NSApplication을 돌리기 전에 하나 만든다.
-public final class PMDocumentController: NSDocumentController {}
+public final class PMDocumentController: NSDocumentController {
+    /// Finder, Raycast 등이 보낸 파일 열기(odoc)를 받는 곳. Quillo가 workspace 밖 PDF를 Preview로 넘기는 데 쓴다.
+    /// 문서 기반 앱에서는 AppKit이 odoc을 delegate의 application(_:open:)에 주지 않고 곧장 이 컨트롤러로 열기 때문에
+    /// 여기서 가로챈다. Open PDF…, Open Recent, 서재에서 연 PDF는 odoc이 아니라 그대로 연다.
+    public var externalOpen: (([URL]) -> Void)?
+    private var routing = false
+
+    private static var isHandlingOpenEvent: Bool {
+        guard let event = NSAppleEventManager.shared().currentAppleEvent else { return false }
+        return event.eventClass == AEEventClass(kCoreEventClass) && event.eventID == AEEventID(kAEOpenDocuments)
+    }
+
+    public override func openDocument(withContentsOf url: URL, display: Bool,
+                                      completionHandler: @escaping (NSDocument?, Bool, Error?) -> Void) {
+        guard !routing, let externalOpen, Self.isHandlingOpenEvent else {
+            super.openDocument(withContentsOf: url, display: display, completionHandler: completionHandler)
+            return
+        }
+        // externalOpen 안에서 다시 부르는 openDocument는 그대로 연다.
+        routing = true
+        externalOpen([url])
+        routing = false
+        completionHandler(nil, false, nil)
+    }
+}
 
 /// 앱을 다시 열 때 이어 볼 파일과 파일마다 마지막으로 보던 페이지.
 /// 창을 직접 닫으면(⌘W, 닫기 버튼) 목록에서 빼고, 앱을 끄면서 닫히는 창은 남긴다.
