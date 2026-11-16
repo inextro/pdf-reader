@@ -1338,6 +1338,55 @@ do {
 // 실제 CrossRef·arXiv(네트워크가 될 때만)
 final class Box<T> { var value: T?; init() {} }
 let online = Box<(PaperMetadata, [String])>()
+// MARK: BibTeX (Copy BibTeX, ⌘⇧B)
+do {
+    let lib = try Library(url: libDir.appendingPathComponent("bibtex-\(UUID().uuidString).sqlite"))
+    var conf = PaperMetadata()
+    conf.type = "conferencePaper"
+    conf.title = "LightGCN: Simplifying and powering graph convolution network for recommendation"
+    conf.creators = [Creator(role: "author", family: "He", given: "Xiangnan"), Creator(role: "author", family: "Deng", given: "Kuan")]
+    conf.date = "2020-07-25"
+    conf.doi = "10.1145/3397271.3401063"
+    conf.fields = ["proceedingsTitle": "Proceedings of the 43rd International ACM SIGIR Conference", "pages": "639-648",
+                   "publisher": "ACM", "place": "New York, NY, USA", "series": "SIGIR '20"]
+    let confBib = BibTeX.entry(try lib.item(try lib.add(conf, citationKey: "he2020lightgcn", collectionID: nil))!)
+    check(confBib.hasPrefix("@inproceedings{he2020lightgcn,\n"), "학회 논문은 @inproceedings와 citation key (\(confBib))")
+    check(confBib.contains("title = {{LightGCN}: Simplifying and powering graph convolution network for recommendation}"),
+          "대문자가 섞인 낱말만 {}로 지킨다")
+    check(confBib.contains("author = {He, Xiangnan and Deng, Kuan}") && confBib.contains("pages = {639--648}")
+          && confBib.contains("booktitle = {Proceedings of the 43rd International ACM SIGIR Conference}")
+          && confBib.contains("year = {2020}") && confBib.contains("doi = {10.1145/3397271.3401063}") && !confBib.contains("url ="),
+          "저자, 쪽 범위 --, booktitle, 연도, DOI가 있으면 url 생략")
+
+    var journal = PaperMetadata()
+    journal.type = "journalArticle"
+    journal.title = "Effects of R&D on 50% of firms_x"
+    journal.creators = [Creator(role: "author", family: "OpenAI", given: nil)]
+    journal.date = "2023"
+    journal.fields = ["publicationTitle": "Information Processing & Management", "volume": "60", "issue": "3", "articleNumber": "103403"]
+    let journalBib = BibTeX.entry(try lib.item(try lib.add(journal, citationKey: nil, collectionID: nil))!)
+    check(journalBib.hasPrefix("@article{item"), "citation key가 없으면 item<번호> (\(journalBib))")
+    check(journalBib.contains("title = {Effects of {R\\&D} on 50\\% of firms\\_x}") && journalBib.contains("journal = {Information Processing \\& Management}"),
+          "LaTeX 특수 문자를 이스케이프")
+    check(journalBib.contains("author = {{OpenAI}}") && journalBib.contains("number = {3}") && journalBib.contains("articleno = {103403}"),
+          "이름 하나뿐인 저자는 {{}}, issue → number, 논문 번호")
+
+    var pre = PaperMetadata()
+    pre.type = "preprint"
+    pre.title = "Attention is all you need"
+    pre.creators = [Creator(role: "author", family: "Vaswani", given: "Ashish")]
+    pre.date = "2017"
+    pre.arxivID = "1706.03762"
+    pre.url = "https://arxiv.org/abs/1706.03762"
+    let preBib = BibTeX.entry(try lib.item(try lib.add(pre, citationKey: "vaswani2017", collectionID: nil))!)
+    check(preBib.hasPrefix("@misc{vaswani2017,") && preBib.contains("eprint = {1706.03762}") && preBib.contains("archivePrefix = {arXiv}")
+          && preBib.contains("url = {https://arxiv.org/abs/1706.03762}"), "arXiv 프리프린트는 @misc와 eprint (\(preBib))")
+    var sog = PaperMetadata()
+    sog.title = "Search on graph"
+    check(Naming.citationKey(pattern: "SoG", metadata: sog, taken: ["SOG"]) == "SoGa", "대소문자만 다른 citation key도 겹친 것으로 본다")
+    check(BibTeX.entries([try lib.item(1)!, try lib.item(3)!]).contains("}\n\n@misc{"), "여러 항목은 빈 줄로 나눈다")
+}
+
 let done = DispatchSemaphore(value: 0)
 Task.detached {
     online.value = await MetadataLookup.complete(arxivPage, options: LookupOptions())

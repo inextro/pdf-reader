@@ -201,7 +201,7 @@ extension Settings {
 /// 표에서 논문을 우클릭했을 때 보이는 항목. 보이는 항목과 순서는 설정(Settings.itemMenu)에 둔다.
 /// 순서상 묶음(group)이 바뀌는 곳에 구분선을 넣는다.
 enum ItemMenuAction: String, CaseIterable {
-    case openPDF, showInFinder, openWeb, copyCitationKey, copyCitation, copyDOI, status, moveTo, addReference, removeFromCollection, regenerateCitationKey, delete
+    case openPDF, showInFinder, openWeb, copyCitationKey, copyCitation, copyBibTeX, copyDOI, status, moveTo, addReference, removeFromCollection, regenerateCitationKey, delete
 
     static let defaults = allCases
 
@@ -212,6 +212,7 @@ enum ItemMenuAction: String, CaseIterable {
         case .openWeb: "Open DOI / URL"
         case .copyCitationKey: "Copy Citation Key"
         case .copyCitation: "Copy Citation"
+        case .copyBibTeX: "Copy BibTeX"
         case .copyDOI: "Copy DOI"
         case .status: "Status ▸"
         case .moveTo: "Move to ▸"
@@ -225,7 +226,7 @@ enum ItemMenuAction: String, CaseIterable {
     var group: Int {
         switch self {
         case .openPDF, .showInFinder, .openWeb: 0
-        case .copyCitationKey, .copyCitation, .copyDOI: 1
+        case .copyCitationKey, .copyCitation, .copyBibTeX, .copyDOI: 1
         case .status: 2
         case .moveTo, .addReference, .removeFromCollection: 3
         case .regenerateCitationKey: 4

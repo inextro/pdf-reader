@@ -82,6 +82,8 @@ choose (for example in Google Drive).
 - **Fix metadata in place.** Click any field in the info panel to edit it, like in Zotero. Fields you edit are
   remembered and not overwritten when the paper is saved again from the browser.
 - **Copy citations** in APA, ACM, or IEEE style (`⇧⌘C`), or copy the citation key or DOI.
+- **Copy BibTeX** (`⇧⌘B`) for LaTeX. Paste the entries into your `.bib` file (for example in Overleaf). Each entry
+  uses the paper's citation key, so keys imported from Better BibTeX stay the same.
 - **Backup.** The library is also written as `Quillo.json` in your workspace folder.
 - **Updates itself.** Once a day it checks GitHub for a new release and shows what's new, and **Install and
   Relaunch** updates it in place. Use **Quillo → Check for Updates…** any time, or turn off the daily check in Settings (`⌘,`). When

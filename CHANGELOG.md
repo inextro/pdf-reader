@@ -1,7 +1,12 @@
 # Changelog
 
-## Unreleased
+## 1.0.6
 
+- Changed: A new app icon: a book with a quill, to match the name Quillo. The Chrome extension uses it too.
+- New: **Copy BibTeX** (`⇧⌘B`, or right-click a paper) copies BibTeX entries for LaTeX, keyed by each paper's
+  citation key. Paste them into your `.bib` file.
+- Changed: New citation keys no longer differ from an existing key only in letter case (`SoG` and `SOG`), because
+  BibTeX treats those as the same key.
 - Fixed: When Quillo is your default PDF app, PDFs outside your workspace (for example in Downloads) now open in
   Preview again. They were opening as Quillo tabs.
 

@@ -64,17 +64,19 @@ public enum Naming {
     }
 
     /// taken에 없는 key. 겹치면 a, b, c …를 붙인다.
+    /// BibTeX은 key의 대소문자를 가리지 않으므로(SoG와 SOG는 같은 key) 대소문자를 무시하고 비교한다.
     public static func citationKey(pattern: String, metadata m: PaperMetadata, taken: Set<String>) -> String {
+        let taken = Set(taken.map { $0.lowercased() })
         var base = String(expand(pattern, m).unicodeScalars.filter {
             $0.isASCII && (CharacterSet.alphanumerics.contains($0) || "_-:.".unicodeScalars.contains($0))
         }.map(Character.init))
         if base.isEmpty { base = "item" }
-        guard taken.contains(base) else { return base }
+        guard taken.contains(base.lowercased()) else { return base }
         var n = 0
         while true {
             var suffix = "", i = n
             repeat { suffix = String(UnicodeScalar(UInt8(97 + i % 26))) + suffix; i = i / 26 - 1 } while i >= 0
-            if !taken.contains(base + suffix) { return base + suffix }
+            if !taken.contains((base + suffix).lowercased()) { return base + suffix }
             n += 1
         }
     }
