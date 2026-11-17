@@ -51,6 +51,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         reopenLastPDFs()
         // 브라우저 확장이 논문을 보내는 로컬 서버
         Connector.shared.start()
+        // 켜 두었으면 일주일에 한 번 arXiv 논문의 출판본을 DBLP에서 찾는다.
+        DBLPQueue.shared.scheduleWeekly()
         // workspace 폴더와 컬렉션을 맞추고 폴더를 감시한다.
         LibraryStore.shared.startWorkspaceSync()
         // 앱이 업데이트되어 확장 파일이 바뀌었으면 Chrome에서 Reload를 눌러야 새 확장이 돈다.
@@ -167,6 +169,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func askDefaultPDFApp(_ sender: Any?) { DefaultPDFApp.ask() }
 
+    @objc private func checkLibraryWithDBLP(_ sender: Any?) {
+        showLibrary(nil)
+        DBLPQueue.shared.checkLibrary(in: mainWindow.window)
+    }
+
     @objc private func addByIdentifier(_ sender: Any?) {
         showLibrary(nil)
         library.addByIdentifier(sender)
@@ -222,6 +229,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         reader.addOpenItems(to: file)
         file.addItem(.separator())
         file.addItem(withTitle: "Add by Identifier…", action: #selector(addByIdentifier(_:)), keyEquivalent: "N").target = self
+        file.addItem(withTitle: "Check Library with DBLP…", action: #selector(checkLibraryWithDBLP(_:)), keyEquivalent: "").target = self
         file.addItem(.separator())
         file.addItem(withTitle: "Import from Zotero…", action: #selector(importFromZotero(_:)), keyEquivalent: "I").target = self
         file.addItem(withTitle: "Change PDF Folder…", action: #selector(changeFolder(_:)), keyEquivalent: "").target = self

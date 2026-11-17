@@ -94,7 +94,7 @@ extension Library {
             ("citationKey", citationKey != current.citationKey),
         ]
         for (name, differs) in pairs where differs { changed.insert(name) }
-        for name in Set(m.fields.keys).union(before.fields.keys) where name != Self.editedKey && m.fields[name] != before.fields[name] {
+        for name in Set(m.fields.keys).union(before.fields.keys) where !name.hasPrefix("_") && m.fields[name] != before.fields[name] {
             changed.insert(name)
         }
         var m = m

@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.0.7
+
+- New: **Settings → BibTeX** chooses the fields Copy BibTeX writes, with a live preview. Copy BibTeX can now also write
+  `month`, `isbn`, `issn`, `abstract`, and `keywords` (your tags, without status tags), and the URL even when a paper has
+  a DOI. When you leave out `eprint`, an arXiv paper keeps its arXiv number in `howpublished`.
+- New: Papers you save from Chrome are looked up in DBLP, which covers computer science conferences such as NeurIPS,
+  ICML, and ICLR that have no DOI. Empty fields are filled in. If DBLP has a different year, pages, volume, issue, DOI,
+  or type, the info panel shows it and you choose **Use This** or **Keep Mine**.
+- New: **File → Check Library with DBLP…** does the same for the papers already in your library. It never overwrites
+  what you have; for arXiv papers that have since been published, it offers **Use Published Version**.
+- New: **Needs Review** in the sidebar gathers the papers with something to choose. It disappears when you are done.
+- New: Dates are more precise. For a paper with a DOI, the date the publisher registered (CrossRef) is used; for a
+  conference without one, the month the conference was held. A date that has only the year is offered its month.
+- Changed: Papers tagged **Verified** are never filled in silently. Differences are still shown, with a note that
+  you verified the paper.
+- New: While checking, a progress bar at the bottom of the library shows how far it has got.
+- New: The info panel shows the first five authors of a long author list, with **Show N More**.
+- New: **Settings → Adding Papers** can check every week whether arXiv papers in your library have been published. Off
+  by default.
+- New: Papers saved from OpenReview are marked as conference papers only when accepted, with the conference name.
+- Note: DBLP and OpenReview block requests from apps, so Quillo looks them up through the Save to Quillo extension.
+  Keep Chrome open; the extension asks you to click **Reload** once.
+
 ## 1.0.6
 
 - Changed: A new app icon: a book with a quill, to match the name Quillo. The Chrome extension uses it too.

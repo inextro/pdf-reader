@@ -79,11 +79,16 @@ choose (for example in Google Drive).
 - **Reading status.** Click the status pill in the Tags column to switch between To Do, In Process, Verified, and
   Completed. New papers start as To Do. Change the list in **Settings → Menu → Status tags**. Create, rename,
   and delete tags by right-clicking them in the sidebar.
+- **Check with DBLP.** Papers you save from Chrome, and your whole library with **File → Check Library with
+  DBLP…**, are compared with DBLP. Empty fields are filled in, arXiv papers that have been published get
+  **Use Published Version**, and values that differ wait for you in **Needs Review** in the sidebar. Nothing you
+  have is overwritten without your choice. Lookups go through the Chrome extension, so keep Chrome open.
 - **Fix metadata in place.** Click any field in the info panel to edit it, like in Zotero. Fields you edit are
   remembered and not overwritten when the paper is saved again from the browser.
 - **Copy citations** in APA, ACM, or IEEE style (`⇧⌘C`), or copy the citation key or DOI.
 - **Copy BibTeX** (`⇧⌘B`) for LaTeX. Paste the entries into your `.bib` file (for example in Overleaf). Each entry
-  uses the paper's citation key, so keys imported from Better BibTeX stay the same.
+  uses the paper's citation key, so keys imported from Better BibTeX stay the same. Choose the fields in
+  **Settings → BibTeX**.
 - **Backup.** The library is also written as `Quillo.json` in your workspace folder.
 - **Updates itself.** Once a day it checks GitHub for a new release and shows what's new, and **Install and
   Relaunch** updates it in place. Use **Quillo → Check for Updates…** any time, or turn off the daily check in Settings (`⌘,`). When

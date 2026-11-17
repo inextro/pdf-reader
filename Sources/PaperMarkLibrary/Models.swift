@@ -101,6 +101,8 @@ public enum LibraryFilter: Equatable {
     case unfiled
     case collection(Int64)
     case tag(String)
+    /// 사용자가 고를 것이 남은 논문. 지금은 DBLP 확인의 출판본 제안이나 다른 값.
+    case needsReview
 
     public func includes(_ item: LibraryEntry) -> Bool {
         switch self {
@@ -108,6 +110,7 @@ public enum LibraryFilter: Equatable {
         case .unfiled: return item.collectionIDs.isEmpty
         case .collection(let id): return item.collectionIDs.contains(id)
         case .tag(let name): return item.tags.contains(name)
+        case .needsReview: return DBLPCheck.needsReview(item)
         }
     }
 }

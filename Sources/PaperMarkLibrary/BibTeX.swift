@@ -1,31 +1,60 @@
 import Foundation
 
+/// Copy BibTeX에서 내보낼 필드. Settings → BibTeX에서 고른다(Better BibTeX의 "Fields to omit"과 같은 역할).
+public struct BibTeXOptions: Equatable {
+    /// 내보내지 않을 필드 이름(소문자).
+    public var omitted: Set<String>
+    /// DOI가 있어도 url을 적는다. 끄면(기본) DOI가 없는 항목만 url을 적는다.
+    public var urlWithDOI: Bool
+    /// keywords에서 뺄 태그(읽기 상태 태그 등). 대소문자를 가리지 않는다.
+    public var hiddenTags: [String]
+
+    public init(omitted: Set<String> = [], urlWithDOI: Bool = false, hiddenTags: [String] = []) {
+        self.omitted = Set(omitted.map { $0.lowercased() })
+        self.urlWithDOI = urlWithDOI
+        self.hiddenTags = hiddenTags
+    }
+}
+
 /// 항목을 BibTeX 항목(@article{key, …})으로 만든다. 표에서 Copy BibTeX(⌘⇧B)로 복사해 LaTeX의 .bib에 붙인다.
 /// 키는 항목의 citation key(Better BibTeX에서 가져온 것 포함)를 그대로 쓴다.
 /// 필드 이름은 BibTeX와 biblatex가 함께 읽는 것을 쓰고, 한쪽만 아는 필드(urldate, eprint 등)는 다른 쪽이 무시한다.
 public enum BibTeX {
-    public static func entries(_ items: [LibraryEntry]) -> String {
-        items.map(entry).joined(separator: "\n\n")
+    /// 내보낼 수 있는 필드 전부(설정 화면의 순서). title은 늘 내보낸다.
+    public static let fields: [String] = [
+        "title", "author", "editor", "journal", "booktitle", "series", "edition", "volume", "number", "articleno", "pages",
+        "publisher", "address", "school", "institution", "howpublished", "eprint", "archivePrefix", "primaryClass",
+        "year", "month", "doi", "url", "urldate", "isbn", "issn", "abstract", "keywords",
+    ]
+
+    public static func entries(_ items: [LibraryEntry], options: BibTeXOptions = BibTeXOptions()) -> String {
+        items.map { entry($0, options: options) }.joined(separator: "\n\n")
     }
 
-    public static func entry(_ e: LibraryEntry) -> String {
+    public static func entry(_ e: LibraryEntry, options: BibTeXOptions = BibTeXOptions()) -> String {
+        entry(PaperMetadata(e), key: e.citationKey.flatMap { $0.isEmpty ? nil : $0 } ?? "item\(e.id)", tags: e.tags, options: options)
+    }
+
+    public static func entry(_ e: PaperMetadata, key: String, tags: [String] = [], options: BibTeXOptions = BibTeXOptions()) -> String {
         func field(_ names: String...) -> String? {
             names.lazy.compactMap { e.fields[$0]?.trimmingCharacters(in: .whitespacesAndNewlines) }.first { !$0.isEmpty }
         }
         var out: [(String, String)] = []
         func add(_ name: String, _ value: String?, raw: Bool = false) {
-            guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else { return }
+            guard name == "title" || !options.omitted.contains(name.lowercased()),
+                  let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else { return }
             out.append((name, raw ? value : escape(value)))
         }
 
         let type: String
         let arxiv = e.doi.flatMap { $0.lowercased().hasPrefix("10.48550/") ? PaperID.arxiv(in: $0) : nil } ?? e.arxivID
+        let authors = e.creators.filter { $0.role == "author" }
         add("title", protect(e.title), raw: true)
         // 저자가 없으면 다른 사람(편집자 등)을 저자로 쓴다. 다만 편집한 책은 편집자를 editor로 둔다.
         let editors = e.creators.filter { $0.role == "editor" }
-        let editedBook = e.authors.isEmpty && ["book", "bookSection"].contains(e.type)
-        add("author", names(e.authors.isEmpty ? (editedBook ? [] : e.creators) : e.authors), raw: true)
-        if !e.authors.isEmpty || editedBook { add("editor", names(editors), raw: true) }
+        let editedBook = authors.isEmpty && ["book", "bookSection"].contains(e.type)
+        add("author", names(authors.isEmpty ? (editedBook ? [] : e.creators) : authors), raw: true)
+        if !authors.isEmpty || editedBook { add("editor", names(editors), raw: true) }
 
         switch e.type {
         case "journalArticle":
@@ -55,7 +84,6 @@ public enum BibTeX {
             add("series", field("series"))
             add("publisher", field("publisher"))
             add("address", field("place"))
-            add("isbn", field("ISBN"))
         case "thesis":
             type = (field("thesisType") ?? "").lowercased().contains("master") ? "mastersthesis" : "phdthesis"
             add("school", field("university", "publisher"))
@@ -78,18 +106,29 @@ public enum BibTeX {
             type = "misc"
             add("howpublished", field("websiteTitle", "publicationTitle") ?? e.venue)
         }
+        // arXiv 논문을 eprint 없이 내보내면 어디 실렸는지가 사라지므로 howpublished로 남긴다.
+        if type == "misc", arxiv != nil, options.omitted.contains("eprint"), !out.contains(where: { $0.0 == "howpublished" }) {
+            add("howpublished", "arXiv:\(arxiv!)")
+        }
 
         if let year = e.year { add("year", String(year)) }
-        if let doi = e.doi, !doi.isEmpty {
-            add("doi", doi, raw: true)
-        } else if let url = e.url, !url.isEmpty {
+        if let month = month(e.date) { add("month", month, raw: true) }
+        let doi = e.doi.flatMap { $0.isEmpty ? nil : $0 }
+        if let doi { add("doi", doi, raw: true) }
+        if let url = e.url, !url.isEmpty, doi == nil || options.urlWithDOI {
             add("url", url, raw: true)
             // 웹 페이지는 본 날짜도 적는다(biblatex의 urldate).
             if type == "misc", arxiv == nil, let date = field("accessDate")?.prefix(10), date.count == 10 { add("urldate", String(date), raw: true) }
         }
+        add("isbn", field("ISBN"))
+        add("issn", field("ISSN"))
+        add("abstract", e.abstract)
+        let hidden = Set(options.hiddenTags.map { $0.lowercased() })
+        let keywords = tags.map { String($0.drop { $0 == "/" }) }.filter { !$0.isEmpty && !hidden.contains($0.lowercased()) }
+        add("keywords", keywords.isEmpty ? nil : keywords.joined(separator: ", "))
 
-        let key = e.citationKey.flatMap { $0.isEmpty ? nil : $0 } ?? "item\(e.id)"
-        let body = out.map { "  \($0.0) = {\($0.1)}" }.joined(separator: ",\n")
+        // month는 BibTeX 약어(jan…dec)라 괄호 없이 쓴다.
+        let body = out.map { $0.0 == "month" ? "  month = \($0.1)" : "  \($0.0) = {\($0.1)}" }.joined(separator: ",\n")
         return "@\(type){\(key),\n\(body)\n}"
     }
 
@@ -102,6 +141,13 @@ public enum BibTeX {
             return "\(escape(c.family)), \(escape(given))"
         }
         return list.isEmpty ? nil : list.joined(separator: " and ")
+    }
+
+    /// "2020-07-25" → "jul". 달이 없으면 nil.
+    static func month(_ date: String?) -> String? {
+        guard let date, let r = date.range(of: #"^\d{4}-(\d{2})"#, options: .regularExpression),
+              let m = Int(date[r].suffix(2)), (1...12).contains(m) else { return nil }
+        return ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"][m - 1]
     }
 
     /// 쪽 범위 "299-319", "299–319" → "299--319".

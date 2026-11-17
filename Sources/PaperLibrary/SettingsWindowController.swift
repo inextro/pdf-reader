@@ -14,6 +14,8 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
     private let preferOnline = NSButton(checkboxWithTitle: "Prefer CrossRef and arXiv over the web page’s own metadata", target: nil, action: nil)
     private let publishedVersion = NSButton(checkboxWithTitle: "For arXiv papers, use the published version (conference or journal) when one is found",
                                             target: nil, action: nil)
+    private let weeklyCheck = NSButton(checkboxWithTitle: "Check every week whether arXiv papers have been published (DBLP, through Chrome)",
+                                       target: nil, action: nil)
     private let sentenceCase = NSButton(checkboxWithTitle: "Write titles in sentence case (only the first word capitalized)", target: nil, action: nil)
     private let connectorLabel = NSTextField(labelWithString: "")
     private let checkUpdates = NSButton(checkboxWithTitle: "Check for updates automatically (once a day)", target: nil, action: nil)
@@ -86,18 +88,21 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
             [NSGridCell.emptyContentView, tokens],
             [Self.header("Metadata:"), preferOnline],
             [NSGridCell.emptyContentView, publishedVersion],
+            [NSGridCell.emptyContentView, weeklyCheck],
             [Self.header("Titles:"), sentenceCase],
             [Self.header("Copy Citation:"), citationStyle],
             [Self.header("Browser extension:"), Self.row(connectorLabel, installExtension)],
             [Self.header("Updates:"), checkUpdates],
         ])
         checkUpdates.target = self
+        weeklyCheck.target = self
+        weeklyCheck.action = #selector(weeklyCheckChanged(_:))
         checkUpdates.action = #selector(checkUpdatesChanged(_:))
         grid.rowSpacing = 8
         grid.columnSpacing = 10
         grid.column(at: 0).xPlacement = .trailing
         grid.rowAlignment = .firstBaseline
-        for row in [2, 3, 7, 8, 10, 11, 12, 13] { grid.row(at: row).topPadding = 10 }
+        for row in [2, 3, 7, 8, 11, 12, 13, 14] { grid.row(at: row).topPadding = 10 }
         grid.translatesAutoresizingMaskIntoConstraints = false
 
         let content = NSView()
@@ -117,6 +122,7 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
                                       (makeDisplayTab(), "Display", "rectangle.split.3x1"),
                                       (makeSearchTab(), "Search", "magnifyingglass"),
                                       (makeMenuTab(), "Menu", "contextualmenu.and.cursorarrow"),
+                                      (BibTeXSettingsView(), "BibTeX", "text.quote"),
                                       (ReaderSettingsView(), "Reader", "highlighter")] {
             let controller = NSViewController()
             controller.view = view
@@ -312,6 +318,7 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         preferOnline.state = lookup.preferOnline ? .on : .off
         checkUpdates.state = UpdateController.shared.checksAutomatically ? .on : .off
         publishedVersion.state = lookup.usePublishedVersion ? .on : .off
+        weeklyCheck.state = Settings.checkPublishedWeekly ? .on : .off
         sentenceCase.state = lookup.sentenceCase ? .on : .off
         connectorLabel.stringValue = Connector.shared.status
         updatePreviews()
@@ -339,6 +346,11 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
     }
 
     @objc private func installExtension(_ sender: Any?) { ChromeExtension.install(in: window) }
+
+    @objc private func weeklyCheckChanged(_ sender: NSButton) {
+        Settings.checkPublishedWeekly = sender.state == .on
+        if sender.state == .on { DBLPQueue.shared.startWeeklyIfDue() }
+    }
 
     @objc private func checkUpdatesChanged(_ sender: NSButton) {
         UpdateController.shared.checksAutomatically = sender.state == .on

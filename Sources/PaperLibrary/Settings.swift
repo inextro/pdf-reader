@@ -39,6 +39,30 @@ enum Settings {
         }
     }
 
+    /// Copy BibTeX에서 내보내지 않을 필드(Settings → BibTeX). 처음에는 모두 내보낸다.
+    static var bibtex: BibTeXOptions {
+        get {
+            BibTeXOptions(omitted: Set(defaults.stringArray(forKey: "bibtexOmittedFields") ?? []),
+                          urlWithDOI: defaults.bool(forKey: "bibtexURLWithDOI"), hiddenTags: statusTags)
+        }
+        set {
+            defaults.set(newValue.omitted.sorted(), forKey: "bibtexOmittedFields")
+            defaults.set(newValue.urlWithDOI, forKey: "bibtexURLWithDOI")
+        }
+    }
+
+    /// 서재의 arXiv 논문이 학회·학술지에 실렸는지 일주일에 한 번 DBLP에서 확인한다(Chrome 확장을 거친다). 기본은 끔.
+    static var checkPublishedWeekly: Bool {
+        get { defaults.bool(forKey: "checkPublishedWeekly") }
+        set { defaults.set(newValue, forKey: "checkPublishedWeekly") }
+    }
+
+    /// 마지막으로 주간 확인을 마친 때.
+    static var lastPublishedCheck: Date? {
+        get { defaults.object(forKey: "lastPublishedCheck") as? Date }
+        set { defaults.set(newValue, forKey: "lastPublishedCheck") }
+    }
+
     /// 확장이 찾아오는 포트. 확장의 background.js와 맞춰야 한다. 숨은 설정 `connectorPort`는 시험용.
     static var connectorPort: UInt16 {
         UInt16(exactly: defaults.integer(forKey: "connectorPort")).flatMap { $0 == 0 ? nil : $0 } ?? 23120

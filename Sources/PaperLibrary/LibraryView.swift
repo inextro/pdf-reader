@@ -130,6 +130,14 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSM
                                                name: Settings.displayDidChange, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(storeChanged),
                                                name: Settings.searchDidChange, object: nil)
+        // DBLP 확인(File → Check Library with DBLP…, 주간 확인)의 진행 상황
+        let progress = DBLPProgressView()
+        progress.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(progress)
+        NSLayoutConstraint.activate([
+            progress.centerXAnchor.constraint(equalTo: centerXAnchor),
+            progress.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -24),
+        ])
         refresh()
     }
 
@@ -544,7 +552,7 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSM
     /// BibTeX 항목을 복사한다. LaTeX의 .bib 파일(Overleaf 등)에 그대로 붙인다.
     private func copyBibTeXEntries(_ items: [LibraryEntry]) {
         guard !items.isEmpty else { return }
-        copy(BibTeX.entries(items) + "\n")
+        copy(BibTeX.entries(items, options: Settings.bibtex) + "\n")
         showToast(items.count == 1 ? "BibTeX copied" : "\(items.count) BibTeX entries copied")
     }
 

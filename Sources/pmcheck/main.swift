@@ -1385,6 +1385,194 @@ do {
     sog.title = "Search on graph"
     check(Naming.citationKey(pattern: "SoG", metadata: sog, taken: ["SOG"]) == "SoGa", "대소문자만 다른 citation key도 겹친 것으로 본다")
     check(BibTeX.entries([try lib.item(1)!, try lib.item(3)!]).contains("}\n\n@misc{"), "여러 항목은 빈 줄로 나눈다")
+
+    // Settings → BibTeX: 뺄 필드, DOI가 있어도 url, month, keywords(상태 태그 제외)
+    try lib.addTag("GNN", to: 1)
+    try lib.addTag("To Do", to: 1)
+    let all = BibTeX.entry(try lib.item(1)!, options: BibTeXOptions(hiddenTags: ["to do"]))
+    check(all.contains("  month = jul,") && all.contains("keywords = {GNN}") && !all.contains("To Do"),
+          "month는 괄호 없는 약어, keywords에서 상태 태그는 뺀다 (\(all))")
+    let trimmed = BibTeX.entry(try lib.item(1)!, options: BibTeXOptions(omitted: ["pages", "Publisher", "keywords", "title"]))
+    check(!trimmed.contains("pages =") && !trimmed.contains("publisher =") && !trimmed.contains("keywords =") && trimmed.contains("title ="),
+          "고른 필드는 빼고 title은 늘 남긴다")
+    var linked = conf
+    linked.url = "https://dl.acm.org/doi/10.1145/3397271.3401063"
+    let linkedID = try lib.add(linked, citationKey: "linked", collectionID: nil)
+    let linkedEntry = try lib.item(linkedID)!
+    check(!BibTeX.entry(linkedEntry).contains("url =")
+          && BibTeX.entry(linkedEntry, options: BibTeXOptions(urlWithDOI: true)).contains("url = {https://dl.acm.org/"),
+          "DOI가 있으면 url은 설정을 켰을 때만")
+    let noEprint = BibTeX.entry(try lib.item(3)!, options: BibTeXOptions(omitted: ["eprint", "archiveprefix", "primaryclass"]))
+    check(!noEprint.contains("eprint") && noEprint.contains("howpublished = {arXiv:1706.03762}"),
+          "eprint를 빼면 arXiv 번호를 howpublished로 남긴다 (\(noEprint))")
+}
+
+// MARK: DBLP (확장이 받아 온 검색 결과·.bib), OpenReview
+do {
+    let search = """
+    {"result":{"hits":{"@total":"3","hit":[
+     {"info":{"authors":{"author":[{"@pid":"1","text":"Xiangnan He 0001"},{"@pid":"2","text":"Kuan Deng"}]},
+      "title":"LightGCN: Simplifying and Powering Graph Convolution Network for Recommendation.","venue":"CoRR","year":"2020",
+      "type":"Informal and Other Publications","key":"journals/corr/abs-2002-02126","doi":"10.48550/ARXIV.2002.02126"}},
+     {"info":{"authors":{"author":[{"@pid":"1","text":"Xiangnan He 0001"},{"@pid":"2","text":"Kuan Deng"}]},
+      "title":"LightGCN: Simplifying and Powering Graph Convolution Network for Recommendation.","venue":"SIGIR","pages":"639-648",
+      "year":"2020","type":"Conference and Workshop Papers","key":"conf/sigir/0001DWLZ020","doi":"10.1145/3397271.3401063",
+      "ee":"https://doi.org/10.1145/3397271.3401063"}},
+     {"info":{"authors":{"author":{"@pid":"3","text":"Someone Else"}},"title":"Unrelated.","venue":"KDD","year":"2019",
+      "type":"Conference and Workshop Papers","key":"conf/kdd/X19"}}]}}}
+    """
+    let hits = DBLP.hits(Data(search.utf8))
+    check(hits.count == 3 && hits[1].authors == ["Xiangnan He", "Kuan Deng"] && hits[2].authors == ["Someone Else"]
+          && hits[1].title.hasSuffix("Recommendation"), "DBLP 검색 결과: 저자 번호와 제목 끝 마침표를 뗀다")
+    let hit = DBLP.match(hits, title: "LightGCN: Simplifying and powering graph convolution network for recommendation", firstAuthor: "He")
+    check(hit?.key == "conf/sigir/0001DWLZ020", "CoRR 프리프린트가 아니라 학회 논문을 고른다")
+    check(DBLP.match(hits, title: "LightGCN: Simplifying and powering graph convolution network for recommendation", firstAuthor: "Kim") == nil,
+          "첫 저자가 다르면 고르지 않는다")
+    let bib = """
+    @inproceedings{DBLP:conf/nips/HoJA20,
+      author       = {Jonathan Ho and
+                      Ajay Jain and
+                      Pieter Abbeel},
+      title        = {Denoising Diffusion Probabilistic Models},
+      booktitle    = {Advances in Neural Information Processing Systems 33: Annual Conference
+                      on Neural Information Processing Systems 2020, NeurIPS 2020, December
+                      6-12, 2020, virtual},
+      year         = {2020},
+      url          = {https://proceedings.neurips.cc/paper/2020/hash/4c5bcfec-Abstract.html},
+    }
+    """
+    let fields = BibTeXReader.fields(bib)?.fields ?? [:]
+    check(fields["author"] == "Jonathan Ho and Ajay Jain and Pieter Abbeel" && fields["year"] == "2020", "BibTeX 읽기: 여러 줄 값")
+    let nips = DBLP.Hit(key: "conf/nips/HoJA20", title: "Denoising Diffusion Probabilistic Models", authors: ["Jonathan Ho"], venue: "NeurIPS",
+                        year: 2020, type: "Conference and Workshop Papers", pages: nil, volume: nil, number: nil, doi: nil,
+                        ee: "https://proceedings.neurips.cc/paper/2020/hash/4c5bcfec-Abstract.html")
+    let nipsMeta = DBLP.metadata(nips, bib: fields)
+    check(nipsMeta.venue == "Advances in Neural Information Processing Systems 33: Annual Conference on Neural Information Processing Systems 2020"
+          && nipsMeta.url?.contains("neurips.cc") == true && nipsMeta.type == "conferencePaper",
+          "학회 전체 이름에서 약칭·날짜·장소를 뗀다 (\(nipsMeta.venue ?? "-"))")
+    let iclrBook = "The Ninth International Conference on Learning Representations, {ICLR} 2021, Virtual Event, Austria, May 3-7, 2021"
+    let sigirBook = "Proceedings of the 43rd International {ACM} {SIGIR} conference on research and development in Information Retrieval, {SIGIR} 2020, Virtual Event, China, July 25-30, 2020"
+    let iclr = DBLP.metadata(nips, bib: ["booktitle": iclrBook]).venue
+    let sigir = DBLP.metadata(nips, bib: ["booktitle": sigirBook]).venue
+    check(iclr == "The Ninth International Conference on Learning Representations"
+          && sigir == "Proceedings of the 43rd International ACM SIGIR conference on research and development in Information Retrieval",
+          "ICLR·SIGIR 이름 (\(iclr ?? "-") / \(sigir ?? "-"))")
+    let acm = DBLP.Hit(key: "journals/tois/X", title: "T", authors: [], venue: "ACM Trans. Inf. Syst.", year: 2023, type: "Journal Articles",
+                       pages: "12:1-12:25", volume: "41", number: "1", doi: nil, ee: nil)
+    check(DBLP.metadata(acm).fields[ArticleNumber.key] == "12" && DBLP.metadata(acm).fields["pages"] == nil, "ACM 학술지 쪽 12:1-12:25 → 논문 번호 12")
+    let uai = DBLP.venueName("{UAI} 2009, Proceedings of the Twenty-Fifth Conference on Uncertainty in Artificial Intelligence, Montreal, QC, Canada, June 18-21, 2009")
+    check(uai == "Proceedings of the Twenty-Fifth Conference on Uncertainty in Artificial Intelligence", "약칭·연도가 앞에 온 학회 이름 (\(uai))")
+    check(DBLP.plainURL(#"http://papers.nips.cc/paper\_files/paper/2023/hash/x.html"#) == "http://papers.nips.cc/paper_files/paper/2023/hash/x.html",
+          "BibTeX 주소의 \\_ 이스케이프를 푼다")
+    check(DBLP.conferenceMonth("The Ninth International Conference on Learning Representations, {ICLR} 2021, Virtual Event, Austria, May 3-7, 2021") == 5
+          && DBLP.conferenceMonth("Proceedings of the 2nd Workshop") == nil, "학회 이름 끝의 개최 달")
+    check(DBLP.metadata(nips, bib: ["booktitle": iclrBook]).date == "2020-05", "학회 달로 날짜를 만든다")
+    check(DBLPCheck.pageKey("1–22") == DBLPCheck.pageKey("2:1-2:22") && DBLPCheck.pageKey("855-860") != DBLPCheck.pageKey("11966-11976"),
+          "ACM 논문 번호:쪽을 쪽 범위와 같게 본다")
+
+    // 서재 항목과 견주기
+    let lib = try Library(url: libDir.appendingPathComponent("dblp-\(UUID().uuidString).sqlite"))
+    var mine = PaperMetadata()
+    mine.type = "conferencePaper"
+    mine.title = "LightGCN: Simplifying and powering graph convolution network for recommendation"
+    mine.creators = [Creator(role: "author", family: "He", given: "Xiangnan")]
+    mine.date = "2021-07-25"
+    mine.fields = ["pages": "1-10"]
+    let id = try lib.add(mine, citationKey: "he2020", collectionID: nil)
+    let found = DBLP.metadata(hits[1], bib: ["booktitle": sigirBook, "publisher": "{ACM}"])
+    let applied = DBLPCheck.apply(found, key: hits[1].key, to: try lib.item(id)!)
+    check(applied?.venue?.hasPrefix("Proceedings of the 43rd") == true && applied?.fields["proceedingsTitle"] == applied?.venue
+          && applied?.doi == "10.1145/3397271.3401063" && applied?.fields["publisher"] == "ACM"
+          && applied?.fields["pages"] == "1-10" && applied?.date == "2021-07-25", "빈 칸만 채우고 있는 값은 두다")
+    try lib.update(id, with: applied!, citationKey: "he2020")
+    var entry = try lib.item(id)!
+    let record = DBLPCheck.record(of: entry)
+    check(record?.differences == ["pages": "639-648", "year": "2020-07"], "다른 값은 적어 둔다(날짜는 학회 달까지) (\(record?.differences ?? [:]))")
+    try lib.edit(id, to: DBLPCheck.useDBLP("pages", in: entry)!, citationKey: entry.citationKey)
+    entry = try lib.item(id)!
+    check(entry.fields["pages"] == "639-648" && DBLPCheck.record(of: entry)?.differences == ["year": "2020-07"]
+          && !Library.editedFields(of: entry).contains(DBLPCheck.fieldKey), "Use DBLP’s: 그 값만 바꾸고 기록은 고친 칸으로 치지 않는다")
+    try lib.edit(id, to: DBLPCheck.keep("year", in: entry)!, citationKey: entry.citationKey)
+    entry = try lib.item(id)!
+    check(entry.year == 2021 && DBLPCheck.record(of: entry)?.differences.isEmpty == true, "Keep Mine: 지금 값을 둔다")
+    if let again = DBLPCheck.apply(found, key: hits[1].key, to: entry) { try lib.update(id, with: again, citationKey: entry.citationKey) }
+    check(DBLPCheck.record(of: try lib.item(id)!)?.differences.isEmpty == true, "지키기로 한 값은 다시 확인해도 묻지 않는다")
+    var monthly = found
+    monthly.date = "2020-07"
+    let keptYear = try lib.item(id)!
+    check(DBLPCheck.apply(monthly, key: hits[1].key, to: keptYear).map { _ in true } == nil
+          || DBLPCheck.apply(monthly, key: hits[1].key, to: keptYear).flatMap { $0.fields[DBLPCheck.fieldKey] }?.contains("2020-07") == false,
+          "연도를 지키기로 했으면 같은 연도의 달 날짜도 묻지 않는다")
+
+    // Verified 논문: 빈 칸을 채우지 않고 다른 값만 묻는다. 연도뿐인 날짜는 달까지 알면 묻는다.
+    var verified = PaperMetadata()
+    verified.type = "conferencePaper"
+    verified.title = mine.title
+    verified.creators = mine.creators
+    verified.date = "2020"
+    verified.venue = "SIGIR"
+    let verifiedID = try lib.add(verified, citationKey: "verified2020", collectionID: nil)
+    try lib.setTag("/Verified", of: [verifiedID], removing: [])
+    let verifiedEntry = try lib.item(verifiedID)!
+    check(DBLPCheck.isVerified(verifiedEntry) && DBLPCheck.dateNeedsCheck(verifiedEntry, year: 2020), "Verified·연도뿐인 날짜를 알아본다")
+    let verifiedApplied = DBLPCheck.apply(found, key: hits[1].key, to: verifiedEntry)
+    if let verifiedApplied { try lib.update(verifiedID, with: verifiedApplied, citationKey: "verified2020") }
+    let verifiedAfter = try lib.item(verifiedID)!
+    check(verifiedAfter.fields["pages"] == nil && verifiedAfter.doi == nil && verifiedAfter.date == "2020"
+          && DBLPCheck.record(of: verifiedAfter)?.differences == ["year": "2020-07"],
+          "Verified: 빈 칸은 두고 날짜(달까지)만 묻는다 (\(DBLPCheck.record(of: verifiedAfter)?.differences ?? [:]))")
+
+    // arXiv 프리프린트 → 출판본
+    var pre = PaperMetadata()
+    pre.type = "preprint"
+    pre.title = "Denoising diffusion probabilistic models"
+    pre.creators = [Creator(role: "author", family: "Ho", given: "Jonathan")]
+    pre.date = "2020-06-19"
+    pre.doi = "10.48550/arXiv.2006.11239"
+    pre.arxivID = "2006.11239"
+    pre.venue = "arXiv"
+    pre.fields = ["repository": "arXiv", "archiveID": "arXiv:2006.11239"]
+    let preID = try lib.add(pre, citationKey: "ho2020denoising", collectionID: nil)
+    try lib.update(preID, with: DBLPCheck.apply(nipsMeta, key: nips.key, to: try lib.item(preID)!)!, citationKey: "ho2020denoising")
+    var preEntry = try lib.item(preID)!
+    check(preEntry.type == "preprint" && DBLPCheck.record(of: preEntry)?.published?.type == "conferencePaper",
+          "프리프린트는 그대로 두고 출판본을 적어 둔다")
+    try lib.edit(preID, to: DBLPCheck.usePublished(in: preEntry)!, citationKey: preEntry.citationKey)
+    preEntry = try lib.item(preID)!
+    check(preEntry.type == "conferencePaper" && preEntry.venue?.hasPrefix("Advances in Neural") == true
+          && preEntry.fields["proceedingsTitle"] == preEntry.venue && preEntry.fields["repository"] == nil
+          && preEntry.doi == nil && preEntry.arxivID == "2006.11239" && preEntry.url?.contains("neurips.cc") == true
+          && preEntry.citationKey == "ho2020denoising" && preEntry.title == pre.title,
+          "Use Published Version: 종류·학회·주소를 바꾸고 제목·key·arXiv 번호는 둔다")
+    check(BibTeX.entry(preEntry).hasPrefix("@inproceedings{ho2020denoising,") && BibTeX.entry(preEntry).contains("booktitle = {Advances"),
+          "출판본은 @inproceedings로 내보낸다")
+
+    var pre2 = pre
+    pre2.title = "Another preprint"
+    pre2.doi = "10.48550/arXiv.2101.00001"
+    pre2.arxivID = "2101.00001"
+    let pre2ID = try lib.add(pre2, citationKey: nil, collectionID: nil)
+    try lib.update(pre2ID, with: DBLPCheck.apply(nipsMeta, key: "conf/x/Y", to: try lib.item(pre2ID)!)!, citationKey: nil)
+    try lib.edit(pre2ID, to: DBLPCheck.keepPreprint(try lib.item(pre2ID)!)!, citationKey: nil)
+    let kept = try lib.item(pre2ID)!
+    check(kept.type == "preprint" && DBLPCheck.record(of: kept)?.published == nil
+          && DBLPCheck.apply(nipsMeta, key: "conf/x/Y", to: kept) == nil, "Keep Preprint: 같은 출판본은 다시 묻지 않는다")
+
+    // OpenReview
+    let accepted = """
+    {"notes":[{"id":"YicbFdNTTy","forum":"YicbFdNTTy","pdate":1610000000000,"content":{
+      "title":{"value":"An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale"},
+      "authors":{"value":["Alexey Dosovitskiy","Lucas Beyer"]},"venue":{"value":"ICLR 2021 Oral"},"venueid":{"value":"ICLR.cc/2021/Conference"},
+      "_bibtex":{"value":"@inproceedings{\\ndosovitskiy2021an,\\ntitle={An Image is Worth 16x16 Words},\\nbooktitle={International Conference on Learning Representations},\\nyear={2021},\\n}"}}}]}
+    """
+    let or = OpenReview.metadata(Data(accepted.utf8))
+    check(or?.type == "conferencePaper" && or?.venue == "International Conference on Learning Representations" && or?.date == "2021"
+          && or?.creators.first?.family == "Dosovitskiy" && or?.url == "https://openreview.net/forum?id=YicbFdNTTy",
+          "OpenReview 채택 논문 (\(or?.venue ?? "-"))")
+    let submitted = """
+    {"notes":[{"id":"abc","content":{"title":"Some paper","authors":["A B"],"venue":"Submitted to ICLR 2024","venueid":"ICLR.cc/2024/Conference/Submission"}}]}
+    """
+    check(OpenReview.metadata(Data(submitted.utf8))?.type == "preprint", "OpenReview 심사 중(API v1)은 프리프린트")
 }
 
 let done = DispatchSemaphore(value: 0)

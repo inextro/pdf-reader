@@ -200,9 +200,10 @@ final class LibrarySidebarView: NSView, NSOutlineViewDataSource, NSOutlineViewDe
             }
         }
         // 논문 수는 한 번 훑어 센다.
-        var collectionCounts: [Int64: Int] = [:], tagCounts: [String: Int] = [:], unfiled = 0
+        var collectionCounts: [Int64: Int] = [:], tagCounts: [String: Int] = [:], unfiled = 0, suggestions = 0
         for item in store.items {
             if item.collectionIDs.isEmpty { unfiled += 1 }
+            if DBLPCheck.needsReview(item) { suggestions += 1 }
             for id in item.collectionIDs { collectionCounts[id, default: 0] += 1 }
             for tag in item.tags { tagCounts[tag, default: 0] += 1 }
         }
@@ -224,6 +225,10 @@ final class LibrarySidebarView: NSView, NSOutlineViewDataSource, NSOutlineViewDe
         newFiles.count = store.newFiles.count
         newFiles.isNewFiles = true
         library.children.append(newFiles)
+        // Needs Review: 고를 것이 남은 논문(지금은 DBLP 확인). 있을 때만 보이고, 다 고르면 사라진다(보고 있었으면 All Items로).
+        if suggestions > 0 {
+            library.children.append(counted(LibraryNode("Needs Review", symbol: "exclamationmark.circle", filter: .needsReview), suggestions))
+        }
         // 비어 있어도 둔다: 우클릭으로 첫 컬렉션을 만든다.
         groups = [library, LibraryNode("Collections", children: collectionNodes)]
         if !store.tags.isEmpty {
@@ -559,6 +564,7 @@ final class LibrarySidebarView: NSView, NSOutlineViewDataSource, NSOutlineViewDe
             cell.imageView?.contentTintColor = nil
         case .all?: cell.imageView?.contentTintColor = .systemIndigo
         case .unfiled?: cell.imageView?.contentTintColor = .systemOrange
+        case .needsReview?: cell.imageView?.contentTintColor = .systemYellow
         case .collection?: cell.imageView?.contentTintColor = .systemBlue
         case nil: cell.imageView?.contentTintColor = .systemGreen
         }

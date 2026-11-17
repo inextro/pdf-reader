@@ -70,6 +70,14 @@ final class Connector {
                 return try await attachFile(request)
             case ("POST", "/collection"):
                 return try move(request.body)
+            case ("GET", "/tasks"):
+                return .json(["tasks": DBLPQueue.shared.tasks(max: 3), "delay": DBLPQueue.shared.delay])
+            case ("POST", "/task-result"):
+                struct Result: Decodable { var id: String; var status: Int; var body: String?; var blocked: Bool?; var retryAfter: Int? }
+                let result = try JSONDecoder().decode(Result.self, from: request.body)
+                await DBLPQueue.shared.receive(id: result.id, status: result.status, body: result.body ?? "", blocked: result.blocked ?? false,
+                                                  retryAfter: result.retryAfter)
+                return .json(["ok": true])
             default:
                 return .error(404, "Not found")
             }
@@ -89,6 +97,8 @@ final class Connector {
         /// 이미 있던 논문(id)을 이 페이지의 정보로 고치고 collection으로 옮긴다.
         var proceed: Int64?
         var collection: Int64?
+        /// OpenReview 탭에서 확장이 받아 온 API 응답(notes?id=). 채택 여부와 학회 이름이 있다.
+        var openreview: String?
     }
 
     @MainActor
@@ -98,7 +108,10 @@ final class Connector {
         let isPDF = page.isPDF ?? false
         let meta = (page.meta ?? []).compactMap { $0.count == 2 ? ($0[0], $0[1]) : nil }
         // PDF 탭의 제목은 파일 이름이라 쓰지 않는다. PDF를 받은 뒤 그 안에서 찾는다.
-        let scraped = PaperMetadata.page(meta: meta, url: page.url, title: isPDF ? nil : page.title)
+        var scraped = PaperMetadata.page(meta: meta, url: page.url, title: isPDF ? nil : page.title)
+        if let note = page.openreview.flatMap({ OpenReview.metadata(Data($0.utf8)) }) {
+            scraped = scraped.merged(with: note, preferOther: true)
+        }
         var (metadata, warnings) = await MetadataLookup.complete(scraped, options: Settings.lookup)
         if metadata.title.isEmpty {
             metadata.title = URL(string: page.url)?.deletingPathExtension().lastPathComponent ?? page.url
@@ -134,6 +147,8 @@ final class Connector {
             id = try store.addPaper(metadata, to: target).id
         }
         store.didModify()
+        // DBLP로 빈 칸을 채우고 다른 값을 적어 둔다. 확장이 저장을 마치면 곧 받아 간다.
+        DBLPQueue.shared.add([id], purpose: .saved)
         guard let entry = store.items.first(where: { $0.id == id }) else { throw Failure(status: 500, message: "The paper was not saved.") }
         if Settings.pdfFolder == nil { warnings.append("Choose a folder for new PDFs in Quillo Settings.") }
         var json = itemJSON(entry)

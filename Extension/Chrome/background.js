@@ -2,6 +2,8 @@
 // 1. 페이지의 메타태그와 PDF 링크를 읽어 PaperLibrary에 보낸다(POST /save). PaperLibrary가 서지 정보를 채워 항목을 만든다.
 //    같은 논문이 이미 있으면 아무것도 바꾸지 않고 팝업에서 묻는다. 진행하면 proceed로 다시 보낸다.
 // 2. PaperLibrary가 알려 준 PDF 주소를 브라우저의 로그인 상태(학교 구독 등)로 받아 넘긴다(POST /attach).
+// 3. DBLP 조회: DBLP는 앱의 요청을 봇 확인으로 막아서, Quillo가 물어볼 주소를 주면(GET /tasks) 브라우저에서 받아
+//    돌려준다(POST /task-result). 1분마다, 그리고 논문을 저장한 뒤에 확인한다.
 
 const API = 'http://127.0.0.1:23120';
 const jobs = new Map(); // 탭 id → 마지막 상태
@@ -145,6 +147,7 @@ async function save(tab) {
       page = { url: tab.url, title: tab.title, meta: [], links: [], isPDF: /\.pdf(?:$|[?#])|\/pdf\//i.test(tab.url) };
     }
     if (!page || !/^https?:/.test(page.url)) throw new Error('This page cannot be saved.');
+    page.openreview = await openReviewNote(tabId, page.url);
 
     update(tabId, { phase: 'saving', step: 'Looking up the paper…' });
     const item = await api('/save', {
@@ -173,10 +176,174 @@ async function proceed(tabId, collection) {
   }
 }
 
+// OpenReview 논문이면 그 탭 안에서 API를 불러 채택 여부와 학회 이름을 받는다.
+// OpenReview API는 스크립트 요청에 봇 확인을 걸지만, 사용자가 보고 있는 OpenReview 페이지 안에서는 통과한다.
+async function openReviewNote(tabId, url) {
+  let id;
+  try {
+    const parsed = new URL(url);
+    if (!parsed.hostname.endsWith('openreview.net')) return null;
+    id = parsed.searchParams.get('id');
+  } catch {
+    return null;
+  }
+  if (!id) return null;
+  const read = async (api) => {
+    const target = `${api}/notes?id=${encodeURIComponent(id)}`;
+    try {
+      const [{ result }] = await chrome.scripting.executeScript({
+        target: { tabId },
+        func: async (u) => {
+          try {
+            const r = await fetch(u, { credentials: 'include' });
+            return r.ok ? await r.text() : null;
+          } catch {
+            return null;
+          }
+        },
+        args: [target],
+      });
+      if (result) return result;
+    } catch {
+      // PDF 보기 탭처럼 스크립트를 넣을 수 없으면 확장에서 받아 본다.
+    }
+    try {
+      const r = await fetch(target, { credentials: 'include' });
+      return r.ok ? await r.text() : null;
+    } catch {
+      return null;
+    }
+  };
+  for (const api of ['https://api2.openreview.net', 'https://api.openreview.net']) {
+    const text = await read(api);
+    try {
+      if (text && JSON.parse(text).notes?.length) return text;
+    } catch {
+      // JSON이 아니면(봇 확인 페이지) 다음 API를 본다.
+    }
+  }
+  return null;
+}
+
+// MARK: DBLP 조회
+
+let tasksRunning = false;
+
+// 봇 확인 페이지인지(DBLP는 Anubis를 쓴다).
+function isChallenge(type, text) {
+  return /text\/html/i.test(type || '') && /not a bot|anubis/i.test((text || '').slice(0, 4000));
+}
+
+// DBLP는 확장에서 보낸 요청도 봇 확인 페이지로 막는다. 그래서 뒤쪽 탭에 DBLP 주소를 열어 브라우저가 확인을 풀게 하고,
+// 그 탭 안에서 같은 사이트 요청으로 받는다(PDF를 받을 때와 같은 방식). 할 일이 끝나면 탭을 닫는다.
+const workTabs = new Map(); // origin → 탭 id
+
+// 탭 안에서 실행된다.
+async function fetchHere(url) {
+  try {
+    const r = await fetch(url, { credentials: 'include' });
+    return { status: r.status, type: r.headers.get('content-type') || '', retryAfter: r.headers.get('retry-after'), text: await r.text() };
+  } catch (error) {
+    return { status: 0, type: '', text: String(error) };
+  }
+}
+
+// url을 탭에 열고 봇 확인이 끝날 때까지(최대 40초) 기다린다.
+async function openWorkTab(url) {
+  const origin = new URL(url).origin;
+  let tabId = workTabs.get(origin);
+  const existing = tabId && await chrome.tabs.get(tabId).catch(() => null);
+  if (existing) await chrome.tabs.update(tabId, { url });
+  else {
+    tabId = (await chrome.tabs.create({ url, active: false })).id;
+    workTabs.set(origin, tabId);
+  }
+  const deadline = Date.now() + 40_000;
+  while (Date.now() < deadline) {
+    await sleep(1000);
+    const now = await chrome.tabs.get(tabId).catch(() => null);
+    if (!now) return null;
+    if (now.status === 'complete' && !/not a bot/i.test(now.title || '')) return tabId;
+  }
+  return tabId;
+}
+
+async function fetchInTab(tabId, url) {
+  const [{ result }] = await chrome.scripting.executeScript({ target: { tabId }, func: fetchHere, args: [url] });
+  return result;
+}
+
+async function fetchTask(url) {
+  const origin = new URL(url).origin;
+  let tabId = workTabs.get(origin);
+  if (tabId && !(await chrome.tabs.get(tabId).catch(() => null))) tabId = null;
+  if (!tabId) tabId = await openWorkTab(url);
+  if (!tabId) return { status: 0, text: 'The tab was closed.', blocked: false };
+  let result = await fetchInTab(tabId, url).catch((error) => ({ status: 0, type: '', text: String(error) }));
+  if (isChallenge(result.type, result.text)) {
+    // 확인이 다시 걸리면(쿠키가 끝남) 그 주소를 탭에서 다시 열어 푼다.
+    await openWorkTab(url);
+    result = await fetchInTab(tabId, url).catch((error) => ({ status: 0, type: '', text: String(error) }));
+  }
+  const retryAfter = parseInt(result.retryAfter || '', 10);
+  return { status: result.status, text: result.text, blocked: isChallenge(result.type, result.text), retryAfter: Number.isFinite(retryAfter) ? retryAfter : null };
+}
+
+async function closeWorkTabs() {
+  for (const tabId of workTabs.values()) await chrome.tabs.remove(tabId).catch(() => {});
+  workTabs.clear();
+}
+
+async function runTasks() {
+  if (tasksRunning) return;
+  tasksRunning = true;
+  try {
+    for (;;) {
+      const { tasks, delay } = await api('/tasks');
+      if (!tasks?.length) break;
+      let limited = false;
+      for (const task of tasks) {
+        // 요청 제한에 걸렸으면 남은 일은 보내지 않고 돌려준다(Quillo가 잠시 쉬었다가 다시 준다).
+        if (limited) {
+          await api('/task-result', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: task.id, status: -1, body: '' }) });
+          continue;
+        }
+        let result;
+        try {
+          result = await fetchTask(task.url);
+        } catch (error) {
+          result = { status: 0, text: String(error), blocked: false };
+        }
+        await api('/task-result', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: task.id, status: result.status, body: result.text, blocked: result.blocked, retryAfter: result.retryAfter }),
+        });
+        limited = result.status === 429 || result.blocked;
+        // DBLP의 요청 제한에 걸리지 않게 Quillo가 정한 간격으로. 확장 API를 불러 서비스 워커가 도중에 잠들지 않게 한다.
+        await sleep(delay || 3000);
+        await chrome.runtime.getPlatformInfo();
+      }
+    }
+  } catch {
+    // Quillo가 꺼져 있으면 다음 알람 때 다시 본다.
+  } finally {
+    await closeWorkTabs();
+    tasksRunning = false;
+  }
+}
+
+chrome.alarms.create('quillo-tasks', { periodInMinutes: 1 });
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === 'quillo-tasks') runTasks();
+});
+
 async function finish(tab, item) {
   if (item.hasPDF) update(tab.id, { phase: 'done', item, pdf: 'attached' });
   else if (!item.pdfCandidates.length) update(tab.id, { phase: 'done', item, pdf: 'none' });
   else await savePDF(tab, item);
+  // 방금 저장한 논문을 DBLP에서 찾아 빈 칸을 채운다.
+  runTasks();
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));

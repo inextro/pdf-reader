@@ -74,6 +74,10 @@ final class ItemInfoView: NSView, NSTextFieldDelegate {
     private var keepView = false
     /// + 로 더하는 저자·편집자 빈 줄.
     private var newCreatorRole: String?
+    /// 저자가 많을 때 다 펼친 역할(author, editor). 다른 논문을 고르면 다시 접힌다.
+    private var expandedCreators: Set<String> = []
+    /// 접었을 때 보이는 사람 수.
+    private static let collapsedCreators = 5
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -125,6 +129,7 @@ final class ItemInfoView: NSView, NSTextFieldDelegate {
     /// 표에서 고른 항목들. 하나일 때만 내용을 보인다.
     func show(_ items: [LibraryEntry]) {
         newCreatorRole = items.first?.key == shownKey ? newCreatorRole : nil
+        if items.first?.key != shownKey { expandedCreators = [] }
         guard items.count == 1, let item = items.first else {
             shownKey = nil
             scroll.isHidden = true
@@ -162,6 +167,7 @@ final class ItemInfoView: NSView, NSTextFieldDelegate {
         header.addArrangedSubview(title)
         title.widthAnchor.constraint(equalTo: header.widthAnchor).isActive = true
         add(header)
+        dblpNotice(item)
 
         for info in fields {
             switch info {
@@ -361,8 +367,21 @@ final class ItemInfoView: NSView, NSTextFieldDelegate {
             if isNew { DispatchQueue.main.async { [weak self] in self?.window?.makeFirstResponder((given as? FieldBox)?.field) } }
             return row
         }
-        var rows = people.map { row($0.offset, $0.element, isNew: false) }
+        // 많으면 앞의 다섯 명만 보이고, 아래 버튼으로 펼친다.
+        let collapsed = people.count > Self.collapsedCreators && !expandedCreators.contains(role)
+        var rows = people.prefix(collapsed ? Self.collapsedCreators : people.count).map { row($0.offset, $0.element, isNew: false) }
         if newCreatorRole == role { rows.append(row(item.creators.count, nil, isNew: true)) }
+        var more: NSButton?
+        if people.count > Self.collapsedCreators {
+            let hidden = people.count - Self.collapsedCreators
+            let title = collapsed ? "Show \(hidden) More" : "Show Fewer"
+            let button = NSButton(title: title, target: self, action: #selector(toggleCreators(_:)))
+            button.isBordered = false
+            button.font = .systemFont(ofSize: Style.fontSize - 2)
+            button.contentTintColor = .linkColor
+            button.identifier = NSUserInterfaceItemIdentifier(role)
+            more = button
+        }
         let heading = NSStackView(views: [Self.smallLabel("First Name"), Self.smallLabel("Last Name")])
         heading.orientation = .horizontal
         heading.distribution = .fillEqually
@@ -371,12 +390,20 @@ final class ItemInfoView: NSView, NSTextFieldDelegate {
             column.addArrangedSubview(view)
             view.widthAnchor.constraint(equalTo: column.widthAnchor).isActive = true
         }
+        if let more { column.addArrangedSubview(more) }
         let plus = NSButton(image: NSImage(systemSymbolName: "plus", accessibilityDescription: "Add")!, target: self, action: #selector(addCreator(_:)))
         plus.isBordered = false
         plus.toolTip = "Add an author or editor"
-        let count = rows.count
-        let label = role == "author" ? (count == 1 ? "Author" : "Authors") : (count == 1 ? "Editor" : "Editors")
+        let count = people.count + (newCreatorRole == role ? 1 : 0)
+        var label = role == "author" ? (count == 1 ? "Author" : "Authors") : (count == 1 ? "Editor" : "Editors")
+        if people.count > Self.collapsedCreators { label += " (\(people.count))" }
         add(section(label, column, accessory: plus))
+    }
+
+    @objc private func toggleCreators(_ sender: NSButton) {
+        guard let role = sender.identifier?.rawValue else { return }
+        if expandedCreators.remove(role) == nil { expandedCreators.insert(role) }
+        redraw()
     }
 
     /// 성·이름이 다 빈 사람은 뺀다.
@@ -411,7 +438,7 @@ final class ItemInfoView: NSView, NSTextFieldDelegate {
     /// 위 칸에 없는 Zotero 필드(series, ISBN …). 비우면 빠지고, Add Field…로 더한다.
     private func otherFields(_ item: LibraryEntry) {
         let shown: Set<String> = ["volume", "issue", "pages", ArticleNumber.key, "publisher", Library.editedKey]
-        for key in item.fields.keys.sorted() where !shown.contains(key) && !Self.venueFields.contains(key) {
+        for key in item.fields.keys.sorted() where !shown.contains(key) && !Self.venueFields.contains(key) && !key.hasPrefix("_") {
             edit(Self.fieldTitle(key), item.fields[key]) { m, _, v in m.fields[key] = v }
         }
         let button = NSButton(title: "Add Field…", target: self, action: #selector(addField(_:)))
@@ -539,6 +566,87 @@ final class ItemInfoView: NSView, NSTextFieldDelegate {
             ])
         }
         add(section(label, text))
+    }
+
+    // MARK: DBLP
+
+    /// DBLP에서 찾은 출판본과 다른 값. 고르면 사라진다.
+    private func dblpNotice(_ item: LibraryEntry) {
+        guard let record = DBLPCheck.record(of: item), record.published != nil || !record.differences.isEmpty else { return }
+        var rows: [NSView] = []
+        func line(_ text: String, use: String, keep: String, tag: String) -> NSView {
+            let label = wrapping(text, font: .systemFont(ofSize: Style.fontSize - 1))
+            let useButton = NSButton(title: use, target: self, action: #selector(dblpUse(_:)))
+            let keepButton = NSButton(title: keep, target: self, action: #selector(dblpKeep(_:)))
+            for button in [useButton, keepButton] {
+                button.font = .systemFont(ofSize: Style.fontSize - 3)
+                button.controlSize = .small
+                button.identifier = NSUserInterfaceItemIdentifier(tag)
+            }
+            let buttons = NSStackView(views: [useButton, keepButton])
+            buttons.spacing = 6
+            let column = NSStackView(views: [label, buttons])
+            column.orientation = .vertical
+            column.alignment = .leading
+            column.spacing = 4
+            label.widthAnchor.constraint(equalTo: column.widthAnchor).isActive = true
+            return column
+        }
+        if let p = record.published {
+            let kind = p.type == "journalArticle" ? "journal" : "conference"
+            // NeurIPS처럼 이름에 연도가 든 학회("… Systems 2023")는 연도를 또 붙이지 않는다.
+            let year = p.year.map(String.init).flatMap { (p.venue ?? "").contains($0) ? nil : $0 }
+            let venue = [p.venue, year].compactMap { $0 }.joined(separator: ", ")
+            rows.append(line("Published as a \(kind) paper: \(venue)", use: "Use Published Version", keep: "Keep Preprint", tag: "published"))
+        }
+        for field in record.differences.keys.sorted() {
+            let theirs = record.differences[field] ?? ""
+            let shown = field == "type" ? (Self.types.first { $0.id == theirs }?.title ?? theirs) : theirs
+            // 날짜는 출판사(CrossRef)에서 온 것일 수도 있어 "in DBLP"를 붙이지 않는다.
+            let text = field == "year" ? "\(DBLPCheck.title(of: field)): \(shown)" : "\(DBLPCheck.title(of: field)) in DBLP: \(shown)"
+            rows.append(line(text, use: "Use This", keep: "Keep Mine", tag: field))
+        }
+        let heading = NSTextField(labelWithString: "DBLP")
+        heading.font = .systemFont(ofSize: Style.fontSize - 3, weight: .semibold)
+        heading.textColor = .secondaryLabelColor
+        // Verified 논문: 직접 확인한 논문이라는 걸 알고 고르게 한 줄 붙인다.
+        if DBLPCheck.isVerified(item) {
+            let note = wrapping("You marked this paper as Verified. Nothing changes unless you choose.", font: .systemFont(ofSize: Style.fontSize - 3))
+            note.textColor = .secondaryLabelColor
+            rows.insert(note, at: 0)
+        }
+        let box = NSStackView(views: [heading] + rows)
+        box.orientation = .vertical
+        box.alignment = .leading
+        box.spacing = 8
+        box.edgeInsets = NSEdgeInsets(top: 8, left: 10, bottom: 10, right: 10)
+        box.wantsLayer = true
+        box.layer?.cornerRadius = 8
+        box.layer?.backgroundColor = NSColor.systemYellow.withAlphaComponent(0.14).cgColor
+        for row in rows { row.widthAnchor.constraint(equalTo: box.widthAnchor, constant: -20).isActive = true }
+        add(box)
+    }
+
+    @objc private func dblpUse(_ sender: NSButton) {
+        guard let item = shownItem, let field = sender.identifier?.rawValue else { return }
+        if field == "published" {
+            Task { @MainActor in
+                do {
+                    try await DBLPQueue.shared.applyPublished(to: item, edit: true)
+                    self.store.didModify()
+                } catch { self.store.presentError(error, in: self.window) }
+            }
+            return
+        }
+        guard let m = DBLPCheck.useDBLP(field, in: item) else { return }
+        do { try store.editItem(item.id, to: m, citationKey: item.citationKey) } catch { store.presentError(error, in: window) }
+    }
+
+    @objc private func dblpKeep(_ sender: NSButton) {
+        guard let item = shownItem, let field = sender.identifier?.rawValue else { return }
+        let m = field == "published" ? DBLPCheck.keepPreprint(item) : DBLPCheck.keep(field, in: item)
+        guard let m else { return }
+        do { try store.editItem(item.id, to: m, citationKey: item.citationKey) } catch { store.presentError(error, in: window) }
     }
 
     private func pdfField(_ item: LibraryEntry) {
