@@ -248,6 +248,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
         edit.addItem(withTitle: "Copy Citation", action: #selector(LibraryView.copyCitation(_:)), keyEquivalent: "C")
         edit.addItem(withTitle: "Copy BibTeX", action: #selector(LibraryView.copyBibTeX(_:)), keyEquivalent: "B")
+        let abbreviated = edit.addItem(withTitle: "Copy BibTeX with Journal Abbreviations",
+                                       action: #selector(LibraryView.copyAbbreviatedBibTeX(_:)), keyEquivalent: "B")
+        abbreviated.keyEquivalentModifierMask = [.command, .option]
+        abbreviated.isAlternate = true
         edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         edit.addItem(withTitle: "Delete…", action: #selector(LibraryView.deletePapers(_:)), keyEquivalent: "\u{8}")
         edit.addItem(.separator())

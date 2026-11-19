@@ -248,6 +248,13 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSM
                 menuItem = menu.addItem(withTitle: "Copy BibTeX" + count, action: #selector(copyBibTeXFromMenu(_:)), keyEquivalent: "")
                 menuItem?.target = self
                 menuItem?.representedObject = ids
+                // ⌥를 누르고 있으면 학술지 약칭으로 복사하는 항목으로 바뀐다.
+                let abbreviated = menu.addItem(withTitle: "Copy BibTeX with Journal Abbreviations" + count,
+                                               action: #selector(copyAbbreviatedBibTeXFromMenu(_:)), keyEquivalent: "")
+                abbreviated.target = self
+                abbreviated.representedObject = ids
+                abbreviated.isAlternate = true
+                abbreviated.keyEquivalentModifierMask = .option
             case .copyDOI: menuItem = item.doi == nil ? nil : add(menu, "Copy DOI", #selector(copyDOI(_:)), item)
             case .status: menuItem = statusSubmenu(menu, "Status" + count, targets)
             case .moveTo: menuItem = collectionSubmenu(menu, "Move to" + count, #selector(moveFromMenu(_:)), ids, unfiled: true)
@@ -546,14 +553,25 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSM
         copyBibTeXEntries(rows.filter { ids.contains($0.id) })
     }
 
+    @objc private func copyAbbreviatedBibTeXFromMenu(_ sender: NSMenuItem) {
+        let ids = Set(sender.representedObject as? [Int64] ?? [])
+        copyBibTeXEntries(rows.filter { ids.contains($0.id) }, abbreviated: true)
+    }
+
     /// Edit > Copy BibTeX (⌘⇧B).
     @objc func copyBibTeX(_ sender: Any?) { copyBibTeXEntries(selectedItems) }
 
+    /// Edit > Copy BibTeX with Journal Abbreviations (⌥⌘⇧B). 이번 복사에만 journal을 약칭으로 쓴다.
+    @objc func copyAbbreviatedBibTeX(_ sender: Any?) { copyBibTeXEntries(selectedItems, abbreviated: true) }
+
     /// BibTeX 항목을 복사한다. LaTeX의 .bib 파일(Overleaf 등)에 그대로 붙인다.
-    private func copyBibTeXEntries(_ items: [LibraryEntry]) {
+    private func copyBibTeXEntries(_ items: [LibraryEntry], abbreviated: Bool = false) {
         guard !items.isEmpty else { return }
-        copy(BibTeX.entries(items, options: Settings.bibtex) + "\n")
-        showToast(items.count == 1 ? "BibTeX copied" : "\(items.count) BibTeX entries copied")
+        var options = Settings.bibtex
+        options.abbreviateJournals = abbreviated
+        copy(BibTeX.entries(items, options: options) + "\n")
+        let what = items.count == 1 ? "BibTeX copied" : "\(items.count) BibTeX entries copied"
+        showToast(abbreviated ? what + " (journal abbreviations)" : what)
     }
 
     /// Edit > Copy Citation (⌘⇧C).
@@ -625,7 +643,7 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSM
     @objc func deletePapers(_ sender: Any?) { confirmDelete(selectedItems) }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        [#selector(deletePapers(_:)), #selector(copyCitation(_:)), #selector(copyBibTeX(_:))].contains(menuItem.action) ? !selectedItems.isEmpty : true
+        [#selector(deletePapers(_:)), #selector(copyCitation(_:)), #selector(copyBibTeX(_:)), #selector(copyAbbreviatedBibTeX(_:))].contains(menuItem.action) ? !selectedItems.isEmpty : true
     }
 
     /// 확인을 받고 라이브러리에서 지운다. PDF는 휴지통으로 간다.

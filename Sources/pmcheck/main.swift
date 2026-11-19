@@ -1370,6 +1370,22 @@ do {
           "LaTeX 특수 문자를 이스케이프")
     check(journalBib.contains("author = {{OpenAI}}") && journalBib.contains("number = {3}") && journalBib.contains("articleno = {103403}"),
           "이름 하나뿐인 저자는 {{}}, issue → number, 논문 번호")
+    check(!journalBib.contains("numpages"), "쪽이 없으면 numpages도 없다")
+
+    // 학술지 약칭: 기본은 전체 이름, 한 번만 약칭으로 복사. 번호 매긴 논문은 1부터 시작하는 쪽에서 numpages.
+    var acm = PaperMetadata()
+    acm.type = "journalArticle"
+    acm.title = "Serendipity in recommender systems"
+    acm.date = "2024"
+    acm.fields = ["publicationTitle": "ACM Transactions on Information Systems", "journalAbbreviation": "ACM Trans. Inf. Syst.",
+                  "articleNumber": "50", "pages": "1–25"]
+    let acmFull = BibTeX.entry(acm, key: "acm2024"), acmShort = BibTeX.entry(acm, key: "acm2024", options: BibTeXOptions(abbreviateJournals: true))
+    check(acmFull.contains("journal = {ACM Transactions on Information Systems}") && acmShort.contains("journal = {ACM Trans. Inf. Syst.}"),
+          "journal: 기본은 전체 이름, abbreviateJournals면 약칭")
+    check(acmFull.contains("numpages = {25}") && acmFull.contains("articleno = {50}"), "논문 번호가 있으면 쪽 1–25에서 numpages 25")
+    check(BibTeX.entry(journal, key: "x", options: BibTeXOptions(abbreviateJournals: true)).contains("journal = {Information Processing \\& Management}"),
+          "약칭이 없으면 약칭 복사에서도 전체 이름")
+    check(BibTeX.numberOfPages("639-648") == nil && BibTeX.numberOfPages("1-37") == "37", "1쪽에서 시작할 때만 쪽수를 센다")
 
     var pre = PaperMetadata()
     pre.type = "preprint"

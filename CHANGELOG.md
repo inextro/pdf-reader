@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.0.9
+
+- New: **Journal Abbreviation** in the info panel for journal articles, filled in from CrossRef when you save a paper
+  (when CrossRef has one). Copy BibTeX still writes the full journal name; **Copy BibTeX with Journal Abbreviations**
+  (`⌥⇧⌘B`, or hold `⌥` in the menu) writes the abbreviation for that copy only.
+- New: Copy BibTeX writes `numpages` for papers with an article number (ACM and others), counted from pages such as
+  `1–25`, so ACM's style prints "Article 50, 25 pages".
+- Changed: The info panel shows what goes into a reference. For a conference paper: proceedings title, conference
+  name, series, date, volume and pages, publisher, place, DOI, URL; for a journal article: journal, abbreviation, date,
+  volume, issue, pages, DOI, URL. Fields that don't appear in a reference (Extra, abstract, ISSN, ISBN, language,
+  library catalog, accessed, event place, …) are kept but no longer shown. The abstract can be turned back on in
+  Settings. Field names are in title case.
+- Changed: Copy BibTeX leaves out `issn` and `isbn` by default. Turn them back on in **Settings → BibTeX**.
+
 ## 1.0.8
 
 - New: **Duplicates** in the sidebar shows papers that seem to be in your library twice: the same DOI, the same arXiv

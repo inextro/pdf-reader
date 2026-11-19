@@ -70,6 +70,8 @@ final class ItemInfoView: NSView, NSTextFieldDelegate {
         var apply: (inout PaperMetadata, inout String?, String?) -> Void
     }
     private var edits: [ObjectIdentifier: Edit] = [:]
+    /// 이번 build에서 이미 그린 Zotero 필드 묶음(otherFields).
+    private var shownGroups: Set<InfoField> = []
     /// 칸 하나를 저장한 뒤 패널을 다시 그리지 않는다(Tab으로 옮겨 간 칸이 그대로 있게).
     private var keepView = false
     /// + 로 더하는 저자·편집자 빈 줄.
@@ -158,6 +160,7 @@ final class ItemInfoView: NSView, NSTextFieldDelegate {
     private func build(_ item: LibraryEntry) {
         let fields = Settings.infoFields
         edits.removeAll()
+        shownGroups.removeAll()
         let header = NSStackView()
         header.orientation = .vertical
         header.alignment = .leading
@@ -177,7 +180,13 @@ final class ItemInfoView: NSView, NSTextFieldDelegate {
             case .type: break
             case .authors: creators(item, role: "author")
             case .editors: creators(item, role: "editor")
-            case .venue: edit(Self.venueTitle(item.type), item.venue) { m, _, v in m.venue = v }
+            case .venue:
+                edit(Self.venueTitle(item.type), item.venue) { m, _, v in m.venue = v }
+                // 학술지 약칭은 비어 있어도 보인다. BibTeX를 약칭으로 복사할 때(⌥⇧⌘B) journal에 들어간다.
+                if item.type == "journalArticle" || !(item.fields["journalAbbreviation"] ?? "").isEmpty {
+                    edit("Journal Abbreviation", item.fields["journalAbbreviation"]) { m, _, v in m.fields["journalAbbreviation"] = v }
+                }
+                otherFields(item, .venue)
             case .date: edit("Date", item.date ?? item.year.map(String.init)) { m, _, v in m.date = v }
             case .volumeIssuePages:
                 let keys = Self.numberKeys(item)
@@ -194,17 +203,21 @@ final class ItemInfoView: NSView, NSTextFieldDelegate {
                 if Self.showsPublisher(item) {
                     edit("Publisher", item.fields["publisher"]) { m, _, v in m.fields["publisher"] = v }
                 }
-                otherFields(item)
+                otherFields(item, .publisher)
             case .citationKey: edit("Citation Key", item.citationKey) { _, key, v in key = v }
             case .doi:
-                guard item.type != "webpage" || item.doi != nil else { break }
                 // arXiv 칸은 따로 두지 않는다. 항목 하나는 한 버전이라 DOI 하나로 충분하다(프리프린트는 arXiv DOI).
                 // arXiv DOI로 고치면 숨은 arXiv ID(같은 논문 알아보기·PDF 받기에 쓴다)도 맞춘다.
-                edit("DOI", item.doi, link: item.doi.flatMap { URL(string: "https://doi.org/\($0)") }) { m, _, v in
-                    m.doi = v.map(Self.bareDOI)
-                    if let doi = m.doi, doi.lowercased().hasPrefix("10.48550/"), let id = PaperID.arxiv(in: doi) { m.arxivID = id }
+                if item.type != "webpage" || item.doi != nil {
+                    edit("DOI", item.doi, link: item.doi.flatMap { URL(string: "https://doi.org/\($0)") }) { m, _, v in
+                        m.doi = v.map(Self.bareDOI)
+                        if let doi = m.doi, doi.lowercased().hasPrefix("10.48550/"), let id = PaperID.arxiv(in: doi) { m.arxivID = id }
+                    }
                 }
-            case .url: edit("URL", item.url, link: item.url.flatMap(URL.init(string:))) { m, _, v in m.url = v }
+                otherFields(item, .doi)
+            case .url:
+                edit("URL", item.url, link: item.url.flatMap(URL.init(string:))) { m, _, v in m.url = v }
+                otherFields(item, .url)
             case .collections:
                 let names = store.collections.filter { item.collectionIDs.contains($0.id) }.map { path(of: $0) }.sorted()
                 field("Collections", names.joined(separator: "\n"))
@@ -227,6 +240,8 @@ final class ItemInfoView: NSView, NSTextFieldDelegate {
                 }
             }
         }
+        // 설정에서 기준 칸을 숨겨 못 나온 필드 묶음은 맨 끝에 둔다(값이 숨지 않게).
+        for anchor in Self.otherFieldAnchors where !shownGroups.contains(anchor) { otherFields(item, anchor) }
     }
 
     // MARK: 바로 고치기
@@ -438,12 +453,41 @@ final class ItemInfoView: NSView, NSTextFieldDelegate {
         redraw()
     }
 
-    /// 위 칸에 없는 Zotero 필드(series, ISBN …). 비우면 빠지고, Add Field…로 더한다.
-    private func otherFields(_ item: LibraryEntry) {
+    /// 위 칸에 없는 Zotero 필드(series 등)를 Zotero 정보 패널과 비슷한 자리에 둔다.
+    /// 학회 이름·총서(SIGIR '23)는 학회지 아래, 출판 장소·판은 출판사 아래.
+    /// 모르는 필드는 출판사 묶음 끝에 알파벳순으로 붙는다. 비우면 빠지고, Add Field…(맨 마지막 묶음 끝)로 더한다.
+    private static let otherFieldGroups: [(anchor: InfoField, keys: [String])] = [
+        (.venue, ["conferenceName", "series", "seriesTitle", "seriesText", "seriesNumber"]),
+        (.publisher, ["place", "edition"]),
+        (.url, ["archive", "archiveLocation", "callNumber"]),
+    ]
+    private static var otherFieldAnchors: [InfoField] { otherFieldGroups.map(\.anchor) }
+    /// 정보 패널에 보이지 않는 필드. ACM 참고문헌에 나오지 않아 틀려도 알아챌 필요가 없는 값이다(지우지는 않는다).
+    /// 접속 날짜는 웹페이지 BibTeX의 urldate에만 쓰고, arXiv 번호는 DOI 칸이 대신 보여 준다.
+    /// 쪽수(numPages)는 논문 번호가 있을 때 BibTeX가 쪽에서 계산한다. 학술지 약칭은 학술지 칸 아래에 따로 둔다.
+    private static let hiddenFields: Set<String> = [
+        "accessDate", "libraryCatalog", "language", "shortTitle", "eventPlace", "rights", "archiveID",
+        "ISSN", "ISBN", "numPages", "journalAbbreviation",
+        // Extra는 Zotero 시절의 메모(TLDR, tex.* 등)라 패널에서는 가린다. 학회 장소는 ACM BibTeX에 나가지 않는다.
+        "extra",
+    ]
+
+    private func otherFields(_ item: LibraryEntry, _ anchor: InfoField) {
+        guard !shownGroups.contains(anchor), let index = Self.otherFieldAnchors.firstIndex(of: anchor) else { return }
+        shownGroups.insert(anchor)
         let shown: Set<String> = ["volume", "issue", "pages", ArticleNumber.key, "publisher", Library.editedKey]
-        for key in item.fields.keys.sorted() where !shown.contains(key) && !Self.venueFields.contains(key) && !key.hasPrefix("_") {
+        let grouped = Set(Self.otherFieldGroups.flatMap(\.keys))
+        var keys = Self.otherFieldGroups[index].keys.filter { item.fields[$0] != nil && !Self.hiddenFields.contains($0) }
+        if anchor == .publisher {
+            keys += item.fields.keys.sorted().filter { key in
+                !grouped.contains(key) && !shown.contains(key) && !Self.venueFields.contains(key)
+                    && !Self.hiddenFields.contains(key) && !key.hasPrefix("_")
+            }
+        }
+        for key in keys {
             edit(Self.fieldTitle(key), item.fields[key]) { m, _, v in m.fields[key] = v }
         }
+        guard index == Self.otherFieldGroups.count - 1 else { return }
         let button = NSButton(title: "Add Field…", target: self, action: #selector(addField(_:)))
         button.font = .systemFont(ofSize: Style.fontSize - 2)
         let row = NSStackView(views: [button])
@@ -489,7 +533,7 @@ final class ItemInfoView: NSView, NSTextFieldDelegate {
     private static func venueTitle(_ type: String) -> String {
         switch type {
         case "journalArticle": "Journal"
-        case "conferencePaper": "Proceedings"
+        case "conferencePaper": "Proceedings Title"
         case "preprint": "Repository"
         case "webpage": "Website"
         case "bookSection": "Book Title"
@@ -517,9 +561,11 @@ final class ItemInfoView: NSView, NSTextFieldDelegate {
     /// "conferenceName" → "Conference name"
     private static func fieldTitle(_ key: String) -> String {
         if key == ArticleNumber.key { return "Article No." }
+        if key == "archiveID" { return "Archive ID" }
         guard key.first?.isLowercase == true else { return key }
+        // conferenceName → "Conference Name"처럼 단어마다 대문자로 시작한다.
         var out = ""
-        for c in key { out += c.isUppercase ? " " + c.lowercased() : String(c) }
+        for c in key { out += c.isUppercase ? " " + String(c) : String(c) }
         return out.prefix(1).uppercased() + out.dropFirst()
     }
 

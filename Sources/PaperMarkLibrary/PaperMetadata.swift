@@ -223,6 +223,9 @@ extension PaperMetadata {
         }
         m.venue = firstString("container-title")
         if m.type == "journalArticle", let venue = m.venue, isConference(venue) { m.type = "conferencePaper" }
+        if m.type == "journalArticle", let short = firstString("short-container-title"), short != m.venue {
+            m.fields["journalAbbreviation"] = short
+        }
         m.fields["volume"] = string("volume")
         m.fields["issue"] = string("issue")
         m.fields["pages"] = string("page")

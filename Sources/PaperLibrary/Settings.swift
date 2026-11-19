@@ -39,10 +39,10 @@ enum Settings {
         }
     }
 
-    /// Copy BibTeX에서 내보내지 않을 필드(Settings → BibTeX). 처음에는 모두 내보낸다.
+    /// Copy BibTeX에서 내보내지 않을 필드(Settings → BibTeX). 처음에는 ISSN·ISBN만 뺀다(ACM 참고문헌에 나오지 않는다).
     static var bibtex: BibTeXOptions {
         get {
-            BibTeXOptions(omitted: Set(defaults.stringArray(forKey: "bibtexOmittedFields") ?? []),
+            BibTeXOptions(omitted: Set(defaults.stringArray(forKey: "bibtexOmittedFields") ?? ["isbn", "issn"]),
                           urlWithDOI: defaults.bool(forKey: "bibtexURLWithDOI"), hiddenTags: statusTags)
         }
         set {

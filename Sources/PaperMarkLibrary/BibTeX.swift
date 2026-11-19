@@ -8,11 +8,14 @@ public struct BibTeXOptions: Equatable {
     public var urlWithDOI: Bool
     /// keywords에서 뺄 태그(읽기 상태 태그 등). 대소문자를 가리지 않는다.
     public var hiddenTags: [String]
+    /// journal에 학술지 약칭(Journal Abbreviation)을 쓴다. 약칭이 없으면 전체 이름. 설정이 아니라 복사할 때 한 번 고른다(⌥⇧⌘B).
+    public var abbreviateJournals: Bool
 
-    public init(omitted: Set<String> = [], urlWithDOI: Bool = false, hiddenTags: [String] = []) {
+    public init(omitted: Set<String> = [], urlWithDOI: Bool = false, hiddenTags: [String] = [], abbreviateJournals: Bool = false) {
         self.omitted = Set(omitted.map { $0.lowercased() })
         self.urlWithDOI = urlWithDOI
         self.hiddenTags = hiddenTags
+        self.abbreviateJournals = abbreviateJournals
     }
 }
 
@@ -22,7 +25,7 @@ public struct BibTeXOptions: Equatable {
 public enum BibTeX {
     /// 내보낼 수 있는 필드 전부(설정 화면의 순서). title은 늘 내보낸다.
     public static let fields: [String] = [
-        "title", "author", "editor", "journal", "booktitle", "series", "edition", "volume", "number", "articleno", "pages",
+        "title", "author", "editor", "journal", "booktitle", "series", "edition", "volume", "number", "articleno", "numpages", "pages",
         "publisher", "address", "school", "institution", "howpublished", "eprint", "archivePrefix", "primaryClass",
         "year", "month", "doi", "url", "urldate", "isbn", "issn", "abstract", "keywords",
     ]
@@ -33,6 +36,14 @@ public enum BibTeX {
 
     public static func entry(_ e: LibraryEntry, options: BibTeXOptions = BibTeXOptions()) -> String {
         entry(PaperMetadata(e), key: e.citationKey.flatMap { $0.isEmpty ? nil : $0 } ?? "item\(e.id)", tags: e.tags, options: options)
+    }
+
+    /// "1-25"·"1–25"처럼 1쪽에서 시작하는 쪽 범위의 쪽수. 논문 번호가 있는 논문의 numpages에 쓴다.
+    public static func numberOfPages(_ pages: String?) -> String? {
+        guard let pages else { return nil }
+        let parts = pages.split(whereSeparator: { "-–—".contains($0) }).map { $0.trimmingCharacters(in: .whitespaces) }
+        guard parts.count == 2, parts[0] == "1", let last = Int(parts[1]), last >= 1 else { return nil }
+        return String(last)
     }
 
     public static func entry(_ e: PaperMetadata, key: String, tags: [String] = [], options: BibTeXOptions = BibTeXOptions()) -> String {
@@ -59,10 +70,12 @@ public enum BibTeX {
         switch e.type {
         case "journalArticle":
             type = "article"
-            add("journal", field("publicationTitle") ?? e.venue)
+            add("journal", (options.abbreviateJournals ? field("journalAbbreviation") : nil) ?? field("publicationTitle") ?? e.venue)
             add("volume", field("volume"))
             add("number", field("issue"))
             add("articleno", field(ArticleNumber.key))
+            // 번호로 매긴 논문(ACM 등)은 쪽이 1부터 다시 시작해 "Article 50, 25 pages"처럼 쪽수를 쓴다.
+            if field(ArticleNumber.key) != nil { add("numpages", field("numPages") ?? numberOfPages(field("pages"))) }
             add("pages", pages(field("pages")), raw: true)
             add("publisher", field("publisher"))
         case "conferencePaper":
