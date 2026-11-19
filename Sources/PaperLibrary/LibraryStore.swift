@@ -251,6 +251,106 @@ final class LibraryStore {
         }
     }
 
+    // MARK: 백업에서 되살리기
+
+    /// 서재가 비었는데 workspace의 백업에 논문이 있으면(DB를 잃었거나 새 Mac) 되살릴지 묻는다. 켤 때 본다.
+    func offerRestoreIfEmpty(in window: NSWindow?, then done: @escaping () -> Void) {
+        guard library != nil, items.isEmpty, let folder,
+              let file = try? LibraryBackup.read(from: folder), !file.items.isEmpty else { done(); return }
+        let ask = alert("Restore your library from the backup?",
+                        "The library on this Mac is empty, but your workspace has a backup (\(LibraryBackup.fileName)) "
+                        + "from \(Self.describe(file.exportedAt)) with \(Self.summary(file)).")
+        ask.addButton(withTitle: "Restore")
+        ask.addButton(withTitle: "Not Now")
+        present(ask, in: window) { response in
+            guard response == .alertFirstButtonReturn else { done(); return }
+            self.restore(file, in: window, then: done)
+        }
+    }
+
+    /// File → Restore Library from Backup…: 지금 백업이나 날짜별 사본을 골라 서재를 그 내용으로 바꾼다.
+    func restoreFromBackup(in window: NSWindow?) {
+        guard let folder else { return }
+        // 고를 수 있는 백업: 지금 백업, 그리고 오늘보다 앞선 날짜별 사본(오늘 사본은 지금 백업과 같다).
+        var choices: [(title: String, file: LibraryBackup.File)] = []
+        var unreadable: Error?
+        do {
+            if let current = try LibraryBackup.read(from: folder) {
+                choices.append(("Latest — \(Self.describe(current.exportedAt)) · \(current.items.count) papers", current))
+            }
+        } catch { unreadable = error }
+        let today = LibraryBackup.day(of: URL(fileURLWithPath: LibraryBackup.dailyName(for: Date())))
+        for url in LibraryBackup.dailyBackups(in: folder) where LibraryBackup.day(of: url) != today {
+            guard let file = try? LibraryBackup.read(url) else { continue }
+            choices.append(("\(Self.describe(file.exportedAt)) · \(file.items.count) papers", file))
+        }
+        guard !choices.isEmpty else {
+            let text = unreadable?.localizedDescription ?? "There is no backup in \(LibraryBackup.backupFolder(in: folder).path)."
+            present(alert(unreadable == nil ? "No backup found." : "The backup could not be read.", text), in: window)
+            return
+        }
+        let ask = alert("Restore your library from a backup?",
+                        "Quillo keeps the latest backup and one copy per day for the last \(LibraryBackup.dailyCopies) days "
+                        + "you changed the library. The library on this Mac (\(items.count) papers) is replaced; a copy of it "
+                        + "is kept in ~/Library/Application Support/PaperLibrary. PDFs and highlights are not changed.")
+        let popup = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 360, height: 26), pullsDown: false)
+        popup.addItems(withTitles: choices.map(\.title))
+        ask.accessoryView = popup
+        ask.addButton(withTitle: "Restore").hasDestructiveAction = true
+        ask.addButton(withTitle: "Cancel")
+        ask.addButton(withTitle: "Show in Finder")
+        present(ask, in: window) { response in
+            switch response {
+            case .alertFirstButtonReturn:
+                self.restore(choices[max(popup.indexOfSelectedItem, 0)].file, in: window) {}
+            case .alertThirdButtonReturn:
+                let current = LibraryBackup.currentURL(in: folder)
+                let target = FileManager.default.fileExists(atPath: current.path) ? current : folder
+                NSWorkspace.shared.activateFileViewerSelecting([target])
+            default:
+                break
+            }
+        }
+    }
+
+    /// 지금 DB의 사본을 남기고 백업으로 바꾼 뒤 workspace와 맞춘다.
+    func performRestore(_ file: LibraryBackup.File) throws -> LibraryBackup.RestoreResult {
+        guard let library else { throw loadError ?? CocoaError(.fileReadUnknown) }
+        let copy = Self.databaseURL.deletingLastPathComponent()
+            .appendingPathComponent("library-before-restore-\(Int(Date().timeIntervalSince1970)).sqlite")
+        try library.db.execute("VACUUM INTO '\(copy.path.replacingOccurrences(of: "'", with: "''"))'")
+        let result = try LibraryBackup.restore(file, into: library)
+        // 지우기 되돌리기는 예전 id를 가리키므로 버린다.
+        undoManager.removeAllActions()
+        // 폴더가 없는 컬렉션은 지우지 않고 폴더를 만든다(처음 쓰는 workspace처럼 맞춘다).
+        UserDefaults.standard.removeObject(forKey: Self.adoptedKey)
+        reload()
+        reconcileWorkspace()
+        return result
+    }
+
+    private func restore(_ file: LibraryBackup.File, in window: NSWindow?, then done: @escaping () -> Void) {
+        do {
+            let result = try performRestore(file)
+            var lines = ["\(result.items) papers, \(result.collections) collections, \(result.tags) tags, \(result.notes) notes."]
+            if !missingPDF.isEmpty { lines.append("\(missingPDF.count) PDFs are not in the workspace folder.") }
+            present(alert("Library restored", lines.joined(separator: "\n")), in: window) { _ in done() }
+        } catch {
+            reload()
+            present(alert("Restore failed.", error.localizedDescription), in: window) { _ in done() }
+        }
+    }
+
+    private static func summary(_ file: LibraryBackup.File) -> String {
+        "\(file.items.count) papers and \(file.collections.count) collections"
+    }
+
+    /// 백업의 exportedAt(UTC ISO 8601)을 이 Mac의 날짜 표기로.
+    private static func describe(_ iso: String) -> String {
+        guard let date = ISO8601DateFormatter().date(from: iso) else { return iso }
+        return DateFormatter.localizedString(from: date, dateStyle: .medium, timeStyle: .short)
+    }
+
     static func googleDriveFolder() -> URL? {
         let cloud = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/CloudStorage")
         guard let drive = (try? FileManager.default.contentsOfDirectory(at: cloud, includingPropertiesForKeys: nil))?

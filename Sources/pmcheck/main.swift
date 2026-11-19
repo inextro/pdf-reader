@@ -737,16 +737,62 @@ for d in [fakePaperMark, fakeQuillo] { d.dictionaryRepresentation().keys.forEach
 UserDefaults.standard.removePersistentDomain(forName: "pmcheck.papermark")
 UserDefaults.standard.removePersistentDomain(forName: "pmcheck.quillo")
 // 이름을 바꾸기 전의 PaperLibrary.json만 있으면 Quillo.json으로 옮겨 쓴다. 둘 다 있으면 옛 파일은 두고 새 파일만 쓴다.
-let renameDir = libDir.appendingPathComponent("backup-rename")
-try FileManager.default.createDirectory(at: renameDir, withIntermediateDirectories: true)
-try Data("old".utf8).write(to: renameDir.appendingPathComponent("PaperLibrary.json"))
-_ = try LibraryBackup.write(library, to: renameDir)
-check(!FileManager.default.fileExists(atPath: renameDir.appendingPathComponent("PaperLibrary.json").path)
-      && FileManager.default.fileExists(atPath: renameDir.appendingPathComponent("Quillo.json").path), "옛 백업 PaperLibrary.json을 Quillo.json으로 옮기기")
-try Data("old".utf8).write(to: renameDir.appendingPathComponent("PaperLibrary.json"))
-_ = try LibraryBackup.write(library, to: renameDir)
-check((try? Data(contentsOf: renameDir.appendingPathComponent("PaperLibrary.json"))) == Data("old".utf8),
-      "새 백업이 있으면 옛 백업은 건드리지 않기")
+// 백업은 workspace의 숨김 폴더 .Quillo에 둔다. 예전 자리(workspace 바로 아래)의 Quillo.json·PaperLibrary.json은 옮긴다.
+check(backupURL.path.hasSuffix("/.Quillo/Quillo.json"), "백업은 .Quillo 폴더에")
+let fm0 = FileManager.default
+for oldName in ["PaperLibrary.json", "Quillo.json"] {
+    let dir = libDir.appendingPathComponent("backup-move-\(oldName)")
+    try fm0.createDirectory(at: dir, withIntermediateDirectories: true)
+    try JSONEncoder().encode(LibraryBackup.make(from: library)).write(to: dir.appendingPathComponent(oldName))
+    check(try LibraryBackup.read(from: dir)?.items.count == 3, "예전 자리의 \(oldName)도 읽는다")
+    _ = try LibraryBackup.write(library, to: dir)
+    check(!fm0.fileExists(atPath: dir.appendingPathComponent(oldName).path)
+          && fm0.fileExists(atPath: dir.appendingPathComponent(".Quillo/Quillo.json").path), "예전 백업 \(oldName)을 .Quillo로 옮기기")
+    try Data("old".utf8).write(to: dir.appendingPathComponent(oldName))
+    _ = try LibraryBackup.write(library, to: dir)
+    check((try? Data(contentsOf: dir.appendingPathComponent(oldName))) == Data("old".utf8),
+          "새 자리에 백업이 있으면 예전 자리 \(oldName)은 건드리지 않기")
+}
+// 날짜별 사본: 그날 마지막 상태가 남고, 최근 30개만 둔다.
+do {
+    let dir = libDir.appendingPathComponent("backup-daily")
+    let day: TimeInterval = 86400
+    let start = Date(timeIntervalSince1970: 1_790_000_000)
+    for n in 0..<35 { _ = try LibraryBackup.write(library, to: dir, now: start.addingTimeInterval(Double(n) * day)) }
+    let daily = LibraryBackup.dailyBackups(in: dir)
+    check(daily.count == LibraryBackup.dailyCopies
+          && daily.first?.lastPathComponent == LibraryBackup.dailyName(for: start.addingTimeInterval(34 * day))
+          && daily.last?.lastPathComponent == LibraryBackup.dailyName(for: start.addingTimeInterval(5 * day)),
+          "날짜별 사본은 최근 30개만 (\(daily.count), \(daily.first?.lastPathComponent ?? "-") … \(daily.last?.lastPathComponent ?? "-"))")
+    check(try LibraryBackup.read(daily[0]).items.count == 3 && LibraryBackup.day(of: daily[0]) != nil, "날짜별 사본을 읽고 날짜를 안다")
+    let names = (try fm0.contentsOfDirectory(atPath: dir.path))
+    check(names == [".Quillo"], "workspace에는 숨김 폴더만 생긴다 \(names)")
+} catch { check(false, "날짜별 사본: \(error)") }
+// 되살리기: 빈 DB에 백업을 넣으면 같은 서재가 된다(id만 다르다). 이미 있던 내용은 바뀐다.
+do {
+    let file = try LibraryBackup.make(from: library)
+    let restored = try Library(url: libDir.appendingPathComponent("restored.sqlite"))
+    var gone = PaperMetadata()
+    gone.title = "Will be replaced"
+    _ = try restored.add(gone, citationKey: "gone2020", collectionID: nil)
+    let result = try LibraryBackup.restore(file, into: restored)
+    let again = try LibraryBackup.make(from: restored)
+    check(result.items == file.items.count && again.items == file.items && again.collections == file.collections
+          && again.deleted == file.deleted, "백업에서 되살리면 같은 서재 (\(result))")
+    check(try restored.items().contains { $0.citationKey == "gone2020" } == false, "되살리면 있던 논문은 바뀐다")
+    let zoteroKeys = try restored.db.query("SELECT count(*) AS n FROM items WHERE zotero_key IS NOT NULL").first?.int("n")
+    let years = (try restored.items().map(\.year), try library.items().map(\.year))
+    check(zoteroKeys == Int64(file.items.count) && years.0 == years.1,
+          "되살려도 Zotero key와 연도가 남아 다시 가져와도 겹치지 않는다")
+    // 빈 서재가 논문이 든 백업을 덮어쓰지 않는다.
+    let empty = try Library(url: libDir.appendingPathComponent("empty.sqlite"))
+    let guardDir = libDir.appendingPathComponent("backup-guard")
+    try FileManager.default.createDirectory(at: guardDir, withIntermediateDirectories: true)
+    _ = try LibraryBackup.write(library, to: guardDir)
+    _ = try LibraryBackup.write(empty, to: guardDir)
+    check(try LibraryBackup.read(from: guardDir)?.items.count == file.items.count, "빈 서재는 백업을 덮어쓰지 않는다")
+    check(try LibraryBackup.read(from: libDir.appendingPathComponent("no-such-folder")) == nil, "백업이 없으면 nil")
+} catch { check(false, "되살리기: \(error)") }
 
 // 실제 Zotero 라이브러리(있을 때만): 임시 DB로 가져와 개수와 PDF 경로 확인
 if FileManager.default.fileExists(atPath: ZoteroImport.defaultDatabase.path), let base = ZoteroImport.attachmentBase() {

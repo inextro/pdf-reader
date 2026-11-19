@@ -91,7 +91,10 @@ choose (for example in Google Drive).
 - **Copy BibTeX** (`⇧⌘B`) for LaTeX. Paste the entries into your `.bib` file (for example in Overleaf). Each entry
   uses the paper's citation key, so keys imported from Better BibTeX stay the same. Choose the fields in
   **Settings → BibTeX**. Journals go out under their full name; `⌥⇧⌘B` copies with journal abbreviations instead.
-- **Backup.** The library is also written as `Quillo.json` in your workspace folder.
+- **Backup.** The library is also written to a hidden `.Quillo` folder in your workspace (for example in Google
+  Drive): the latest backup, `Quillo.json`, and a copy for each of the last 30 days you changed the library.
+  **File → Restore Library from Backup…** rebuilds the library from any of them, and on a new Mac Quillo offers to
+  restore it when you choose the same workspace folder.
 - **Updates itself.** Once a day it checks GitHub for a new release and shows what's new, and **Install and
   Relaunch** updates it in place. Use **Quillo → Check for Updates…** any time, or turn off the daily check in Settings (`⌘,`). When
   an update changes the Chrome extension, Quillo asks you to click **Reload** on it in Chrome.

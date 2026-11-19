@@ -53,16 +53,22 @@ extension LibraryStore {
 
     // MARK: 맞추기
 
-    /// 켤 때 부른다: 한 번 맞추고 폴더를 감시한다.
+    /// 맞춘 적 있는 workspace 경로. 다르면 처음 쓰는 것으로 보고 폴더가 없는 컬렉션의 폴더를 만든다.
+    static let adoptedKey = "workspaceAdopted"
+
+    /// 켤 때 부른다: 한 번 맞추고, 백업을 새로 쓰고(앱 밖에서 DB가 바뀌었을 수 있다), 폴더를 감시한다.
     func startWorkspaceSync() {
         reconcileWorkspace()
+        if let library, let folder {
+            do { try LibraryBackup.write(library, to: folder) } catch { NSLog("%@", "PaperLibrary backup failed: \(error)") }
+        }
         watchWorkspace()
     }
 
     /// 폴더와 DB를 맞춘다. 이 workspace를 처음 쓰면 DB를 백업하고, 폴더가 없는 컬렉션은 지우지 않고 폴더를 만든다.
     func reconcileWorkspace() {
         guard !isImporting, let library, let folder else { return }
-        let adoptedKey = "workspaceAdopted"
+        let adoptedKey = Self.adoptedKey
         let first = UserDefaults.standard.string(forKey: adoptedKey) != folder.path
         if first { backupBeforeAdopting(library) }
         do {

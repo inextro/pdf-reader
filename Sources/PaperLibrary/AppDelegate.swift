@@ -60,14 +60,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // workspace가 없으면 쓸 수 없다(컬렉션 = 그 안의 폴더, PDF도 거기 둔다). 고를 때까지 묻고, 고른 뒤에 확장 설치를 권한다.
         DispatchQueue.main.async {
             self.requireWorkspace {
-                if extensionUpdated { ChromeExtension.announceUpdate(in: self.mainWindow.window) }
-                ChromeExtension.offerOnFirstLaunch(in: self.mainWindow.window)
-                // 새 버전 확인(켤 때 잠시 뒤 한 번, 그 뒤 하루마다). workspace를 고르는 중에는 묻지 않는다.
-                UpdateController.shared.start()
-                // 예전에 저장한 학술지 논문의 논문 번호(한 번만).
-                LibraryStore.shared.fillArticleNumbers()
-                // workspace 안의 PDF는 Quillo로, 나머지는 Preview로 열지 처음 한 번 묻는다.
-                DefaultPDFApp.askOnce()
+                // 서재가 비었는데 workspace에 백업이 있으면 먼저 되살릴지 묻는다(DB를 잃었거나 새 Mac).
+                LibraryStore.shared.offerRestoreIfEmpty(in: self.mainWindow.window) {
+                    if extensionUpdated { ChromeExtension.announceUpdate(in: self.mainWindow.window) }
+                    ChromeExtension.offerOnFirstLaunch(in: self.mainWindow.window)
+                    // 새 버전 확인(켤 때 잠시 뒤 한 번, 그 뒤 하루마다). workspace를 고르는 중에는 묻지 않는다.
+                    UpdateController.shared.start()
+                    // 예전에 저장한 학술지 논문의 논문 번호(한 번만).
+                    LibraryStore.shared.fillArticleNumbers()
+                    // workspace 안의 PDF는 Quillo로, 나머지는 Preview로 열지 처음 한 번 묻는다.
+                    DefaultPDFApp.askOnce()
+                }
             }
         }
     }
@@ -188,6 +191,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         LibraryStore.shared.importFromZotero(in: mainWindow.window)
     }
 
+    @objc private func restoreFromBackup(_ sender: Any?) {
+        showLibrary(nil)
+        LibraryStore.shared.restoreFromBackup(in: mainWindow.window)
+    }
+
     /// PDF가 있는 폴더를 바꾼다. DB의 PDF 경로는 이 폴더 기준이라, PDF 폴더를 옮겼을 때 쓴다.
     @objc private func changeFolder(_ sender: Any?) {
         let panel = NSOpenPanel()
@@ -233,6 +241,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         file.addItem(.separator())
         file.addItem(withTitle: "Import from Zotero…", action: #selector(importFromZotero(_:)), keyEquivalent: "I").target = self
         file.addItem(withTitle: "Change PDF Folder…", action: #selector(changeFolder(_:)), keyEquivalent: "").target = self
+        file.addItem(withTitle: "Restore Library from Backup…", action: #selector(restoreFromBackup(_:)), keyEquivalent: "").target = self
         file.addItem(.separator())
         // ⌘W는 PDF 탭을 닫는다(서재 칸에서는 창을 닫는다). 창을 닫아도 탭은 그대로 남는다.
         file.addItem(withTitle: "Close Tab", action: #selector(TabbedWindowController.closeTab(_:)), keyEquivalent: "w")

@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.0.10
+
+- New: **File → Restore Library from Backup…** rebuilds the library from a backup in your workspace folder: papers,
+  authors, PDFs, collections, tags, and notes. Choose the latest backup or a daily copy. A copy of the library it
+  replaces is kept in `~/Library/Application Support/PaperLibrary`. If Quillo starts with an empty library (a new
+  Mac, or the database was lost) and the workspace has a backup, it offers to restore it.
+- New: Daily copies of the backup. Quillo keeps the last state of each day you change the library, for the last 30
+  such days, so a mistake can be undone even after the latest backup has been overwritten.
+- Changed: Backups now live in a hidden `.Quillo` folder in your workspace (`.Quillo/Quillo.json` and
+  `.Quillo/Quillo-<date>.json`), so the workspace shows only your collections. `Quillo.json` is moved there the first
+  time. Google Drive still syncs the folder.
+- Changed: An empty library no longer overwrites a backup that has papers, and the backup is also written when Quillo
+  starts. It now keeps unused tags, years, and Zotero keys, so importing from Zotero after a restore doesn't add
+  papers twice.
+
 ## 1.0.9
 
 - New: **Journal Abbreviation** in the info panel for journal articles, filled in from CrossRef when you save a paper
