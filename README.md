@@ -83,6 +83,8 @@ choose (for example in Google Drive).
   DBLP…**, are compared with DBLP. Empty fields are filled in, arXiv papers that have been published get
   **Use Published Version**, and values that differ wait for you in **Needs Review** in the sidebar. Nothing you
   have is overwritten without your choice. Lookups go through the Chrome extension, so keep Chrome open.
+- **Find duplicates.** Papers that seem to be in the library twice (same DOI, arXiv number, or title) appear under
+  **Duplicates** in the sidebar, and the info panel shows where the other copy is.
 - **Fix metadata in place.** Click any field in the info panel to edit it, like in Zotero. Fields you edit are
   remembered and not overwritten when the paper is saved again from the browser.
 - **Copy citations** in APA, ACM, or IEEE style (`⇧⌘C`), or copy the citation key or DOI.

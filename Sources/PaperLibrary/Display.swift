@@ -69,8 +69,10 @@ enum LibraryColumn: String, CaseIterable {
 
 /// 오른쪽 정보 패널에 보이는 칸. 제목은 늘 보인다. 보이는 칸과 순서는 설정(Settings.infoFields)에 둔다.
 enum InfoField: String, CaseIterable {
-    case type, authors, editors, venue, date, volumeIssuePages, publisher, citationKey, doi, url,
-         collections, tags, pdf, added, modified, abstract, notes
+    // 기본 순서는 Zotero 정보 패널을 따른다: 서지 정보 → 추가·수정 날짜 → 초록 → 첨부·메모 → 컬렉션·태그.
+    // Citation Key는 Better BibTeX처럼 제목 바로 아래에 둔다(유형·제목은 늘 머리에 있다).
+    case type, citationKey, authors, editors, venue, volumeIssuePages, date, publisher, doi, url,
+         added, modified, abstract, pdf, notes, collections, tags
 
     static let defaults = allCases
 

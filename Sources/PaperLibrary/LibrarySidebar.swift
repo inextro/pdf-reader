@@ -229,6 +229,10 @@ final class LibrarySidebarView: NSView, NSOutlineViewDataSource, NSOutlineViewDe
         if suggestions > 0 {
             library.children.append(counted(LibraryNode("Needs Review", symbol: "exclamationmark.circle", filter: .needsReview), suggestions))
         }
+        // Duplicates: 같은 논문으로 보이는 항목들. 있을 때만 보인다.
+        if !store.duplicates.isEmpty {
+            library.children.append(counted(LibraryNode("Duplicates", symbol: "doc.on.doc", filter: .duplicates), store.duplicates.count))
+        }
         // 비어 있어도 둔다: 우클릭으로 첫 컬렉션을 만든다.
         groups = [library, LibraryNode("Collections", children: collectionNodes)]
         if !store.tags.isEmpty {
@@ -261,6 +265,10 @@ final class LibrarySidebarView: NSView, NSOutlineViewDataSource, NSOutlineViewDe
         }
         return search(groups)
     }
+
+    /// 밖에서 사이드바 범위를 바꾼다(정보 패널의 중복 알림 등). 바뀌면 onSelect가 불린다.
+    @discardableResult
+    func show(_ filter: LibraryFilter) -> Bool { select(filter) }
 
     @discardableResult
     private func select(_ filter: LibraryFilter) -> Bool {
@@ -565,6 +573,7 @@ final class LibrarySidebarView: NSView, NSOutlineViewDataSource, NSOutlineViewDe
         case .all?: cell.imageView?.contentTintColor = .systemIndigo
         case .unfiled?: cell.imageView?.contentTintColor = .systemOrange
         case .needsReview?: cell.imageView?.contentTintColor = .systemYellow
+        case .duplicates?: cell.imageView?.contentTintColor = .systemRed
         case .collection?: cell.imageView?.contentTintColor = .systemBlue
         case nil: cell.imageView?.contentTintColor = .systemGreen
         }

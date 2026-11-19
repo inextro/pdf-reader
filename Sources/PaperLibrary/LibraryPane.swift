@@ -77,6 +77,12 @@ final class LibraryPane: Pane, NSToolbarDelegate, NSSearchFieldDelegate, NSMenuI
             LibraryStore.shared.selectedCollection = if case .collection(let id) = $0 { id } else { nil }
         }
         sidebar.onNewFiles = { [weak self] in self?.showNewFiles() }
+        infoView.onShowDuplicates = { [weak self] ids in
+            guard let self else { return }
+            // 검색어가 있으면 범위와 관계없이 찾으므로, 사이드바만 바꾸고 표에서 함께 고른다.
+            self.sidebar.show(.duplicates)
+            self.libraryView.select(itemIDs: ids)
+        }
         libraryView.onSelectionChange = { [weak self] in
             self?.infoView.show($0)
             self?.updateInfoPanel(selection: Set($0.map(\.id)))

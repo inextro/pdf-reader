@@ -103,14 +103,18 @@ public enum LibraryFilter: Equatable {
     case tag(String)
     /// 사용자가 고를 것이 남은 논문. 지금은 DBLP 확인의 출판본 제안이나 다른 값.
     case needsReview
+    /// 같은 논문으로 보이는 항목이 서재에 또 있는 논문(`Duplicates`).
+    case duplicates
 
-    public func includes(_ item: LibraryEntry) -> Bool {
+    /// duplicates: 중복인 항목 id. 항목 하나만 봐서는 알 수 없어 부르는 쪽이 넘긴다.
+    public func includes(_ item: LibraryEntry, duplicates: Set<Int64> = []) -> Bool {
         switch self {
         case .all: return true
         case .unfiled: return item.collectionIDs.isEmpty
         case .collection(let id): return item.collectionIDs.contains(id)
         case .tag(let name): return item.tags.contains(name)
         case .needsReview: return DBLPCheck.needsReview(item)
+        case .duplicates: return duplicates.contains(item.id)
         }
     }
 }

@@ -159,7 +159,7 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSM
         // 검색어가 있으면 기본으로 사이드바 범위와 관계없이 전체에서 찾는다.
         let scoped = query.isEmpty || Settings.searchWithinSelection
         let fields = Settings.searchFields
-        rows = sorted(store.items.filter { (!scoped || filter.includes($0)) && SearchField.matches($0, query, in: fields) })
+        rows = sorted(store.items.filter { (!scoped || filter.includes($0, duplicates: Set(store.duplicates.keys))) && SearchField.matches($0, query, in: fields) })
         table.reloadData()
         table.selectRowIndexes(IndexSet(rows.indices.filter { selected.contains(rows[$0].key) }), byExtendingSelection: false)
         onSelectionChange?(selectedItems)

@@ -680,7 +680,7 @@ let collections = try library.collections()
 let vision = collections.first { $0.name == "Vision" }, cnn = collections.first { $0.name == "CNN" }
 check(cnn?.parentID == vision?.id && vision?.parentID == nil && convnet.map { LibraryFilter.collection(cnn!.id).includes($0) } == true
       && convnet.map { LibraryFilter.collection(vision!.id).includes($0) } == false, "하위 컬렉션과 소속")
-check(imported.filter(LibraryFilter.unfiled.includes).map(\.title).sorted() == ["A Preprint", "A Thesis"], "Unfiled")
+check(imported.filter { LibraryFilter.unfiled.includes($0) }.map(\.title).sorted() == ["A Preprint", "A Thesis"], "Unfiled")
 check(convnet?.matches("convnet liu") == true && convnet?.matches("cvpr 2020s") == true
       && convnet?.matches("tallrec") == false, "검색어 낱말이 모두 맞아야 한다")
 let foundByPath = try library.itemID(forPDF: zBase.appendingPathComponent("archive/ConvNet.pdf"), in: zBase)
@@ -1587,6 +1587,35 @@ if done.wait(timeout: .now() + 30) == .timedOut || online.value?.1.isEmpty == fa
           && live.title.hasPrefix("LightGCN: Simplifying and powering") && live.venue?.contains("SIGIR") == true,
           "실제 조회: arXiv → 출판본(SIGIR) (\(live.venue ?? "-"))")
 }
+
+// 중복 찾기: DOI(대소문자 무시), arXiv 번호(버전 뺌), 긴 제목(문장부호 무시)이 같으면 중복. 짧은 제목은 보지 않는다.
+do {
+    let lib = try Library(url: libDir.appendingPathComponent("dup-\(UUID().uuidString).sqlite"))
+    func add(_ title: String, doi: String? = nil, arxiv: String? = nil) throws -> Int64 {
+        var m = PaperMetadata()
+        m.type = "conferencePaper"
+        m.title = title
+        m.doi = doi
+        m.arxivID = arxiv
+        return try lib.add(m, citationKey: nil, collectionID: nil)
+    }
+    let a = try add("Paper one about graphs", doi: "10.1145/ABC")
+    let b = try add("A different title entirely", doi: "10.1145/abc")
+    let c = try add("Attention is all you need", arxiv: "1706.03762")
+    let d = try add("Attention Is All You Need!", arxiv: "1706.03762v5")
+    let e = try add("Graph condensation for graph neural networks")
+    let f = try add("Graph Condensation: for Graph Neural Networks")
+    let g = try add("Introduction")
+    let h = try add("Introduction")
+    let found = Duplicates.find(try lib.items())
+    check(found[a] == [b] && found[b] == [a], "중복: DOI 대소문자 무시")
+    check(found[c] == [d] && found[d] == [c], "중복: arXiv 버전 무시·제목 문장부호 무시")
+    check(found[e] == [f], "중복: 제목만 같음")
+    check(found[g] == nil && found[h] == nil, "중복: 짧은 제목은 보지 않음")
+    let (ea, eg) = (try lib.item(a)!, try lib.item(g)!)
+    check(LibraryFilter.duplicates.includes(ea, duplicates: Set(found.keys))
+          && !LibraryFilter.duplicates.includes(eg, duplicates: Set(found.keys)), "Duplicates 필터")
+} catch { check(false, "중복 찾기: \(error)") }
 
 print(failures == 0 ? "ALL PASS" : "\(failures) FAILED", "→", outDir.path)
 exit(failures == 0 ? 0 : 1)

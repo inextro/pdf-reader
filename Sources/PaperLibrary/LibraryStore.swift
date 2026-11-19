@@ -17,6 +17,8 @@ final class LibraryStore {
     private(set) var tags: [String] = []
     /// 첫 PDF가 디스크에 없는 항목.
     private(set) var missingPDF: Set<Int64> = []
+    /// 항목 id → 같은 논문으로 보이는 다른 항목 id들(사이드바 Duplicates, 정보 패널 알림).
+    private(set) var duplicates: [Int64: Set<Int64>] = [:]
     private(set) var isImporting = false
     /// workspace 안에 있지만 라이브러리에 없는 PDF(workspace 기준 경로). 사이드바 Unlinked PDFs에 보인다.
     var newFiles: [String] = []
@@ -143,6 +145,7 @@ final class LibraryStore {
         } catch {
             loadError = error
         }
+        duplicates = Duplicates.find(items)
         missingPDF = Set(items.filter { item in
             pdfURL(of: item).map { !FileManager.default.fileExists(atPath: $0.path) } ?? false
         }.map(\.id))

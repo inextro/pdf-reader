@@ -78,6 +78,8 @@ final class ItemInfoView: NSView, NSTextFieldDelegate {
     private var expandedCreators: Set<String> = []
     /// 접었을 때 보이는 사람 수.
     private static let collapsedCreators = 5
+    /// 중복 알림의 Show Both: 이 논문과 중복 항목들을 함께 보여 준다.
+    var onShowDuplicates: ((Set<Int64>) -> Void)?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -167,6 +169,7 @@ final class ItemInfoView: NSView, NSTextFieldDelegate {
         header.addArrangedSubview(title)
         title.widthAnchor.constraint(equalTo: header.widthAnchor).isActive = true
         add(header)
+        duplicateNotice(item)
         dblpNotice(item)
 
         for info in fields {
@@ -625,6 +628,46 @@ final class ItemInfoView: NSView, NSTextFieldDelegate {
         box.layer?.backgroundColor = NSColor.systemYellow.withAlphaComponent(0.14).cgColor
         for row in rows { row.widthAnchor.constraint(equalTo: box.widthAnchor, constant: -20).isActive = true }
         add(box)
+    }
+
+    /// 같은 논문으로 보이는 항목이 서재에 또 있으면 알린다. 합치기는 아직 없어 어디 있는지만 보여 준다.
+    private func duplicateNotice(_ item: LibraryEntry) {
+        guard let others = store.duplicates[item.id], !others.isEmpty else { return }
+        let entries = store.items.filter { others.contains($0.id) }
+        let heading = NSTextField(labelWithString: "Possible Duplicate")
+        heading.font = .systemFont(ofSize: Style.fontSize - 3, weight: .semibold)
+        heading.textColor = .secondaryLabelColor
+        var rows: [NSView] = []
+        let intro = entries.count == 1 ? "The same paper seems to be in your library:" : "The same paper seems to be in your library \(entries.count) more times:"
+        rows.append(wrapping(intro, font: .systemFont(ofSize: Style.fontSize - 1)))
+        for e in entries {
+            let place = store.collections.filter { e.collectionIDs.contains($0.id) }.map { path(of: $0) }.sorted()
+            let year = e.year.map { " (\($0))" } ?? ""
+            let text = "“\(e.title)”\(year) — " + (place.isEmpty ? "Unfiled" : place.joined(separator: ", "))
+            let label = wrapping(text, font: .systemFont(ofSize: Style.fontSize - 2))
+            label.textColor = .secondaryLabelColor
+            rows.append(label)
+        }
+        let show = NSButton(title: "Show Both", target: self, action: #selector(showDuplicates(_:)))
+        if entries.count > 1 { show.title = "Show All" }
+        show.font = .systemFont(ofSize: Style.fontSize - 3)
+        show.controlSize = .small
+        rows.append(show)
+        let box = NSStackView(views: [heading] + rows)
+        box.orientation = .vertical
+        box.alignment = .leading
+        box.spacing = 6
+        box.edgeInsets = NSEdgeInsets(top: 8, left: 10, bottom: 10, right: 10)
+        box.wantsLayer = true
+        box.layer?.cornerRadius = 8
+        box.layer?.backgroundColor = NSColor.systemRed.withAlphaComponent(0.10).cgColor
+        for row in rows where !(row is NSButton) { row.widthAnchor.constraint(equalTo: box.widthAnchor, constant: -20).isActive = true }
+        add(box)
+    }
+
+    @objc private func showDuplicates(_ sender: Any?) {
+        guard let item = shownItem else { return }
+        onShowDuplicates?((store.duplicates[item.id] ?? []).union([item.id]))
     }
 
     @objc private func dblpUse(_ sender: NSButton) {

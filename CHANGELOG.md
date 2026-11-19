@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.8
+
+- New: **Duplicates** in the sidebar shows papers that seem to be in your library twice: the same DOI, the same arXiv
+  number, or the same title. Selecting one shows where the other copy is, and **Show Both** selects them together.
+  The item appears only when there are duplicates.
+- Changed: The info panel follows Zotero's order by default: the citation key right under the title, then authors,
+  venue, volume, issue, pages, date, and identifiers, with the abstract, PDF, and notes after them and collections and
+  tags at the bottom. You can still reorder the fields in Settings.
+
 ## 1.0.7
 
 - New: **Settings → BibTeX** chooses the fields Copy BibTeX writes, with a live preview. Copy BibTeX can now also write
