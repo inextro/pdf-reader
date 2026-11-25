@@ -70,6 +70,8 @@ final class Connector {
                 return try await attachFile(request)
             case ("POST", "/collection"):
                 return try move(request.body)
+            case ("POST", "/reference"):
+                return try reference(request.body)
             case ("GET", "/tasks"):
                 return .json(["tasks": DBLPQueue.shared.tasks(max: 3), "delay": DBLPQueue.shared.delay])
             case ("POST", "/task-result"):
@@ -140,6 +142,14 @@ final class Connector {
             json["existing"] = true
             json["in"] = entry.collectionIDs.compactMap { c in store.collections.first { $0.id == c }?.name }
             json["collection"] = target.map { $0 as Any } ?? NSNull()
+            // 팝업이 Add as reference를 켤지 정한다(꺼져 있으면 논문은 한 컬렉션에만 속한다).
+            json["allowReferences"] = Settings.allowReferences
+            // Move here가 무엇을 바꾸는지 보이려고 원본 자리(PDF가 있는 컬렉션)를 알린다. 컬렉션 id, "top"(Unfiled), PDF 없으면 null.
+            switch Workspace.home(of: entry, paths: Workspace.paths(of: store.collections)) {
+            case .collection(let home): json["home"] = home
+            case .top: json["home"] = "top"
+            case .none: json["home"] = NSNull()
+            }
             json["pdfCandidates"] = []
             json["warnings"] = warnings
             return .json(json)
@@ -251,6 +261,29 @@ final class Connector {
         let move = try JSONDecoder().decode(Move.self, from: body)
         LibraryStore.shared.move([move.id], viewing: nil, to: move.to, in: nil)
         return .json(["ok": true])
+    }
+
+    /// 팝업의 Add as reference: 이미 있는 논문을 고른 컬렉션에 참조로 넣는다(식별자로 추가와 같은 규칙, AddOutcome).
+    /// 서지 정보와 PDF는 바꾸지 않는다. 참조가 꺼져 있거나 이미 그 컬렉션에 있으면 아무것도 바꾸지 않고 그 결과만 알린다.
+    @MainActor
+    private func reference(_ body: Data) throws -> ConnectorServer.Response {
+        struct Reference: Decodable { var id: Int64; var to: Int64 }
+        let library = try openLibrary()
+        let request = try JSONDecoder().decode(Reference.self, from: body)
+        let store = LibraryStore.shared
+        guard store.items.contains(where: { $0.id == request.id }) else {
+            throw Failure(status: 404, message: "The paper is no longer in the library.")
+        }
+        guard let name = store.collections.first(where: { $0.id == request.to })?.name else {
+            throw Failure(status: 404, message: "The collection is no longer in the library.")
+        }
+        let outcome = try library.placeExisting(request.id, in: request.to, allowReferences: Settings.allowReferences)
+        if outcome == .addedReference { store.didModify() }
+        // 팝업은 좁아서 참조로 넣었을 때는 짧게 쓴다. 나머지(이미 있음, 참조 꺼짐)는 식별자로 추가와 같은 문구.
+        let message = outcome == .addedReference ? "Added to “\(name)” (reference)."
+            : AddOutcome.summary([outcome], collection: "“\(name)”") { id in store.collections.first { $0.id == id }?.name }
+        NSLog("%@", "PaperLibrary connector: reference \(request.id) → \(request.to): \(outcome)")
+        return .json(["ok": outcome == .addedReference, "added": outcome == .addedReference, "message": message])
     }
 
     // MARK: 도움

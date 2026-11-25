@@ -19,6 +19,7 @@
       <select id="collection"></select>
     </label>
     <p id="where" class="where" hidden></p>
+    <p id="hint" class="hint" hidden></p>
     <p id="pdf" class="pdf"></p>
     <details id="log" class="log" hidden>
       <summary>Details</summary>
@@ -27,7 +28,11 @@
   </section>
   <div id="confirm" class="buttons" hidden>
     <button id="cancel" class="secondary">Cancel</button>
-    <button id="proceed">Save Again</button>
+    <span class="stack">
+      <button id="proceed" class="secondary" title="Update it from this page and move it to the collection above">Move here</button>
+      <small id="plan" class="plan"></small>
+    </span>
+    <button id="reference" title="Keep it where it is and also show it in the collection above">Add as reference</button>
   </div>
   <ul id="warnings" class="warnings"></ul>
   <button id="open" hidden>Open Quillo</button>

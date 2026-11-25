@@ -1,5 +1,7 @@
 // 팝업: 저장을 시작하고(background.js), 진행 상태와 저장된 논문을 보이고, 컬렉션을 고르게 한다.
 
+import { duplicateView } from './duplicate.js';
+
 const API = 'http://127.0.0.1:23120';
 const $ = (id) => document.getElementById(id);
 
@@ -7,6 +9,7 @@ let item = null;
 let shownCollection = null; // 팝업에 보이는 컬렉션. 저장한 뒤 바꾸면 그 컬렉션으로 옮긴다.
 let duplicate = false; // 이미 있는 논문: 진행을 누르기 전에는 아무것도 바꾸지 않는다.
 let collectionsLoaded = false;
+let collectionNames = new Map(); // id → 이름(들여쓰기 없이)
 
 async function api(path, init = {}) {
   const response = await fetch(API + path, { ...init, headers: { 'X-PaperLibrary': '1', ...(init.headers || {}) } });
@@ -32,10 +35,17 @@ function render(state) {
   duplicate = state.phase === 'duplicate';
   $('confirm').hidden = !duplicate;
   $('where').hidden = !duplicate;
+  $('hint').hidden = true;
+  $('collection').disabled = state.phase === 'referenced';
   if (duplicate) {
-    setStatus('Already in your library', 'warn');
-    const names = state.item.in || [];
-    $('where').textContent = `In ${names.length ? names.map((n) => `“${n}”`).join(', ') : 'Unfiled'}. Save again to update it and move it to the collection below.`;
+    // 오류가 아니라 어디에 있는지 알리는 정보다.
+    setStatus('Already in your library');
+    setPDF('', '');
+    showDuplicate();
+    return;
+  }
+  if (state.phase === 'referenced') {
+    setStatus(state.message, state.added ? 'ok' : '');
     setPDF('', '');
     return;
   }
@@ -66,6 +76,20 @@ function showItem(next) {
   }
 }
 
+// 고른 컬렉션에 따라 안내와 두 버튼을 맞춘다.
+function showDuplicate() {
+  const view = duplicateView(item, shownCollection, collectionNames);
+  $('where').textContent = view.where;
+  $('hint').textContent = view.hint;
+  $('hint').hidden = !view.hint;
+  $('proceed').disabled = !view.move;
+  $('plan').textContent = view.plan;
+  $('reference').disabled = !view.reference;
+  // 기본 버튼은 Add as reference. 쓸 수 없으면 Move here에 포커스를 둔다.
+  const focus = view.reference ? $('reference') : view.move ? $('proceed') : $('cancel');
+  focus.focus();
+}
+
 function setPDF(text, kind) {
   $('pdf').textContent = text;
   $('pdf').className = `pdf ${kind}`;
@@ -85,8 +109,10 @@ async function loadCollections() {
   const options = [];
   options.push(new Option('Unfiled', ''));
   for (const c of collections) options.push(new Option('   '.repeat(c.depth) + c.name, String(c.id)));
+  collectionNames = new Map(collections.map((c) => [c.id, c.name]));
   select.replaceChildren(...options);
   select.value = shownCollection === null ? '' : String(shownCollection);
+  if (duplicate) showDuplicate();
 }
 
 $('collection').addEventListener('change', async (event) => {
@@ -94,6 +120,7 @@ $('collection').addEventListener('change', async (event) => {
   const to = value === '' ? null : Number(value);
   if (duplicate) {
     shownCollection = to;
+    showDuplicate();
     return;
   }
   try {
@@ -109,6 +136,10 @@ $('collection').addEventListener('change', async (event) => {
 
 $('proceed').addEventListener('click', () => {
   chrome.runtime.sendMessage({ type: 'proceed', tabId: tab.id, collection: shownCollection });
+});
+$('reference').addEventListener('click', () => {
+  if (shownCollection === null) return;
+  chrome.runtime.sendMessage({ type: 'reference', tabId: tab.id, collection: shownCollection });
 });
 $('cancel').addEventListener('click', () => window.close());
 

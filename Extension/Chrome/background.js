@@ -1,6 +1,7 @@
 // 팝업을 열면 현재 탭의 논문을 PaperLibrary에 저장한다. 팝업을 닫아도 저장은 여기서 끝까지 이어진다.
 // 1. 페이지의 메타태그와 PDF 링크를 읽어 PaperLibrary에 보낸다(POST /save). PaperLibrary가 서지 정보를 채워 항목을 만든다.
-//    같은 논문이 이미 있으면 아무것도 바꾸지 않고 팝업에서 묻는다. 진행하면 proceed로 다시 보낸다.
+//    같은 논문이 이미 있으면 아무것도 바꾸지 않고 팝업에서 묻는다. Move here면 proceed로 다시 보내고,
+//    Add as reference면 고른 컬렉션에 참조로 넣는다(POST /reference).
 // 2. PaperLibrary가 알려 준 PDF 주소를 브라우저의 로그인 상태(학교 구독 등)로 받아 넘긴다(POST /attach).
 // 3. DBLP 조회: DBLP는 앱의 요청을 봇 확인으로 막아서, Quillo가 물어볼 주소를 주면(GET /tasks) 브라우저에서 받아
 //    돌려준다(POST /task-result). 1분마다, 그리고 논문을 저장한 뒤에 확인한다.
@@ -46,7 +47,7 @@ function readPage() {
 function update(tabId, state) {
   jobs.set(tabId, state);
   chrome.runtime.sendMessage({ type: 'state', tabId, state }).catch(() => {});
-  chrome.action.setBadgeText({ tabId, text: { saving: '…', done: '✓', duplicate: '!', error: '!' }[state.phase] || '' });
+  chrome.action.setBadgeText({ tabId, text: { saving: '…', done: '✓', referenced: '✓', duplicate: '!', error: '!' }[state.phase] || '' });
   chrome.action.setBadgeBackgroundColor({ tabId, color: { error: '#d33b3b', duplicate: '#d98a00' }[state.phase] || '#2f9e72' });
 }
 
@@ -171,6 +172,22 @@ async function proceed(tabId, collection) {
       body: JSON.stringify({ ...job.page, proceed: job.item.id, collection }),
     });
     await finish(job.tab, item);
+  } catch (error) {
+    update(tabId, { phase: 'error', message: error.message, offline: !!error.offline });
+  }
+}
+
+// 이미 있던 논문을 그대로 두고 고른 컬렉션에 참조로 넣는다. 서지 정보와 PDF는 건드리지 않는다.
+async function reference(tabId, collection) {
+  const job = jobs.get(tabId);
+  if (job?.phase !== 'duplicate') return;
+  update(tabId, { phase: 'saving', step: 'Adding a reference…', item: job.item, tab: job.tab });
+  try {
+    const result = await api('/reference', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: job.item.id, to: collection }),
+    });
+    update(tabId, { phase: 'referenced', item: job.item, message: result.message, added: result.added });
   } catch (error) {
     update(tabId, { phase: 'error', message: error.message, offline: !!error.offline });
   }
@@ -507,6 +524,10 @@ async function savePDF(tab, item) {
 chrome.runtime.onMessage.addListener((message, sender, reply) => {
   if (message.type === 'proceed') {
     proceed(message.tabId, message.collection);
+    return;
+  }
+  if (message.type === 'reference') {
+    reference(message.tabId, message.collection);
     return;
   }
   if (message.type !== 'save') return;
