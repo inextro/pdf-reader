@@ -54,7 +54,40 @@ final class LibrarySidebarView: NSView, NSOutlineViewDataSource, NSOutlineViewDe
     var onSelect: ((LibraryFilter) -> Void)?
     /// Unlinked PDFs를 눌렀을 때.
     var onNewFiles: (() -> Void)?
-    private(set) var selection: LibraryFilter = .all
+    private(set) var selection: LibraryFilter = LibrarySidebarView.savedSelection() {
+        didSet { Self.saveSelection(selection) }
+    }
+    private static let selectionKey = "librarySidebarSelection"
+
+    /// 마지막에 보던 곳. 컬렉션은 되살리기 뒤에도 맞도록 DB id 대신 key로 적는다.
+    private static func saveSelection(_ filter: LibraryFilter) {
+        let value: String
+        switch filter {
+        case .all: value = "all"
+        case .unfiled: value = "unfiled"
+        case .needsReview: value = "needsReview"
+        case .duplicates: value = "duplicates"
+        case .tag(let name): value = "tag:" + name
+        case .collection(let id):
+            guard let key = LibraryStore.shared.collections.first(where: { $0.id == id })?.key else { return }
+            value = "collection:" + key
+        }
+        UserDefaults.standard.set(value, forKey: selectionKey)
+    }
+
+    private static func savedSelection() -> LibraryFilter {
+        guard let value = UserDefaults.standard.string(forKey: selectionKey) else { return .all }
+        switch value {
+        case "unfiled": return .unfiled
+        case "needsReview": return .needsReview
+        case "duplicates": return .duplicates
+        default:
+            if value.hasPrefix("tag:") { return .tag(String(value.dropFirst(4))) }
+            if value.hasPrefix("collection:"), let id = LibraryStore.shared.collections
+                .first(where: { $0.key == value.dropFirst(11) })?.id { return .collection(id) }
+            return .all
+        }
+    }
 
     private let outline = NSOutlineView()
     private var groups: [LibraryNode] = []
