@@ -65,13 +65,16 @@ final class LibraryStore {
     }
 
     /// 서지 정보로 항목을 만든다. 같은 논문이 이미 있으면 만들지 않고 그 항목을 돌려준다. 다시 읽기·백업은 부르는 쪽이 한다.
-    func addPaper(_ metadata: PaperMetadata, to collection: Int64?) throws -> (id: Int64, existing: Bool) {
+    /// 이미 있는 항목은 collection(사이드바에서 고른 컬렉션)에 없으면 참조로 넣는다. 'Allow references'가 꺼져 있으면 그대로 둔다.
+    func addPaper(_ metadata: PaperMetadata, to collection: Int64?) throws -> (id: Int64, outcome: AddOutcome) {
         guard let library else { throw loadError ?? CocoaError(.fileReadUnknown) }
-        if let id = try library.existingItem(for: metadata) { return (id, true) }
+        if let id = try library.existingItem(for: metadata) {
+            return (id, try library.placeExisting(id, in: collection, allowReferences: Settings.allowReferences))
+        }
         let key = Naming.citationKey(pattern: Settings.citationKeyPattern, metadata: metadata, taken: try library.citationKeys())
         let id = try library.add(metadata, citationKey: key, collectionID: collection)
         if let tag = Self.newItemTag { try library.addTag(tag, to: id) }
-        return (id, false)
+        return (id, .added)
     }
 
     /// 새로 넣은 논문(확장, 식별자로 추가, Unlinked PDFs)에 붙이는 태그: 첫 읽기 상태.

@@ -2,7 +2,7 @@ import AppKit
 import PaperMarkLibrary
 
 /// 툴바의 마술 지팡이(Zotero의 "Add Item by Identifier"): DOI·arXiv 번호를 넣으면 서지 정보만 넣는다. PDF는 받지 않는다.
-/// 사이드바에서 컬렉션을 고르고 있으면 그 컬렉션에 넣는다.
+/// 사이드바에서 컬렉션을 고르고 있으면 그 컬렉션에 넣는다. 이미 있는 논문은 그 컬렉션에 참조로 넣는다(참조가 켜져 있을 때).
 final class AddByIdentifierController: NSViewController, NSTextFieldDelegate {
     /// 넣을 컬렉션(사이드바에서 고른 것).
     var collection: () -> Int64? = { nil }
@@ -73,32 +73,34 @@ final class AddByIdentifierController: NSViewController, NSTextFieldDelegate {
         let collection = collection()
         Task { @MainActor in
             var added: Set<Int64> = [], lines: [String] = [], failed: [String] = []
-            var newCount = 0, existingCount = 0
+            var outcomes: [AddOutcome] = []
             for seed in seeds {
                 let label = seed.doi ?? seed.arxivID ?? ""
                 let (metadata, warnings) = await MetadataLookup.complete(seed, options: Settings.lookup)
                 // 찾지 못하면 제목이 비어 있다. 이름뿐인 항목은 만들지 않는다.
                 guard !metadata.title.isEmpty else { failed.append(label); lines += warnings; continue }
                 do {
-                    let (id, existing) = try LibraryStore.shared.addPaper(metadata, to: collection)
+                    let (id, outcome) = try LibraryStore.shared.addPaper(metadata, to: collection)
                     added.insert(id)
-                    if existing { existingCount += 1 } else { newCount += 1 }
+                    outcomes.append(outcome)
                 } catch {
                     failed.append(label)
                     lines.append(error.localizedDescription)
                 }
             }
             if !added.isEmpty { LibraryStore.shared.didModify() }
+            let store = LibraryStore.shared
+            let name = { (id: Int64) in store.collections.first { $0.id == id }?.name }
             var summary: [String] = []
-            if newCount > 0 { summary.append("Added \(newCount) paper\(newCount == 1 ? "" : "s").") }
-            if existingCount > 0 { summary.append("\(existingCount) already in the library.") }
+            if !outcomes.isEmpty { summary.append(AddOutcome.summary(outcomes, collection: collection.flatMap(name), name: name)) }
             if !failed.isEmpty { summary.append("Not found: " + failed.joined(separator: ", ")) }
             setAdding(false)
             onAdded(added)
             if failed.isEmpty {
                 field.stringValue = ""
                 show(summary.joined(separator: " "))
-                if existingCount == 0 { close() }
+                // 새로 넣기만 했으면 닫는다. 이미 있던 논문이 있으면 무엇을 했는지 읽도록 남겨 둔다.
+                if outcomes.allSatisfy({ $0 == .added }) { close() }
             } else {
                 // 못 찾은 것만 입력창에 남겨 고쳐 다시 넣을 수 있게 한다.
                 field.stringValue = failed.joined(separator: " ")

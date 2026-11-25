@@ -971,6 +971,48 @@ var sameByTitle = PaperMetadata()
 sameByTitle.title = "LIGHTGCN — simplifying and powering graph convolution network for recommendation"
 check(try edited.existingItem(for: acmPage) == newID && edited.existingItem(for: sameByArxiv) == newID
       && edited.existingItem(for: sameByTitle) == newID && edited.existingItem(for: aclPage) == nil, "이미 있는 논문 찾기")
+// 식별자로 추가: 이미 있는 논문은 고른 컬렉션에 참조로 넣는다(참조가 꺼져 있으면 알리기만).
+do {
+    let placed = try Library(url: libDir.appendingPathComponent("placed-\(UUID().uuidString).sqlite"))
+    let inbox = try placed.insertCollection(name: "Inbox", parent: nil)
+    let proj = try placed.insertCollection(name: "Proj", parent: nil)
+    let paper = try placed.add(namedMeta, citationKey: "he2020lightgcn", collectionID: inbox)
+    let loose = try placed.add(sameByTitle, citationKey: "loose", collectionID: nil)
+    func homes(_ id: Int64) throws -> Set<Int64> { try placed.item(id)?.collectionIDs ?? [] }
+    let found = try placed.existingItem(for: sameByArxiv)
+    check(found == paper, "식별자로 추가: 이미 있는 논문 찾기")
+    // (4) 참조 꺼짐: 넣지 않고 원래 컬렉션을 알린다.
+    let off = try placed.placeExisting(paper, in: proj, allowReferences: false)
+    check(try off == .referencesOff(in: [inbox]) && homes(paper) == [inbox], "식별자로 추가: 참조 꺼짐이면 바꾸지 않는다")
+    // (3) 컬렉션을 고르지 않음: 바꾸지 않는다.
+    check(try placed.placeExisting(paper, in: nil, allowReferences: true) == .alreadyInLibrary && homes(paper) == [inbox],
+          "식별자로 추가: 컬렉션 없음이면 바꾸지 않는다")
+    // (1) 다른 컬렉션: 참조로 들어간다.
+    check(try placed.placeExisting(paper, in: proj, allowReferences: true) == .addedReference && homes(paper) == [inbox, proj],
+          "식별자로 추가: 다른 컬렉션이면 참조로 넣는다")
+    // (2) 이미 그 컬렉션: 바꾸지 않는다(참조 설정과 상관없이).
+    check(try placed.placeExisting(paper, in: proj, allowReferences: true) == .alreadyInCollection
+          && placed.placeExisting(paper, in: inbox, allowReferences: false) == .alreadyInCollection && homes(paper) == [inbox, proj],
+          "식별자로 추가: 이미 그 컬렉션이면 바꾸지 않는다")
+    check(try placed.placeExisting(loose, in: proj, allowReferences: false) == .referencesOff(in: []) && homes(loose) == [],
+          "식별자로 추가: Unfiled 논문도 참조 꺼짐이면 그대로")
+    let names: [Int64: String] = [inbox: "Inbox", proj: "Proj"]
+    let summary = { (o: [AddOutcome], c: String?) in AddOutcome.summary(o, collection: c, name: { names[$0] }) }
+    check(summary([.addedReference], "Proj") == "Added to Proj as a reference."
+          && summary([.alreadyInCollection], "Proj") == "Already in Proj."
+          && summary([.alreadyInLibrary], nil) == "Already in the library."
+          && summary([.referencesOff(in: [inbox])], "Proj")
+             == "Already in the library (in Inbox). Turn on Allow references in Settings to add it to Proj too."
+          && summary([.referencesOff(in: [])], "Proj")
+             == "Already in the library (in Unfiled). Turn on Allow references in Settings to add it to Proj too.",
+          "식별자로 추가: 한 편 알림")
+    let mixed = summary([.added, .added, .addedReference, .alreadyInCollection, .alreadyInCollection], "Proj")
+    check(mixed == "Added 2 papers. 1 added to Proj as a reference. 2 already in Proj.", "식별자로 추가: 여러 편 요약 (\(mixed))")
+    let mixedOff = summary([.added, .referencesOff(in: [inbox]), .referencesOff(in: [proj, inbox])], "Other")
+    check(mixedOff == "Added 1 paper. 2 already in the library (in Inbox, Proj). Turn on Allow references in Settings to add them to Other too.",
+          "식별자로 추가: 참조 꺼짐 여러 편 요약 (\(mixedOff))")
+}
+
 try edited.update(newID, with: aclPage, citationKey: "wang2024RecMind")
 check(try edited.item(newID).map { $0.title == aclPage.title && $0.citationKey == "wang2024RecMind" && $0.creators.count == 2
                                    && $0.attachments.count == 1 && $0.collectionIDs == [2] } == true, "서지 정보 바꾸기")
