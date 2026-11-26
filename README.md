@@ -73,8 +73,10 @@ choose (for example in Google Drive).
   **Add Reference**). Changes you make in Finder show up in the library.
 - **Save from Chrome.** The **Save to Quillo** extension adds the paper on the current page, with its PDF, to the
   collection selected in the sidebar. It reads the page's metadata and fills in the rest from CrossRef and arXiv.
-  If the paper is already in the library, it asks before updating it.
-- **Add by DOI or arXiv ID** (`⇧⌘N`).
+  If the paper is already in the library, it shows where it is and lets you add it to the selected collection as a
+  reference or move it there.
+- **Add by DOI or arXiv ID** (`⇧⌘N`). Only the metadata is saved, without the PDF. A paper that is already in the
+  library is added to the selected collection as a reference.
 - **Import from Zotero**, including collections, tags, notes, and Better BibTeX citation keys.
 - **Reading status.** Click the status pill in the Tags column to switch between To Do, In Process, Verified, and
   Completed. New papers start as To Do. Change the list in **Settings → Menu → Status tags**. Create, rename,
@@ -87,6 +89,7 @@ choose (for example in Google Drive).
   **Duplicates** in the sidebar, and the info panel shows where the other copy is.
 - **Fix metadata in place.** Click any field in the info panel to edit it, like in Zotero. Fields you edit are
   remembered and not overwritten when the paper is saved again from the browser.
+- **Edit citation keys in the list.** Click the Citation Key cell of the selected paper to edit it in place.
 - **Copy citations** in APA, ACM, or IEEE style (`⇧⌘C`), or copy the citation key or DOI.
 - **Copy BibTeX** (`⇧⌘B`) for LaTeX. Paste the entries into your `.bib` file (for example in Overleaf). Each entry
   uses the paper's citation key, so keys imported from Better BibTeX stay the same. Choose the fields in

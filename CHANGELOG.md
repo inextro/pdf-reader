@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.0.11
+
+- New: Edit a citation key right in the library list. Select a paper, then click its Citation Key cell again to edit
+  it. Press Return to save or Esc to cancel. Double-clicking still opens the PDF. A key that another paper already
+  uses (ignoring case), or one with spaces or characters that break BibTeX, is not saved, and Quillo tells you why.
+- New: In the Chrome extension, a paper that is already in your library can be added to the selected collection as a
+  reference with **Add as reference** (the default button). **Move here** (formerly Save Again) still updates the
+  paper and moves it, and shows what moves, such as `archive → RL-temp`. If the paper is already in that collection,
+  both buttons are off; if Allow references is off in Settings, Add as reference is off. After updating Quillo,
+  click Reload (↻) on Save to Quillo in `chrome://extensions`.
+- Changed: **Add by Identifier** (`⇧⌘N`) with a paper that is already in the library now adds it to the selected
+  collection as a reference, instead of only saying it is already there. With Allow references off, it tells you
+  where the paper is.
+- Changed: Quillo opens to the collection, tag, or list you were viewing last, instead of All Items, so the Chrome
+  extension also saves into that collection again, like Zotero.
+
 ## 1.0.10
 
 - New: **File → Restore Library from Backup…** rebuilds the library from a backup in your workspace folder: papers,
