@@ -113,6 +113,20 @@ extension Library {
         }
     }
 
+    /// 다른 논문이 이미 쓰는 citation key면 그 논문 id. 대소문자는 가리지 않는다(Naming이 새 키를 만들 때와 같다).
+    public func citationKeyOwner(_ key: String, excluding id: Int64) throws -> Int64? {
+        try db.query("SELECT id FROM items WHERE lower(citation_key) = lower(?) AND id != ? LIMIT 1", [.text(key), .int(id)]).first?.int("id")
+    }
+
+    /// 손으로 고친 citation key가 BibTeX에서 깨지는 이유. 괜찮으면 nil.
+    public static func citationKeyProblem(_ key: String) -> String? {
+        if key.isEmpty { return "A citation key can’t be empty." }
+        let bad = key.filter { $0.isWhitespace || ",{}\"#%~\\()=".contains($0) }
+        guard !bad.isEmpty else { return nil }
+        let shown = Set(bad).map { $0.isWhitespace ? "space" : String($0) }.sorted().joined(separator: " ")
+        return "A citation key can’t contain \(shown)."
+    }
+
     public func setCitationKey(_ key: String?, of id: Int64) throws {
         try db.run("UPDATE items SET citation_key = ?, modified_at = ? WHERE id = ?", [SQLValue(key), .text(Library.now()), .int(id)])
     }

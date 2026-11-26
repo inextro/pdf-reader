@@ -971,6 +971,20 @@ var sameByTitle = PaperMetadata()
 sameByTitle.title = "LIGHTGCN — simplifying and powering graph convolution network for recommendation"
 check(try edited.existingItem(for: acmPage) == newID && edited.existingItem(for: sameByArxiv) == newID
       && edited.existingItem(for: sameByTitle) == newID && edited.existingItem(for: aclPage) == nil, "이미 있는 논문 찾기")
+// 표에서 citation key 고치기: 다른 논문이 쓰는 키(대소문자 무시)와 BibTeX에서 깨지는 글자는 막는다.
+do {
+    let keyed = try Library(url: libDir.appendingPathComponent("keys-\(UUID().uuidString).sqlite"))
+    let a = try keyed.add(namedMeta, citationKey: "he2020lightgcn", collectionID: nil)
+    let b = try keyed.add(sameByTitle, citationKey: "other2021", collectionID: nil)
+    check(try keyed.citationKeyOwner("He2020LightGCN", excluding: b) == a && keyed.citationKeyOwner("he2020lightgcn", excluding: a) == nil
+          && keyed.citationKeyOwner("new2024", excluding: b) == nil, "citation key 편집: 다른 논문이 쓰는 키 찾기")
+    check(Library.citationKeyProblem("he2020lightgcn") == nil && Library.citationKeyProblem("smith_2020:deep-learning.v2") == nil
+          && Library.citationKeyProblem("") != nil && Library.citationKeyProblem("he 2020") == "A citation key can’t contain space."
+          && Library.citationKeyProblem("a,b{c}") == "A citation key can’t contain , { }.", "citation key 편집: BibTeX에서 깨지는 키 막기")
+    try keyed.edit(b, to: PaperMetadata(try keyed.item(b)!), citationKey: "new2024")
+    check(try keyed.item(b)?.citationKey == "new2024" && Library.editedFields(of: try keyed.item(b)!).contains("citationKey"),
+          "citation key 편집: 저장하고 손으로 고친 칸으로 표시")
+}
 // 식별자로 추가: 이미 있는 논문은 고른 컬렉션에 참조로 넣는다(참조가 꺼져 있으면 알리기만).
 do {
     let placed = try Library(url: libDir.appendingPathComponent("placed-\(UUID().uuidString).sqlite"))

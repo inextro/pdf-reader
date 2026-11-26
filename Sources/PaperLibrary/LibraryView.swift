@@ -8,15 +8,33 @@ extension NSPasteboard.PasteboardType {
 
 private final class LibraryTableView: NSTableView {
     var onReturn: (() -> Void)?
+    /// 이미 고른 한 줄을 다시 눌렀을 때(Finder의 이름 바꾸기처럼). (줄, 열)
+    var onSlowClick: ((Int, Int) -> Void)?
 
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 36 || event.keyCode == 76 { onReturn?() } else { super.keyDown(with: event) }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        let start = convert(event.locationInWindow, from: nil)
+        let row = row(at: start), column = column(at: start)
+        let plain = event.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty
+        let wasOnlySelection = event.clickCount == 1 && plain && row >= 0 && column >= 0 && selectedRowIndexes == IndexSet(integer: row)
+        super.mouseDown(with: event)  // 놓을 때까지(끌기 포함) 여기서 돈다.
+        guard wasOnlySelection, selectedRowIndexes == IndexSet(integer: row) else { return }
+        // 끌었으면 편집하지 않는다.
+        if let up = NSApp.currentEvent, up.type == .leftMouseUp {
+            let end = convert(up.locationInWindow, from: nil)
+            guard abs(end.x - start.x) < 4, abs(end.y - start.y) < 4 else { return }
+        }
+        // 기다리지 않고 바로 편집한다. 이어서 더블클릭이 오면 LibraryView가 편집을 거두고 PDF를 연다.
+        onSlowClick?(row, column)
     }
 }
 
 /// 라이브러리 창 본문: 서지 표. 사이드바에서 고른 범위(filter)와 툴바 검색어(query)로 거른다.
 /// 더블클릭하면 PDF를 PaperMark로 열고, PDF가 없으면 DOI/URL을 브라우저로 연다.
-final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSMenuDelegate, NSMenuItemValidation {
+final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSMenuDelegate, NSMenuItemValidation, NSTextFieldDelegate {
     var filter: LibraryFilter = .all { didSet { if filter != oldValue { refresh() } } }
     var query = "" { didSet { if query != oldValue { refresh() } } }
     /// 표에 보이는 항목 수가 바뀔 때(창 부제목에 보인다).
@@ -26,16 +44,20 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSM
 
     var selectedItems: [LibraryEntry] { table.selectedRowIndexes.compactMap { rows.indices.contains($0) ? rows[$0] : nil } }
 
-    private let table = LibraryTableView()
+    fileprivate let table = LibraryTableView()
     /// 서재 칸을 고르면 키 입력을 받는 표.
     var tableView: NSTableView { table }
     private let scroll = NSScrollView()
     private let emptyView = NSStackView()
     private let emptyLabel = NSTextField(wrappingLabelWithString: "")
-    private var rows: [LibraryEntry] = []
-    private var store: LibraryStore { .shared }
+    fileprivate var rows: [LibraryEntry] = []
+    fileprivate var store: LibraryStore { .shared }
 
-    private typealias Column = LibraryColumn
+    fileprivate typealias Column = LibraryColumn
+    /// 표에서 고치고 있는 citation key(논문 id, 칸).
+    fileprivate var editingKey: (id: Int64, field: NSTextField)?
+    fileprivate var keyEditCancelled = false
+    fileprivate var doubleClickMonitor: Any?
 
     private static let sortKey = "librarySort"
 
@@ -79,6 +101,7 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSM
         table.setDraggingSourceOperationMask([.move, .copy], forLocal: true)
         table.verticalMotionCanBeginDrag = false
         table.onReturn = { [weak self] in self?.openSelected() }
+        table.onSlowClick = { [weak self] row, column in self?.slowClick(row: row, column: column) }
         table.menu = NSMenu()
         table.menu?.font = Style.font
         let headerMenu = NSMenu()
@@ -761,5 +784,99 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSM
         }
         NSLayoutConstraint.activate(constraints)
         return cell
+    }
+}
+
+// MARK: 표에서 citation key 고치기
+
+extension LibraryView {
+    /// 고른 줄의 Citation Key 칸을 다시 누르면 그 자리에서 고친다. Return으로 저장, Esc로 취소.
+    fileprivate func slowClick(row: Int, column: Int) {
+        guard table.tableColumns.indices.contains(column), rows.indices.contains(row),
+              Column(rawValue: table.tableColumns[column].identifier.rawValue) == .citationKey,
+              let field = (table.view(atColumn: column, row: row, makeIfNecessary: false) as? NSTableCellView)?.textField
+        else { return }
+        editingKey = (rows[row].id, field)
+        field.isEditable = true
+        field.drawsBackground = true
+        field.backgroundColor = .textBackgroundColor
+        field.textColor = .labelColor
+        field.delegate = self
+        window?.makeFirstResponder(field)
+        field.currentEditor()?.selectAll(nil)
+        watchForDoubleClick(on: field)
+    }
+
+    /// 편집을 바로 시작하므로, 그 클릭이 더블클릭의 첫 누름이었으면 두 번째 누름에서 편집을 거두고 PDF를 연다.
+    private func watchForDoubleClick(on field: NSTextField) {
+        stopWatchingDoubleClick()
+        let deadline = Date().addingTimeInterval(NSEvent.doubleClickInterval)
+        doubleClickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self, weak field] event in
+            guard let self, let field, Date() < deadline else { self?.stopWatchingDoubleClick(); return event }
+            guard event.clickCount >= 2, event.window === self.window,
+                  field.bounds.contains(field.convert(event.locationInWindow, from: nil)) else { return event }
+            self.stopWatchingDoubleClick()
+            self.keyEditCancelled = true
+            self.window?.makeFirstResponder(self.table)
+            self.openSelected()
+            return nil
+        }
+    }
+
+    fileprivate func stopWatchingDoubleClick() {
+        if let doubleClickMonitor { NSEvent.removeMonitor(doubleClickMonitor) }
+        doubleClickMonitor = nil
+    }
+
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+        guard selector == #selector(NSResponder.cancelOperation(_:)), let editing = editingKey, control === editing.field else { return false }
+        // Esc: 고치기 전 값으로 되돌리고 끝낸다.
+        keyEditCancelled = true
+        editing.field.stringValue = rows.first { $0.id == editing.id }?.citationKey ?? ""
+        window?.makeFirstResponder(table)
+        return true
+    }
+
+    func controlTextDidEndEditing(_ notification: Notification) {
+        guard let editing = editingKey, notification.object as? NSTextField === editing.field else { return }
+        editingKey = nil
+        stopWatchingDoubleClick()
+        let field = editing.field
+        field.isEditable = false
+        field.drawsBackground = false
+        field.delegate = nil
+        let cancelled = keyEditCancelled
+        keyEditCancelled = false
+        // 고치는 동안 바꾼 모양(글자색 등)을 그 줄을 다시 그려 되돌린다. 저장하면 어차피 표 전체를 다시 읽는다.
+        defer {
+            if let row = rows.firstIndex(where: { $0.id == editing.id }) {
+                table.reloadData(forRowIndexes: IndexSet(integer: row), columnIndexes: IndexSet(integersIn: 0..<table.numberOfColumns))
+            }
+        }
+        if window?.firstResponder == nil || window?.firstResponder === window { window?.makeFirstResponder(table) }
+        guard !cancelled, let item = store.items.first(where: { $0.id == editing.id }) else { return }
+        let key = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard key != (item.citationKey ?? "") else { field.stringValue = key; return }
+        let revert = { field.stringValue = item.citationKey ?? "" }
+        if let problem = Library.citationKeyProblem(key) { revert(); showKeyAlert(problem); return }
+        do {
+            if let owner = try store.library?.citationKeyOwner(key, excluding: item.id) {
+                let title = store.items.first { $0.id == owner }?.title ?? "another paper"
+                revert()
+                showKeyAlert("“\(key)” is already used by “\(title)”.")
+                return
+            }
+            try store.editItem(item.id, to: PaperMetadata(item), citationKey: key)
+        } catch {
+            revert()
+            store.presentError(error, in: window)
+        }
+    }
+
+    private func showKeyAlert(_ text: String) {
+        let alert = NSAlert()
+        alert.messageText = "The citation key was not changed."
+        alert.informativeText = text
+        if let window { alert.beginSheetModal(for: window) } else { alert.runModal() }
     }
 }
